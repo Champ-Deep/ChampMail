@@ -1,0 +1,65 @@
+# ChampMail Expansion Implementation Plan: "Total Ownership" Edition
+
+**Goal**: Transform ChampMail into a 100% self-owned email marketing platform.
+
+## Architecture: The "Sovereign Stack"
+
+| Component | Solution | Ownership |
+|-----------|----------|-----------|
+| **Frontend** | Vite + React + Easy Email | 100% Yours |
+| **Backend** | FastAPI + Celery | 100% Yours |
+| **Database** | FalkorDB (Graph) | 100% Yours |
+| **Sending** | **Stalwart SMTP** | 100% Yours |
+| **Receiving** | **Stalwart IMAP** | 100% Yours |
+
+## Execution Roadmap: "Enterprise Edition"
+
+### Phase 1: Database Foundation (First & Critical)
+**Goal**: Persist users and teams reliably. The memory-based auth must die.
+- [ ] Add **PostgreSQL** container to [infrastructure/docker-compose.yml](file:///Users/champion/ChampMail/infrastructure/docker-compose.yml).
+- [ ] Migrate `auth.py` from memory dicts to SQLAlchemy + Postgres.
+- [ ] Create `User` model with onboarding tracking fields.
+
+### Phase 2: API Integration (The Connection)
+**Goal**: Connect the Frontend (Face) to the Backend (Brain).
+- [ ] Implement **React Query** hooks (`useProspects`, `useTemplates`) to replace mock data.
+- [ ] Add **Toast Notifications** (`sonner`) for user feedback ("Saved!", "Error!").
+- [ ] Connect [TemplateEditor](file:///Users/champion/ChampMail/frontend/src/components/templates/TemplateEditor.tsx#43-66) save button to `POST /api/templates`.
+
+### Phase 3: Sovereign Infrastructure
+**Goal**: Deploy the self-hosted plumbing.
+- [ ] Deploy **Stalwart Mail Server** (SMTP/IMAP) via Docker.
+- [ ] Build key-management UI in `SettingsPage` to configure SMTP credentials securely.
+
+### Phase 4: Onboarding & Support (The "Glue")
+**Goal**: Make the tool usable for teams without you holding their hand.
+- [ ] implement **Interactive Tours** (`react-joyride`) for first-time users.
+- [ ] Build **AI Chat Widget** (Context-aware help assistant).
+
+### Phase 5: Team Management
+**Goal**: Multi-user support.
+- [ ] Create `Team` models and Invite flows.
+- [ ] Add Role-Based Access Control (Owner vs Member).
+
+### Phase 6: Docker Deployment ("One-Click")
+**Goal**: Package everything for easy distribution.
+- [ ] Create `Dockerfile` for Frontend (Nginx build) and Backend.
+- [ ] Create master `docker-compose.yml` that orchestrates: Frontend, Backend, Postgres, FalkorDB, Redis, Stalwart, and Celery.
+
+## Detailed Tech Stack
+
+### Frontend (`/frontend`)
+*   **Framework**: Vite, React 18, TypeScript
+*   **Styling**: Tailwind CSS
+*   **State**: Zustand, TanStack Query
+*   **Editor**: `easy-email-editor`, `easy-email-extensions`
+
+### Backend (`/backend`)
+*   **Framework**: FastAPI
+*   **Tasks**: Celery (with Redis)
+*   **Mail**: `aiosmtplib` (SMTP), `aioimaplib` (IMAP)
+*   **DB**: FalkorDB (Graph)
+
+### Mail Server (`/mailserver`)
+*   **Core**: Stalwart Mail Server (Rust)
+*   **Protocol**: SMTP (587), IMAP (993)

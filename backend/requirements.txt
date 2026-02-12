@@ -1,0 +1,58 @@
+# ChampMail - Backend Dependencies
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Graph Database
+falkordb>=1.0.0
+
+# PostgreSQL
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.29.0
+alembic>=1.13.0
+
+# Encryption
+cryptography>=42.0.0
+
+# Validation & Serialization
+pydantic[email]>=2.5.0
+pydantic-settings>=2.1.0
+
+# Authentication
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
+
+# HTTP Client
+httpx>=0.26.0
+
+# Redis
+redis>=5.0.0
+
+# Async support
+anyio>=4.2.0
+
+# Environment
+python-dotenv>=1.0.0
+
+# AI
+anthropic>=0.25.0
+openai>=1.0.0
+
+# Celery (Task Orchestration)
+celery>=5.3.0
+kombu>=5.3.0
+
+# Cloudflare DNS Management
+cloudflare>=4.0.0
+
+# Namecheap Domain Management
+namecheap>=0.2.0
+
+# Email parsing
+email-validator>=2.0.0
+
+# Rate limiting
+slowapi>=0.1.0

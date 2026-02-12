@@ -1,0 +1,267 @@
+# ChampMail Docker Compose Configuration
+# Full stack with PostgreSQL, FalkorDB, Redis, Backend, Celery, and Mail Engine
+
+services:
+  # PostgreSQL Database (User management, Workflows)
+  postgres:
+    image: postgres:16-alpine
+    container_name: champmail-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-champmail}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - champmail-network
+
+  # FalkorDB (Graph database for prospects, sequences)
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: champmail-falkordb
+    restart: unless-stopped
+    ports:
+      - "${FALKORDB_PORT:-6379}:6379"
+      - "${FALKORDB_BROWSER_PORT:-3001}:3000"
+    volumes:
+      - falkordb_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - champmail-network
+
+  # Redis Cache + Celery Broker
+  redis:
+    image: redis:7-alpine
+    container_name: champmail-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - champmail-network
+
+  # ChampMail Mail Engine (Go - forked BillionMail)
+  mail-engine:
+    build:
+      context: ./mail-engine
+      dockerfile: Dockerfile
+    container_name: champmail-mail
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "8025"
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-champmail}
+      DKIM_DOMAIN: ${DKIM_DOMAIN:-champmail.com}
+      DAILY_SEND_LIMIT: ${DAILY_SEND_LIMIT:-1000}
+      RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-10}
+    ports:
+      - "8025:8025"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8025/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - champmail-network
+
+  # Postfix SMTP Server
+  smtp:
+    build:
+      context: ./mail-engine/postfix
+      dockerfile: Dockerfile
+    container_name: champmail-smtp
+    restart: unless-stopped
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+    volumes:
+      - smtp_data:/var/spool/postfix
+    networks:
+      - champmail-network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: champmail-backend
+    restart: unless-stopped
+    environment:
+      DEBUG: ${DEBUG:-true}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:-}
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-champmail-jwt-secret-dev-key-change-me}
+      EMAIL_ENCRYPTION_KEY: ${EMAIL_ENCRYPTION_KEY:-}
+
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
+
+      MAIL_ENGINE_URL: http://mail-engine:8025
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+      NAMECHEAP_API_KEY: ${NAMECHEAP_API_KEY:-}
+      NAMECHEAP_API_USER: ${NAMECHEAP_API_USER:-}
+      NAMECHEAP_IP: ${NAMECHEAP_IP:-}
+
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - champmail-network
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: champmail-worker
+    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
+    restart: unless-stopped
+    environment:
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.celery_app", "inspect", "ping"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    networks:
+      - champmail-network
+
+  # Celery Beat (Scheduler)
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: champmail-beat
+    command: celery -A app.celery_app beat --loglevel=info
+    restart: unless-stopped
+    environment:
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - champmail-network
+
+  # Flower (Celery monitoring)
+  flower:
+    image: mher/flower:latest
+    container_name: champmail-flower
+    restart: unless-stopped
+    command: celery --broker=redis://:${REDIS_PASSWORD:-}@redis:6379/0 flower --port=5555
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    environment:
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - champmail-network
+
+  # React Frontend with Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
+    container_name: champmail-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - champmail-network
+
+volumes:
+  postgres_data:
+    driver: local
+  falkordb_data:
+    driver: local
+  redis_data:
+    driver: local
+  smtp_data:
+    driver: local
+
+networks:
+  champmail-network:
+    driver: bridge

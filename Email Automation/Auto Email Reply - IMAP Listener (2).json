@@ -1,0 +1,404 @@
+{
+  "name": "Auto Email Reply - IMAP Listener",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        96,
+        1008
+      ],
+      "id": "31b588f2-b8b6-4786-8fec-1e8bbbb3ab1d",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================\n// STEP 2: EXTRACT & VALIDATE EMAIL (IMAP PATH)\n// =============================================\nconst MY_EMAIL = 'your-email@example.com';\nconst MY_NAME = 'Your Name';\nconst MY_COMPANY = 'Your Company';\n\nlet AUTO_REPLY_ENABLED = true;\nlet AUTO_REPLY_CONTEXT = 'I am currently unavailable and will respond as soon as possible.';\n\ntry {\n  const staticData = $getWorkflowStaticData('global');\n  if (staticData.autoReplyEnabled !== undefined) {\n    AUTO_REPLY_ENABLED = staticData.autoReplyEnabled === true;\n  }\n  if (staticData.autoReplyMessage) {\n    AUTO_REPLY_CONTEXT = staticData.autoReplyMessage;\n  }\n} catch (e) {}\n\nconst email = $input.first().json;\n\nlet fromEmail = '';\nlet fromName = '';\n\nif (email.from && email.from.value && email.from.value[0]) {\n  fromEmail = email.from.value[0].address || '';\n  fromName = email.from.value[0].name || '';\n} else if (typeof email.from === 'string') {\n  fromEmail = email.from;\n  fromName = email.from.split('@')[0];\n}\n\nif (!fromName) {\n  fromName = fromEmail.split('@')[0] || 'Someone';\n}\n\nconst subject = email.subject || 'No Subject';\nconst emailBody = email.text || email.html || '';\nconst messageId = email.messageId || `msg_${Date.now()}`;\n\nconst skipPatterns = ['noreply', 'no-reply', 'donotreply', 'mailer-daemon', 'postmaster', 'notifications', 'newsletter', 'marketing', 'bounce', 'auto'];\nconst isNoReply = skipPatterns.some(p => fromEmail.toLowerCase().includes(p));\nconst isAutoReply = subject.toLowerCase().includes('automatic reply') || \n                   subject.toLowerCase().includes('out of office') ||\n                   subject.toLowerCase().includes('auto-reply') ||\n                   subject.toLowerCase().startsWith('re:');\nconst isOwnEmail = fromEmail.toLowerCase() === MY_EMAIL.toLowerCase();\n\nconst shouldReply = AUTO_REPLY_ENABLED && fromEmail && emailBody && !isNoReply && !isAutoReply && !isOwnEmail;\n\nlet skipReason = null;\nif (!AUTO_REPLY_ENABLED) skipReason = 'Auto-reply disabled';\nelse if (!fromEmail) skipReason = 'Missing sender';\nelse if (isNoReply) skipReason = 'No-reply address';\nelse if (isAutoReply) skipReason = 'Auto-reply detected';\nelse if (isOwnEmail) skipReason = 'Own email';\n\nreturn [{\n  json: {\n    mode: 'IMAP_AUTO_REPLY',\n    shouldReply,\n    skipReason,\n    sessionId: `autoreply_${fromEmail.replace(/[^a-zA-Z0-9]/g, '_')}`,\n    toEmail: fromEmail,\n    toName: fromName,\n    fromEmail: MY_EMAIL,\n    fromName: MY_NAME,\n    company: MY_COMPANY,\n    originalSubject: subject,\n    originalBody: emailBody.substring(0, 1000),\n    autoReplyContext: AUTO_REPLY_CONTEXT,\n    messageId: messageId,\n    smtpAction: {\n      type: 'SEND_EMAIL',\n      from: MY_EMAIL,\n      to: fromEmail,\n      replySubject: 'Re: ' + subject\n    }\n  }\n}];"
+      },
+      "id": "31cedcf3-05c5-4076-8b04-fbf436fc7fca",
+      "name": "2. Extract & Validate Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================\n// STEP 3: PROCESS SUBFLOW INPUT (USER-DIRECTED)\n// =============================================\nconst input = $input.first().json;\n\nconst MY_EMAIL = 'your-email@example.com';\nconst MY_NAME = 'Your Name';\nconst MY_COMPANY = 'Your Company';\n\n// Extract email address from user message if present\nlet toEmail = '';\nconst emailMatch = input.userMessage.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g);\nif (emailMatch && emailMatch.length > 0) {\n  toEmail = emailMatch[0];\n}\n\nreturn [{\n  json: {\n    mode: 'USER_DIRECTED',\n    sessionId: `user_${input.chatId || 'default'}`,\n    chatId: input.chatId || '',\n    userName: input.userName || 'User',\n    userMessage: input.userMessage || '',\n    toEmail: toEmail,\n    fromEmail: MY_EMAIL,\n    fromName: MY_NAME,\n    company: MY_COMPANY,\n    smtpAction: {\n      type: 'SEND_EMAIL',\n      from: MY_EMAIL,\n      to: toEmail,\n      replySubject: 'Re: Your Inquiry'\n    }\n  }\n}];"
+      },
+      "id": "3260ab50-750a-46e7-af66-d58a494ea516",
+      "name": "3. Process Subflow Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================\n// STEP 4: BUILD COMBINED PROMPT\n// Handles both IMAP and Subflow modes\n// =============================================\nconst data = $input.first().json;\n\nlet combinedPrompt = '';\n\nif (data.mode === 'IMAP_AUTO_REPLY') {\n  // MODE 1: Auto-Reply from IMAP\n  combinedPrompt = `\n## MODE: AUTO-REPLY\n\n## SMTP ACTION DETAILS\n- Action: ${data.smtpAction.type}\n- From: ${data.smtpAction.from}\n- To: ${data.smtpAction.to}\n- Subject: ${data.smtpAction.replySubject}\n\n## ORIGINAL EMAIL RECEIVED\n- From: ${data.toName} <${data.toEmail}>\n- Subject: ${data.originalSubject}\n- Body:\n${data.originalBody}\n\n## AUTO-REPLY CONTEXT\n${data.autoReplyContext}\n\n## TASK\nWrite a professional auto-reply on behalf of ${data.fromName} from ${data.company}.\nBe concise (2-4 sentences). Acknowledge their message and let them know you'll respond soon.\n`;\n} else {\n  // MODE 2: User-Directed from Subflow/Telegram\n  combinedPrompt = `\n## MODE: USER-DIRECTED\n\n## USER REQUEST\n${data.userMessage}\n\n## USER INFO\n- Name: ${data.userName || 'User'}\n- Chat ID: ${data.chatId || 'N/A'}\n\n## EMAIL DETAILS (if extracted)\n- To: ${data.toEmail || 'Not specified'}\n- From: ${data.fromEmail}\n\n## TASK\nBased on the user's request, generate the appropriate email response.\nUse your memory to find relevant past emails if referenced.\nOnly output the email body text - no subject lines or intros.\n`;\n}\n\nreturn [{\n  json: {\n    ...data,\n    combinedPrompt\n  }\n}];"
+      },
+      "id": "f69ced17-1539-4c6a-a1cb-e4e3b5391ee3",
+      "name": "4. Build Combined Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "0e2eadb7-02ad-4164-83f8-f7b5f3ccd267",
+      "name": "OpenRouter Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        832,
+        1104
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "3D0fFDgcmG2i3yrv",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.combinedPrompt }}",
+        "options": {
+          "systemMessage": "You are an intelligent Email Assistant with persistent memory capabilities. You have two modes of operation:\n\n## MODE 1: AUTO-REPLY (When triggered by incoming email via IMAP)\nWhen you receive email data with SMTP action details:\n- Generate a professional, concise auto-reply (2-4 sentences)\n- Acknowledge the sender's message\n- Let them know a detailed response will follow\n- Only output the email body text, no subject line\n\n## MODE 2: USER-DIRECTED REPLY (When triggered via subflow/Telegram)\nWhen a user asks you to reply to or manage emails:\n- Use your memory to recall previous emails received\n- Generate responses based on user's specific instructions\n- Follow the tone, context, or template the user provides\n- If user says \"reply to the budget email\", find it in memory and draft appropriate response\n\n## MEMORY CAPABILITIES\nYou have access to PostgreSQL chat memory containing:\n- All incoming emails (sender, subject, body, date)\n- Previous auto-replies sent\n- User preferences and instructions\n\nUse this memory to:\n- Reference previous email conversations\n- Maintain context across multiple interactions\n- Personalize responses based on history\n- Handle follow-up requests like \"reply to that client email from yesterday\"\n\n## RESPONSE GUIDELINES\n1. **Always output ONLY the email body** - no subject lines, no \"Here is your email\" intro\n2. **Be professional and concise** - 2-4 sentences for auto-replies, longer for detailed responses\n3. **Match the tone** - formal for business, friendly for known contacts\n4. **Include context** - reference the original email's topic when relevant\n5. **Sign off appropriately** - use the sender's name and company from context",
+          "maxIterations": 1
+        }
+      },
+      "id": "b073d8b5-c224-43b6-af73-f78a70bc3f04",
+      "name": "5. AI Agent (Generate Reply)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        800,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================\n// STEP 6: PREPARE SMTP PAYLOAD\n// Works for both IMAP and Subflow paths\n// =============================================\nconst aiResponse = $input.first().json;\n\n// Get the data from Build Combined Prompt (previous node in chain)\nconst emailData = $('4. Build Combined Prompt').first().json;\n\n// Extract AI-generated reply\nconst replyBody = aiResponse.output || \n                  aiResponse.text || \n                  aiResponse.response?.text ||\n                  'Thank you for your email. I will get back to you shortly.';\n\n// Determine subject based on mode\nlet subject = 'Re: Your Inquiry';\nif (emailData.smtpAction && emailData.smtpAction.replySubject) {\n  subject = emailData.smtpAction.replySubject;\n}\n\nreturn [{\n  json: {\n    mode: emailData.mode,\n    fromEmail: emailData.fromEmail,\n    toEmail: emailData.toEmail,\n    subject: subject,\n    body: replyBody,\n    toName: emailData.toName || '',\n    originalSubject: emailData.originalSubject || '',\n    sessionId: emailData.sessionId,\n    chatId: emailData.chatId || '',\n    userName: emailData.userName || ''\n  }\n}];"
+      },
+      "id": "9a29f54a-7cc9-4560-bbe2-6f9214a7a867",
+      "name": "6. Prepare SMTP Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "check-email",
+              "leftValue": "={{ $json.toEmail }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a9ff2526-f998-47a7-a8d9-22c8e7342dae",
+      "name": "7. Has Valid Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1232,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.fromEmail }}",
+        "toEmail": "={{ $json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "1795459e-ef5d-4cfb-92fa-4266aca6c927",
+      "name": "8. SMTP Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1440,
+        848
+      ],
+      "webhookId": "75742bae-bbd8-4f2b-9467-2228713b8522",
+      "credentials": {
+        "smtp": {
+          "id": "svJc6ntMD36jclkW",
+          "name": "SMTP account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log when no valid email address\nconst data = $input.first().json;\n\nreturn [{\n  json: {\n    status: 'NO_EMAIL',\n    message: 'No valid email address found to send to',\n    response: data.body,\n    chatId: data.chatId,\n    userName: data.userName\n  }\n}];"
+      },
+      "id": "6e5da03d-f61d-4cfe-b42c-23fef070b270",
+      "name": "Return Response Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1440,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// =============================================\n// STEP 9: LOG SUCCESS/FAILURE\n// =============================================\nconst smtpResult = $input.first().json;\nconst emailData = $('6. Prepare SMTP Payload').first().json;\nconst success = !smtpResult.error;\n\nreturn [{\n  json: {\n    status: success ? 'SUCCESS' : 'FAILED',\n    message: success \n      ? `Email sent to ${emailData.toEmail}`\n      : `Failed: ${smtpResult.error || 'Unknown error'}`,\n    response: emailData.body,\n    chatId: emailData.chatId,\n    userName: emailData.userName,\n    details: {\n      to: emailData.toEmail,\n      subject: emailData.subject,\n      timestamp: new Date().toISOString()\n    }\n  }\n}];"
+      },
+      "id": "b1b12af7-e268-4b5e-ae35-a1fb21f7fe1d",
+      "name": "9. Log Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1648,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.sessionId || 'autoreply_default' }}",
+        "contextWindowLength": 10
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        944,
+        1104
+      ],
+      "id": "179beac5-840a-4268-b843-763b3b49da17",
+      "name": "Postgres Chat Memory1",
+      "credentials": {
+        "postgres": {
+          "id": "NGazHh70KRdYv9rY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "customEmailConfig": "[\"UNSEEN\"]",
+          "forceReconnect": 60,
+          "trackLastMessageId": true
+        }
+      },
+      "id": "7431b9f6-485a-4e23-940c-207c7f510233",
+      "name": "1. IMAP Email Trigger",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        112,
+        768
+      ],
+      "credentials": {
+        "imap": {
+          "id": "XzGHblQLtNaIR3E9",
+          "name": "IMAP account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "When Executed by Another Workflow": [
+      {
+        "json": {
+          "chatId": "7588295628",
+          "userName": "John Doe",
+          "userMessage": "Reply to the email from Jane about consulting services, tell her we're available next week on email id jane@gmail.com"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "3. Process Subflow Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Extract & Validate Email": {
+      "main": [
+        [
+          {
+            "node": "4. Build Combined Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Process Subflow Input": {
+      "main": [
+        [
+          {
+            "node": "4. Build Combined Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "4. Build Combined Prompt": {
+      "main": [
+        [
+          {
+            "node": "5. AI Agent (Generate Reply)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "5. AI Agent (Generate Reply)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "5. AI Agent (Generate Reply)": {
+      "main": [
+        [
+          {
+            "node": "6. Prepare SMTP Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "6. Prepare SMTP Payload": {
+      "main": [
+        [
+          {
+            "node": "7. Has Valid Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "7. Has Valid Email?": {
+      "main": [
+        [
+          {
+            "node": "8. SMTP Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Response Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "8. SMTP Send Email": {
+      "main": [
+        [
+          {
+            "node": "9. Log Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "5. AI Agent (Generate Reply)",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. IMAP Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "2. Extract & Validate Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "42a69e41-e709-487d-8578-30ca17bcd58c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "34bd50cb9ae2d4a1e30c06a1260f06e41aa76b6d40f3610f8002cc289adf4293"
+  },
+  "id": "G7pQAm3Z7ZRgXMMqC-K-y",
+  "tags": [
+    {
+      "updatedAt": "2026-01-15T19:01:41.462Z",
+      "createdAt": "2026-01-15T19:01:41.462Z",
+      "id": "HqvuU16YQoozCBJG",
+      "name": "Email"
+    },
+    {
+      "updatedAt": "2026-01-15T19:01:57.427Z",
+      "createdAt": "2026-01-15T19:01:57.427Z",
+      "id": "rtlMnT07XT4ZG4sc",
+      "name": "Assistant"
+    }
+  ]
+}

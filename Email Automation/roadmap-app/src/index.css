@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+    --color-glass-border: rgba(255, 255, 255, 0.4);
+    --color-glass-bg: rgba(255, 255, 255, 0.7);
+    --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes shimmer {
+        0% {
+            transform: translateX(-100%);
+        }
+
+        100% {
+            transform: translateX(100%);
+        }
+    }
+}
+
+body {
+    background: linear-gradient(135deg, #f0f4ff 0%, #e2e8f0 100%);
+    color: #1e293b;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}

@@ -1,0 +1,330 @@
+{
+  "name": "Head Bot Flow - Main Telegram Controller",
+  "nodes": [
+    {
+      "parameters": {
+        "model": "openai/gpt-4o",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "e3166d3e-18c8-481f-9d03-9f16848d8b7b",
+      "name": "OpenRouter Intent Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -864,
+        480
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "3D0fFDgcmG2i3yrv",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.userMessage || $json.message || $json.body }}",
+        "options": {
+          "systemMessage": "You are an intelligent Email Assistant that helps users manage their emails. You have access to the following tools:\n\n1. **User Call Email Summary** - Use this to fetch and summarize the user's inbox emails\n2. **Email Writer** - Use this to compose and send emails\n3. **Auto Email Reply** - Use this for automatic email replies\n\nBased on the user's request, determine which tool to use and execute it. Always respond helpfully and concisely.\n\nExamples:\n- \"Check my emails\" → Use Email Summary tool\n- \"What's in my inbox\" → Use Email Summary tool\n- \"Send an email to john@example.com about the meeting\" → Use Email Writer tool\n- \"Reply to the last email\" → Use Auto Email Reply tool"
+        }
+      },
+      "id": "d95a1fd5-ebec-4db0-8349-d020ad7333c6",
+      "name": "Intent Classifier Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -784,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.chatId || $json.sessionId || 'default_session' }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        -768,
+        592
+      ],
+      "id": "4d44aa0f-2b92-40b7-a6d7-f64e08669c20",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "NGazHh70KRdYv9rY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email_agent",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1040,
+        320
+      ],
+      "id": "7ebafffe-68ff-45de-a4a3-b89d1914f321",
+      "name": "Webhook",
+      "webhookId": "a9b8fb32-a6f9-489f-8cce-f3319f670cc0"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "XX4N5P3IiiqTvomnztmvT",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/XX4N5P3IiiqTvomnztmvT",
+          "cachedResultName": "User Call Email Summary"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -496,
+        512
+      ],
+      "id": "a86069bc-839d-40d0-932f-336eae6386f1",
+      "name": "Call 'User Call Email Summary'"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "jXkL3ebRhjgFcLafa9AZH",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/jXkL3ebRhjgFcLafa9AZH",
+          "cachedResultName": "Email Writer"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "to": "={{ $json.to || $json.toEmail || '' }}",
+            "subject": "={{ $json.subject || '' }}",
+            "body": "={{ $json.body || $json.userMessage || '' }}",
+            "tone": "={{ $json.tone || 'professional' }}",
+            "chatId": "={{ $json.chatId || $json.sessionId || 'default' }}",
+            "userName": "={{ $json.userName || 'User' }}",
+            "userMessage": "={{ $json.userMessage || $json.message || '' }}",
+            "fromEmail": "={{ $json.fromEmail || '' }}",
+            "fromName": "={{ $json.fromName || '' }}",
+            "webhookSendUrl": "={{ $json.webhookSendUrl || '' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {"id": "to", "displayName": "to", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "subject", "displayName": "subject", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "body", "displayName": "body", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "tone", "displayName": "tone", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "chatId", "displayName": "chatId", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "userName", "displayName": "userName", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "userMessage", "displayName": "userMessage", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "fromEmail", "displayName": "fromEmail", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "fromName", "displayName": "fromName", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"},
+            {"id": "webhookSendUrl", "displayName": "webhookSendUrl", "required": false, "defaultMatch": false, "canBeUsedToMatch": true, "display": true, "type": "string"}
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -592,
+        624
+      ],
+      "id": "67434ca4-7f57-426b-98c9-5b7dc84d0daf",
+      "name": "Call 'Email Writer'"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "G7pQAm3Z7ZRgXMMqC-K-y",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/G7pQAm3Z7ZRgXMMqC-K-y",
+          "cachedResultName": "Auto Email Reply - IMAP Listener"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        -640,
+        528
+      ],
+      "id": "397b0e06-b048-4a2b-a808-7fc3498aaa99",
+      "name": "Call 'Auto Email Reply'"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the AI agent response for the webhook\nconst agentOutput = $input.first().json;\n\n// Extract the response text from agent output\nconst response = agentOutput.output || agentOutput.response || agentOutput.text || 'No response generated';\n\n// Get original request context\nlet chatId = 'default';\nlet userName = 'User';\n\ntry {\n  const webhookData = $('Webhook').first().json;\n  chatId = webhookData.chatId || webhookData.sessionId || 'default';\n  userName = webhookData.userName || webhookData.user || 'User';\n} catch (e) {\n  // Use defaults if webhook data not accessible\n}\n\nreturn [{\n  json: {\n    success: true,\n    response: response,\n    chatId: chatId,\n    userName: userName,\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "format-response-node",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "respond-webhook-node",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -304,
+        320
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "OpenRouter Intent Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Intent Classifier Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Intent Classifier Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Intent Classifier Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Intent Classifier Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'User Call Email Summary'": {
+      "ai_tool": [
+        [
+          {
+            "node": "Intent Classifier Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Email Writer'": {
+      "ai_tool": [
+        [
+          {
+            "node": "Intent Classifier Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call 'Auto Email Reply'": {
+      "ai_tool": [
+        [
+          {
+            "node": "Intent Classifier Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "2959858d-38e2-450e-8166-ba12f8e7407c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "34bd50cb9ae2d4a1e30c06a1260f06e41aa76b6d40f3610f8002cc289adf4293"
+  },
+  "id": "B01-22OIGZyap8T3ZEf2C",
+  "tags": [
+    {
+      "updatedAt": "2026-01-15T19:01:57.427Z",
+      "createdAt": "2026-01-15T19:01:57.427Z",
+      "id": "rtlMnT07XT4ZG4sc",
+      "name": "Assistant"
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+[project]
+name = "champions-email-engine"
+version = "0.1.0"
+description = "Champion's Email Automation Engine - FastAPI Backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    # Web Framework
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+
+    # Database
+    "falkordb>=1.0.0",
+
+    # Note: graphiti-core requires OpenAI for embeddings
+    # Install separately if needed: pip install 'graphiti-core[falkordb]'
+
+    # Validation & Serialization
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+
+    # Authentication
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+
+    # HTTP Client (for n8n webhooks)
+    "httpx>=0.26.0",
+
+    # Redis (for caching)
+    "redis>=5.0.0",
+
+    # Async support
+    "anyio>=4.2.0",
+
+    # Environment
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.26.0",
+    "ruff>=0.1.0",
+    "pytest-watch>=4.2.0",
+]
+graphiti = [
+    "graphiti-core[falkordb]>=0.25.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*", "alembic/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+]

@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.venv
+env/
+build/
+dist/
+
+# JavaScript/TypeScript
+node_modules/
+.next/
+out/
+.vercel
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Databases
+postgres-data/
+falkordb-data/
+redis-data/
+
+# Secrets
+.env
+*.pem
+*.key
+
+# IDEs
+.vscode/
+.idea/
+.claude/

@@ -1,0 +1,274 @@
+{
+  "name": "Email Writer",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "id": "46c289ba-51fe-4507-81be-c08f5b819d55",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        16,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.chatId || 'default_session' }}",
+        "tableName": "email_chat_memory",
+        "contextWindowLength": 20
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        704,
+        544
+      ],
+      "id": "3e7e6c9d-f579-4dac-bc79-c7b0b2c8ec79",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "NGazHh70KRdYv9rY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const webhookResult = $input.first().json;\nconst preparedData = $('Prepare SMTP Data').first().json;\n\n// Check success from webhook response\nconst success = webhookResult.success === true;\n\nlet response;\nif (success) {\n  response = `✅ *Email sent successfully!*\\n\\n*To:* ${preparedData.to}\\n*Subject:* ${preparedData.subject}\\n\\nYour message has been delivered.`;\n} else {\n  const errorMsg = webhookResult.error || webhookResult.message || 'Unknown error';\n  response = `❌ *Failed to send email:* ${errorMsg}\\n\\nPlease check your email settings in the app and try again.`;\n}\n\nreturn [{\n  json: {\n    response: response,\n    chatId: preparedData.chatId || webhookResult.chatId,\n    userName: preparedData.userName || webhookResult.userName,\n    success: success,\n    to: preparedData.to,\n    subject: preparedData.subject,\n    emailBody: preparedData.emailBody\n  }\n}];"
+      },
+      "id": "392bff0e-d39a-4f1c-9e2a-9e4e496cb134",
+      "name": "Format Success Response1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1312,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.webhookSendUrl || $('Parse Email Info').first().json.webhookSendUrl || 'http://localhost:8000/api/v1/webhook/send' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{ $json.to }}\",\n  \"to_email\": \"{{ $json.to }}\",\n  \"subject\": \"{{ $json.subject }}\",\n  \"body\": \"{{ $json.emailBody }}\",\n  \"emailBody\": \"{{ $json.emailBody }}\",\n  \"from_email\": \"{{ $json.fromEmail || '' }}\",\n  \"from_name\": \"{{ $json.fromName || '' }}\",\n  \"chatId\": \"{{ $json.chatId || '' }}\",\n  \"userName\": \"{{ $json.userName || '' }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "3ed43563-0580-4562-8fc6-98b71e366268",
+      "name": "Send Email via Webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1104,
+        368
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Write a {{ $json.tone }} email.\nTo: {{ $json.to }}\nSubject: {{ $json.subject }}\nKey points: {{ $json.body }}\n\nWrite only the email body text, be concise and professional.",
+        "options": {
+          "systemMessage": "You are an email writer. Write professional, clear emails. Only output the email body text, no greetings like 'Here is your email' - just the actual email content.",
+          "maxIterations": 1
+        }
+      },
+      "id": "c6743735-23b5-4cb6-ab48-f2483dd57bcf",
+      "name": "Draft Email Agent1",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        608,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "id": "58594bab-0214-4efc-bd20-aeccc9448c94",
+      "name": "OpenRouter Writer1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        608,
+        608
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "3D0fFDgcmG2i3yrv",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nreturn [{\n  json: {\n    chatId: input.chatId || 'default_chat',\n    userMessage: input.userMessage || '',\n    userName: input.userName || 'User',\n    to: input.to || input.toEmail || '',\n    subject: input.subject || '',\n    body: input.body || input.userMessage || '',\n    tone: input.tone || 'professional',\n    fromEmail: input.fromEmail || '',\n    fromName: input.fromName || '',\n    webhookSendUrl: input.webhookSendUrl || 'http://localhost:8000/api/v1/webhook/send'\n  }\n}];"
+      },
+      "id": "f1fdadd2-257d-42be-8141-dbf724088e83",
+      "name": "Extract Context1",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\nconst emailInfo = $('Parse Email Info').first().json;\n\nconst emailBody = aiResponse.output || aiResponse.response || aiResponse.text || '';\n\nreturn [{\n  json: {\n    chatId: emailInfo.chatId,\n    userName: emailInfo.userName,\n    to: emailInfo.to,\n    subject: emailInfo.subject,\n    emailBody: emailBody,\n    tone: emailInfo.tone,\n    fromEmail: emailInfo.fromEmail || '',\n    fromName: emailInfo.fromName || '',\n    webhookSendUrl: emailInfo.webhookSendUrl || 'http://localhost:8000/api/v1/webhook/send'\n  }\n}];"
+      },
+      "id": "54d2f079-b751-4a9b-b447-085bcbe4dae5",
+      "name": "Prepare SMTP Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\n\nreturn [{\n  json: {\n    chatId: input.chatId || 'default_chat',\n    userName: input.userName || 'User',\n    to: input.to || '',\n    subject: input.subject || '',\n    body: input.body || '',\n    tone: input.tone || 'professional',\n    fromEmail: input.fromEmail || '',\n    fromName: input.fromName || '',\n    webhookSendUrl: input.webhookSendUrl || 'http://localhost:8000/api/v1/webhook/send'\n  }\n}];"
+      },
+      "id": "b5a86b02-25e2-40e4-9c51-e64ad501b599",
+      "name": "Parse Email Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        368
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Context1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email via Webhook": {
+      "main": [
+        [
+          {
+            "node": "Format Success Response1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Draft Email Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Email Agent1": {
+      "main": [
+        [
+          {
+            "node": "Prepare SMTP Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Writer1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Draft Email Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Context1": {
+      "main": [
+        [
+          {
+            "node": "Parse Email Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SMTP Data": {
+      "main": [
+        [
+          {
+            "node": "Send Email via Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email Info": {
+      "main": [
+        [
+          {
+            "node": "Draft Email Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Response1": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "4977865e-de09-41ac-b51f-99f5986e7b80",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "34bd50cb9ae2d4a1e30c06a1260f06e41aa76b6d40f3610f8002cc289adf4293"
+  },
+  "id": "jXkL3ebRhjgFcLafa9AZH",
+  "tags": [
+    {
+      "updatedAt": "2026-01-15T19:01:41.462Z",
+      "createdAt": "2026-01-15T19:01:41.462Z",
+      "id": "HqvuU16YQoozCBJG",
+      "name": "Email"
+    },
+    {
+      "updatedAt": "2026-01-15T19:01:57.427Z",
+      "createdAt": "2026-01-15T19:01:57.427Z",
+      "id": "rtlMnT07XT4ZG4sc",
+      "name": "Assistant"
+    }
+  ]
+}

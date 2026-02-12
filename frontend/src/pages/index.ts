@@ -1,0 +1,13 @@
+export { LoginPage } from './LoginPage';
+export { DashboardPage } from './DashboardPage';
+export { TemplatesPage } from './TemplatesPage';
+export { TemplateEditorPage } from './TemplateEditorPage';
+export { ProspectsPage } from './ProspectsPage';
+export { SequencesPage } from './SequencesPage';
+export { CampaignsPage } from './CampaignsPage';
+export { WorkflowsPage } from './WorkflowsPage';
+export { SettingsPage } from './SettingsPage';
+export { JoinTeamPage } from './JoinTeamPage';
+export { DomainManagerPage } from './DomainManagerPage';
+export { SendConsolePage } from './SendConsolePage';
+export { AnalyticsPage } from './AnalyticsPage';

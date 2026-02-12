@@ -1,0 +1,964 @@
+{
+  "name": "User Call Email Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "postProcessAction": "nothing",
+        "options": {}
+      },
+      "id": "815ddad9-2b64-4c5d-84d2-325112b8b4a7",
+      "name": "IMAP Fetch Emails",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        -1296,
+        704
+      ],
+      "credentials": {
+        "imap": {
+          "id": "XzGHblQLtNaIR3E9",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fixed Transform Email Data - Copy this to your Code node\n\nconst emails = $input.all();\n\nreturn emails.map(item => {\n  const e = item.json;\n  \n  // Extract from data - handle nested structure\n  let fromName = null;\n  let fromAddress = null;\n  \n  if (e.from && e.from.value && e.from.value[0]) {\n    fromName = e.from.value[0].name || null;\n    fromAddress = e.from.value[0].address || null;\n  } else if (typeof e.from === 'string') {\n    fromAddress = e.from;\n  }\n  \n  // Extract to data - handle nested structure\n  let toName = null;\n  let toAddress = null;\n  \n  if (e.to && e.to.value && e.to.value[0]) {\n    toName = e.to.value[0].name || null;\n    toAddress = e.to.value[0].address || null;\n  } else if (typeof e.to === 'string') {\n    toAddress = e.to;\n  }\n  \n  // Check for attachments\n  const hasAttachments = Array.isArray(e.attachments) && e.attachments.length > 0;\n  \n  // Get priority from headers\n  let priority = 'normal';\n  if (e.headers && e.headers.priority) {\n    priority = e.headers.priority;\n  }\n  \n  return {\n    json: {\n      message_id: e.messageId || null,\n      subject: e.subject || '(No Subject)',\n      from_name: fromName,\n      from_address: fromAddress,\n      to_name: toName,\n      to_address: toAddress,\n      date_received: e.date ? new Date(e.date).toISOString() : new Date().toISOString(),\n      body_text: e.text || null,\n      body_html: e.html || null,\n      has_attachments: hasAttachments,\n      priority: priority,\n      created_at: new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "9e0edb63-27d1-415d-924b-5a56f1b9afaa",
+      "name": "Transform Email Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        704
+      ]
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "list",
+          "value": "email_logs"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {
+            "has_attachments": false
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "message_id",
+              "displayName": "message_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "subject",
+              "displayName": "subject",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "from_name",
+              "displayName": "from_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "from_address",
+              "displayName": "from_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "to_name",
+              "displayName": "to_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "to_address",
+              "displayName": "to_address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date_received",
+              "displayName": "date_received",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body_text",
+              "displayName": "body_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "body_html",
+              "displayName": "body_html",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "has_attachments",
+              "displayName": "has_attachments",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "boolean",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "2aaadb62-970f-4200-bd22-5d658c7f6785",
+      "name": "Insert Email Logs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -672,
+        704
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "NGazHh70KRdYv9rY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 2
+      },
+      "id": "52d9efed-1ec2-4088-a25d-80eca8b34898",
+      "name": "Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -464,
+        704
+      ],
+      "webhookId": "65754cc5-4421-45db-a944-3abbf075ed3c"
+    },
+    {
+      "parameters": {
+        "jsCode": "const emails = $input.all();\n\n// Get context from earlier in the workflow or set defaults\nlet chatId = 'default_chat';\nlet userName = 'User';\n\n// Try to get context if available\ntry {\n  const context = $('Extract Context')?.first()?.json;\n  if (context) {\n    chatId = context.chatId || chatId;\n    userName = context.userName || userName;\n  }\n} catch (e) {\n  // Context node might not exist, use defaults\n}\n\nif (!emails || emails.length === 0) {\n  return [{\n    json: {\n      emailCount: 0,\n      emailSummary: 'No emails found in your inbox.',\n      chatId: chatId,\n      userName: userName\n    }\n  }];\n}\n\n// Get last 20 emails for summary\nconst recentEmails = emails.slice(0, 20);\n\nconst summaryLines = recentEmails.map((email, index) => {\n  const e = email.json;\n  const fromName = e.from_name || e.from_address || 'Unknown';\n  const fromEmail = e.from_address || 'Unknown';\n  const subject = e.subject || '(No Subject)';\n  const date = e.date_received ? new Date(e.date_received).toLocaleDateString() : 'Unknown date';\n  const body = e.body_text || '';\n  const snippet = body.substring(0, 150).replace(/\\n/g, ' ').trim();\n  const priority = e.priority === 'high' ? '🔴 ' : '';\n  \n  return `${priority}${index + 1}. *${subject}*\\n   From: ${fromName} <${fromEmail}>\\n   Date: ${date}\\n   Preview: ${snippet}...`;\n});\n\nreturn [{\n  json: {\n    emailCount: emails.length,\n    displayedCount: recentEmails.length,\n    emailSummary: summaryLines.join('\\n\\n'),\n    chatId: chatId,\n    userName: userName,\n    rawEmails: recentEmails.map(e => e.json)\n  }\n}];"
+      },
+      "id": "0b19374b-0ff4-423d-bc5a-906bbe6946dc",
+      "name": "Process Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -272,
+        832
+      ]
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-4o-mini",
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "2ddadc90-3864-4347-b347-fb5d44e20bc2",
+      "name": "OpenRouter Summarizer",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -32,
+        1200
+      ],
+      "credentials": {
+        "openRouterApi": {
+          "id": "3D0fFDgcmG2i3yrv",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=User: {{ $json.userName }}\nTotal Emails: {{ $json.emailCount }}\n\nEmail Data:\n{{ $json.emailSummary }}\n\nPlease analyze the above emails and provide a helpful, well-organized summary. Highlight any urgent or important emails first, then categorize the rest. Use Telegram-compatible markdown formatting (*bold*, _italic_).",
+        "options": {
+          "systemMessage": "You are an intelligent Email Assistant with persistent memory capabilities. Your primary role is to help users manage, understand, and interact with their email inbox effectively.\n\n## CORE CAPABILITIES\n\n1. **Email Summarization**: Provide concise, well-organized summaries of emails highlighting:\n   - Sender importance and frequency\n   - Urgent/time-sensitive messages\n   - Action items and deadlines\n   - Categories (work, personal, promotions, notifications)\n\n2. **Memory & Context Retention**: \n   - You have access to the conversation history stored in PostgreSQL\n   - Remember previous email discussions and user preferences\n   - Reference past conversations when relevant\n   - Track patterns in user's email habits over time\n\n3. **Intent Recognition**: Understand and respond to various user intents:\n   - \"Show my emails\" → Provide summary\n   - \"Any urgent emails?\" → Filter and highlight urgent items\n   - \"Emails from [person/company]\" → Filter by sender\n   - \"What was that email about [topic]?\" → Search through knowledge base\n   - \"Follow up on [topic]\" → Recall previous context and advise\n\n## RESPONSE FORMATTING\n\n- Use Telegram-compatible Markdown:\n  - *bold* for emphasis and subject lines\n  - _italic_ for dates and secondary info\n  - Use numbered lists for email listings\n  - Use bullet points for action items\n\n- Structure responses as:\n  1. Quick overview (total count, urgency level)\n  2. Categorized breakdown\n  3. Highlighted important items\n  4. Suggested actions (if applicable)\n\n## BEHAVIOR GUIDELINES\n\n1. **Be Proactive**: If you notice patterns (e.g., unread emails from same sender), mention them\n2. **Be Concise**: Users want quick insights, not lengthy descriptions\n3. **Be Contextual**: Use memory to personalize responses\n4. **Be Helpful**: Suggest follow-up actions when appropriate\n5. **Be Accurate**: Only reference emails you have data about\n\n## MEMORY UTILIZATION\n\nWhen the subflow/Execute Workflow node triggers:\n- Check your chat memory for relevant past conversations\n- Use stored email context to answer questions even without new email fetch\n- Maintain consistency with previous responses\n- Remember user preferences (formatting, detail level, categories of interest)",
+          "maxIterations": 3
+        }
+      },
+      "id": "9a78582f-e692-4f0b-a0ff-e14f5a57239d",
+      "name": "AI Summarize Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -32,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $json.chatId || 'default_session' }}",
+        "tableName": "email_chat_memory",
+        "contextWindowLength": 50
+      },
+      "id": "14e23091-1bbc-4299-9157-e362ae25bfda",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        80,
+        1200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "NGazHh70KRdYv9rY",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const aiResponse = $input.first().json;\n\n// Get context\nlet chatId = 'default_chat';\nlet userName = 'User';\n\ntry {\n  const processedData = $('Process Emails')?.first()?.json;\n  if (processedData) {\n    chatId = processedData.chatId || chatId;\n    userName = processedData.userName || userName;\n  }\n} catch (e) {\n  // Use defaults\n}\n\nconst responseText = aiResponse.output || aiResponse.response?.text || aiResponse.text || 'Unable to generate summary.';\n\nreturn [{\n  json: {\n    response: responseText,\n    chatId: chatId,\n    userName: userName\n  }\n}];"
+      },
+      "id": "ebbe601c-6d71-4159-b658-3abdcb397fa9",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "=7588295628",
+        "text": "={{ $json.response }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "2445337f-fd90-4b8c-8892-4a90c7752b1d",
+      "name": "Telegram Send Response1",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        944
+      ],
+      "webhookId": "92b9d1f3-ff10-44b4-a941-1dd7e69d608c",
+      "credentials": {
+        "telegramApi": {
+          "id": "sx3mHKKvVWzh3PO9",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "888d9adf-aa27-4621-a9b5-9c14e64efb4e",
+      "name": "Respond to Webhook1",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        480,
+        1104
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -320,
+        1264
+      ],
+      "id": "a2618d82-c785-49c7-8f76-d2a0ed85467b",
+      "name": "When Executed by Another Workflow"
+    }
+  ],
+  "pinData": {
+    "IMAP Fetch Emails": [
+      {
+        "json": {
+          "messageId": "<msg001@mail.example.com>",
+          "subject": "Urgent: Q1 Budget Approval Required",
+          "from": {
+            "value": [
+              {
+                "address": "cfo@company.com",
+                "name": "Sarah Johnson"
+              }
+            ],
+            "text": "Sarah Johnson <cfo@company.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-16T09:30:00.000Z",
+          "text": "Hi John,\n\nI need your approval on the Q1 budget by end of day today. The finance team is waiting to finalize the allocations.\n\nPlease review the attached spreadsheet and confirm.\n\nBest regards,\nSarah Johnson\nCFO",
+          "html": "<p>Hi John,</p><p>I need your approval on the Q1 budget by end of day today. The finance team is waiting to finalize the allocations.</p><p>Please review the attached spreadsheet and confirm.</p><p>Best regards,<br>Sarah Johnson<br>CFO</p>",
+          "attachments": [],
+          "headers": {
+            "priority": "high"
+          }
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg002@mail.example.com>",
+          "subject": "Team Meeting - Project Alpha Update",
+          "from": {
+            "value": [
+              {
+                "address": "mike.wilson@company.com",
+                "name": "Mike Wilson"
+              }
+            ],
+            "text": "Mike Wilson <mike.wilson@company.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-16T08:15:00.000Z",
+          "text": "Hey team,\n\nJust a reminder that we have our weekly Project Alpha sync today at 3 PM in Conference Room B.\n\nAgenda:\n1. Sprint review\n2. Blocker discussion\n3. Next week planning\n\nPlease come prepared with your updates.\n\nThanks,\nMike",
+          "html": "<p>Hey team,</p><p>Just a reminder that we have our weekly Project Alpha sync today at 3 PM in Conference Room B.</p><p><strong>Agenda:</strong></p><ol><li>Sprint review</li><li>Blocker discussion</li><li>Next week planning</li></ol><p>Please come prepared with your updates.</p><p>Thanks,<br>Mike</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg003@mail.example.com>",
+          "subject": "Invoice #INV-2025-0142 - Payment Due",
+          "from": {
+            "value": [
+              {
+                "address": "billing@vendorxyz.com",
+                "name": "VendorXYZ Billing"
+              }
+            ],
+            "text": "VendorXYZ Billing <billing@vendorxyz.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-15T14:22:00.000Z",
+          "text": "Dear Customer,\n\nThis is a reminder that Invoice #INV-2025-0142 for $2,450.00 is due on January 20, 2025.\n\nPayment Details:\nAmount: $2,450.00\nDue Date: January 20, 2025\nInvoice Number: INV-2025-0142\n\nPlease process the payment at your earliest convenience.\n\nThank you for your business.\n\nVendorXYZ Billing Team",
+          "html": "<p>Dear Customer,</p><p>This is a reminder that Invoice #INV-2025-0142 for <strong>$2,450.00</strong> is due on <strong>January 20, 2025</strong>.</p><p><strong>Payment Details:</strong><br>Amount: $2,450.00<br>Due Date: January 20, 2025<br>Invoice Number: INV-2025-0142</p><p>Please process the payment at your earliest convenience.</p><p>Thank you for your business.</p><p>VendorXYZ Billing Team</p>",
+          "attachments": [
+            {
+              "filename": "INV-2025-0142.pdf",
+              "contentType": "application/pdf",
+              "size": 125000
+            }
+          ],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg004@mail.example.com>",
+          "subject": "Re: Client Proposal Feedback",
+          "from": {
+            "value": [
+              {
+                "address": "emily.chen@clientcorp.com",
+                "name": "Emily Chen"
+              }
+            ],
+            "text": "Emily Chen <emily.chen@clientcorp.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-15T11:45:00.000Z",
+          "text": "Hi John,\n\nThank you for sending over the proposal. Our team has reviewed it and we have a few questions:\n\n1. Can you clarify the timeline for Phase 2?\n2. Is there flexibility on the pricing for the enterprise package?\n3. What kind of support is included post-implementation?\n\nWe're excited about the potential partnership and look forward to your response.\n\nBest,\nEmily Chen\nDirector of Operations\nClientCorp",
+          "html": "<p>Hi John,</p><p>Thank you for sending over the proposal. Our team has reviewed it and we have a few questions:</p><ol><li>Can you clarify the timeline for Phase 2?</li><li>Is there flexibility on the pricing for the enterprise package?</li><li>What kind of support is included post-implementation?</li></ol><p>We're excited about the potential partnership and look forward to your response.</p><p>Best,<br>Emily Chen<br>Director of Operations<br>ClientCorp</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg005@mail.example.com>",
+          "subject": "Your Weekly Analytics Report",
+          "from": {
+            "value": [
+              {
+                "address": "noreply@analytics-platform.com",
+                "name": "Analytics Platform"
+              }
+            ],
+            "text": "Analytics Platform <noreply@analytics-platform.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-15T06:00:00.000Z",
+          "text": "Weekly Analytics Summary\n\nHere's your performance overview for Jan 8 - Jan 14, 2025:\n\nWebsite Traffic: 45,230 visits (+12% from last week)\nConversion Rate: 3.2% (+0.4%)\nTop Performing Page: /products/new-release\nBounce Rate: 42% (-3%)\n\nKey Insights:\n- Mobile traffic increased by 18%\n- Email campaign drove 2,500 new visitors\n- Average session duration improved to 4:32\n\nView full report: https://analytics-platform.com/report/weekly\n\nAnalytics Platform Team",
+          "html": "<h2>Weekly Analytics Summary</h2><p>Here's your performance overview for Jan 8 - Jan 14, 2025:</p><ul><li><strong>Website Traffic:</strong> 45,230 visits (+12% from last week)</li><li><strong>Conversion Rate:</strong> 3.2% (+0.4%)</li><li><strong>Top Performing Page:</strong> /products/new-release</li><li><strong>Bounce Rate:</strong> 42% (-3%)</li></ul><h3>Key Insights:</h3><ul><li>Mobile traffic increased by 18%</li><li>Email campaign drove 2,500 new visitors</li><li>Average session duration improved to 4:32</li></ul><p><a href='https://analytics-platform.com/report/weekly'>View full report</a></p><p>Analytics Platform Team</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg006@mail.example.com>",
+          "subject": "LinkedIn: You have 5 new connection requests",
+          "from": {
+            "value": [
+              {
+                "address": "notifications@linkedin.com",
+                "name": "LinkedIn"
+              }
+            ],
+            "text": "LinkedIn <notifications@linkedin.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-14T18:30:00.000Z",
+          "text": "Hi John,\n\nYou have 5 new connection requests waiting for you:\n\n- David Smith, Senior Developer at TechCorp\n- Lisa Wang, Product Manager at StartupXYZ\n- Robert Brown, CEO at InnovateNow\n- Jennifer Lee, Marketing Director at BrandAgency\n- Thomas Anderson, Consultant at BigFirm\n\nAccept or ignore these invitations: https://linkedin.com/mynetwork\n\nLinkedIn Team",
+          "html": "<p>Hi John,</p><p>You have 5 new connection requests waiting for you:</p><ul><li>David Smith, Senior Developer at TechCorp</li><li>Lisa Wang, Product Manager at StartupXYZ</li><li>Robert Brown, CEO at InnovateNow</li><li>Jennifer Lee, Marketing Director at BrandAgency</li><li>Thomas Anderson, Consultant at BigFirm</li></ul><p><a href='https://linkedin.com/mynetwork'>Accept or ignore these invitations</a></p><p>LinkedIn Team</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg007@mail.example.com>",
+          "subject": "Action Required: Complete Your Expense Report",
+          "from": {
+            "value": [
+              {
+                "address": "hr-system@company.com",
+                "name": "HR System"
+              }
+            ],
+            "text": "HR System <hr-system@company.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-14T10:00:00.000Z",
+          "text": "Hi John,\n\nThis is a reminder that your expense report for December 2024 is pending submission.\n\nOutstanding Items:\n- Travel expenses from Dec 5-7 conference\n- Client dinner receipt (Dec 12)\n- Office supplies reimbursement\n\nDeadline: January 17, 2025\n\nPlease submit your report via the HR portal: https://hr.company.com/expenses\n\nThank you,\nHR System",
+          "html": "<p>Hi John,</p><p>This is a reminder that your expense report for December 2024 is pending submission.</p><p><strong>Outstanding Items:</strong></p><ul><li>Travel expenses from Dec 5-7 conference</li><li>Client dinner receipt (Dec 12)</li><li>Office supplies reimbursement</li></ul><p><strong>Deadline:</strong> January 17, 2025</p><p>Please submit your report via the <a href='https://hr.company.com/expenses'>HR portal</a></p><p>Thank you,<br>HR System</p>",
+          "attachments": [],
+          "headers": {
+            "priority": "high"
+          }
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg008@mail.example.com>",
+          "subject": "New Comment on Your Document",
+          "from": {
+            "value": [
+              {
+                "address": "noreply@googledocs.com",
+                "name": "Google Docs"
+              }
+            ],
+            "text": "Google Docs <noreply@googledocs.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-14T08:22:00.000Z",
+          "text": "Alex Martinez commented on 'Q1 Marketing Strategy':\n\n\"Great insights on the social media section! Can we add more detail about the influencer partnerships we discussed last week?\"\n\nView document: https://docs.google.com/document/d/abc123\n\nGoogle Docs",
+          "html": "<p><strong>Alex Martinez</strong> commented on <em>'Q1 Marketing Strategy'</em>:</p><blockquote>\"Great insights on the social media section! Can we add more detail about the influencer partnerships we discussed last week?\"</blockquote><p><a href='https://docs.google.com/document/d/abc123'>View document</a></p><p>Google Docs</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg009@mail.example.com>",
+          "subject": "Flight Confirmation - NYC to SFO",
+          "from": {
+            "value": [
+              {
+                "address": "reservations@airline.com",
+                "name": "SkyWings Airlines"
+              }
+            ],
+            "text": "SkyWings Airlines <reservations@airline.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-13T16:45:00.000Z",
+          "text": "Your Flight is Confirmed!\n\nConfirmation Number: SKY789456\n\nFlight Details:\nFlight: SW 234\nDate: January 22, 2025\nDeparture: JFK 8:00 AM\nArrival: SFO 11:30 AM (local time)\nSeat: 12A (Window)\n\nReturn Flight:\nFlight: SW 891\nDate: January 25, 2025\nDeparture: SFO 6:00 PM\nArrival: JFK 2:30 AM +1 (local time)\nSeat: 14C (Aisle)\n\nManage booking: https://airline.com/manage/SKY789456\n\nSafe travels!\nSkyWings Airlines",
+          "html": "<h2>Your Flight is Confirmed!</h2><p><strong>Confirmation Number:</strong> SKY789456</p><h3>Flight Details:</h3><table><tr><td>Flight:</td><td>SW 234</td></tr><tr><td>Date:</td><td>January 22, 2025</td></tr><tr><td>Departure:</td><td>JFK 8:00 AM</td></tr><tr><td>Arrival:</td><td>SFO 11:30 AM (local time)</td></tr><tr><td>Seat:</td><td>12A (Window)</td></tr></table><h3>Return Flight:</h3><table><tr><td>Flight:</td><td>SW 891</td></tr><tr><td>Date:</td><td>January 25, 2025</td></tr><tr><td>Departure:</td><td>SFO 6:00 PM</td></tr><tr><td>Arrival:</td><td>JFK 2:30 AM +1 (local time)</td></tr><tr><td>Seat:</td><td>14C (Aisle)</td></tr></table><p><a href='https://airline.com/manage/SKY789456'>Manage booking</a></p><p>Safe travels!<br>SkyWings Airlines</p>",
+          "attachments": [
+            {
+              "filename": "boarding_pass.pdf",
+              "contentType": "application/pdf",
+              "size": 89000
+            }
+          ],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg010@mail.example.com>",
+          "subject": "Slack: Direct message from Jessica Turner",
+          "from": {
+            "value": [
+              {
+                "address": "notification@slack.com",
+                "name": "Slack"
+              }
+            ],
+            "text": "Slack <notification@slack.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-13T14:10:00.000Z",
+          "text": "Jessica Turner sent you a direct message:\n\n\"Hey John! Quick question - do you have the latest version of the sales deck? The client meeting is tomorrow and I want to make sure we're using the updated numbers.\"\n\nReply in Slack: https://companyworkspace.slack.com/messages/D1234567\n\nSlack",
+          "html": "<p><strong>Jessica Turner</strong> sent you a direct message:</p><blockquote>\"Hey John! Quick question - do you have the latest version of the sales deck? The client meeting is tomorrow and I want to make sure we're using the updated numbers.\"</blockquote><p><a href='https://companyworkspace.slack.com/messages/D1234567'>Reply in Slack</a></p><p>Slack</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg011@mail.example.com>",
+          "subject": "Your Amazon Order Has Shipped",
+          "from": {
+            "value": [
+              {
+                "address": "ship-confirm@amazon.com",
+                "name": "Amazon.com"
+              }
+            ],
+            "text": "Amazon.com <ship-confirm@amazon.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-13T09:00:00.000Z",
+          "text": "Your package is on its way!\n\nOrder #112-3456789-0123456\n\nItems:\n- Wireless Bluetooth Headphones (Qty: 1)\n- USB-C Hub Adapter (Qty: 1)\n\nEstimated Delivery: January 15-16, 2025\nShipping Address: 123 Main St, New York, NY 10001\n\nTrack your package: https://amazon.com/track/TRK123456789\n\nThank you for shopping with Amazon!",
+          "html": "<h2>Your package is on its way!</h2><p><strong>Order #112-3456789-0123456</strong></p><h3>Items:</h3><ul><li>Wireless Bluetooth Headphones (Qty: 1)</li><li>USB-C Hub Adapter (Qty: 1)</li></ul><p><strong>Estimated Delivery:</strong> January 15-16, 2025<br><strong>Shipping Address:</strong> 123 Main St, New York, NY 10001</p><p><a href='https://amazon.com/track/TRK123456789'>Track your package</a></p><p>Thank you for shopping with Amazon!</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg012@mail.example.com>",
+          "subject": "Invitation: Product Launch Planning - Thu Jan 23",
+          "from": {
+            "value": [
+              {
+                "address": "calendar@google.com",
+                "name": "Google Calendar"
+              }
+            ],
+            "text": "Google Calendar <calendar@google.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-12T20:00:00.000Z",
+          "text": "You've been invited to a meeting:\n\nProduct Launch Planning\n\nWhen: Thursday, January 23, 2025 2:00 PM - 4:00 PM (EST)\nWhere: Zoom (link in calendar invite)\nOrganizer: Rachel Green\n\nAttendees:\n- John Doe\n- Mike Wilson\n- Sarah Johnson\n- Alex Martinez\n\nNotes: Final review of launch checklist and marketing materials. Please come prepared with your department updates.\n\nRSVP: Yes | No | Maybe\n\nGoogle Calendar",
+          "html": "<p>You've been invited to a meeting:</p><h2>Product Launch Planning</h2><p><strong>When:</strong> Thursday, January 23, 2025 2:00 PM - 4:00 PM (EST)<br><strong>Where:</strong> Zoom (link in calendar invite)<br><strong>Organizer:</strong> Rachel Green</p><p><strong>Attendees:</strong></p><ul><li>John Doe</li><li>Mike Wilson</li><li>Sarah Johnson</li><li>Alex Martinez</li></ul><p><strong>Notes:</strong> Final review of launch checklist and marketing materials. Please come prepared with your department updates.</p><p><a href='#'>Yes</a> | <a href='#'>No</a> | <a href='#'>Maybe</a></p><p>Google Calendar</p>",
+          "attachments": [
+            {
+              "filename": "invite.ics",
+              "contentType": "text/calendar",
+              "size": 2500
+            }
+          ],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg013@mail.example.com>",
+          "subject": "Security Alert: New sign-in to your account",
+          "from": {
+            "value": [
+              {
+                "address": "security@company.com",
+                "name": "Company Security"
+              }
+            ],
+            "text": "Company Security <security@company.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-12T15:33:00.000Z",
+          "text": "Security Alert\n\nWe detected a new sign-in to your account.\n\nDevice: MacBook Pro\nLocation: New York, NY, USA\nTime: January 12, 2025 at 3:30 PM EST\nIP Address: 192.168.1.xxx\n\nIf this was you, no action is needed.\n\nIf you don't recognize this activity, please secure your account immediately: https://company.com/security\n\nCompany Security Team",
+          "html": "<h2>Security Alert</h2><p>We detected a new sign-in to your account.</p><table><tr><td><strong>Device:</strong></td><td>MacBook Pro</td></tr><tr><td><strong>Location:</strong></td><td>New York, NY, USA</td></tr><tr><td><strong>Time:</strong></td><td>January 12, 2025 at 3:30 PM EST</td></tr><tr><td><strong>IP Address:</strong></td><td>192.168.1.xxx</td></tr></table><p>If this was you, no action is needed.</p><p>If you don't recognize this activity, please <a href='https://company.com/security'>secure your account immediately</a>.</p><p>Company Security Team</p>",
+          "attachments": [],
+          "headers": {
+            "priority": "high"
+          }
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg014@mail.example.com>",
+          "subject": "Newsletter: Tech Trends Weekly #142",
+          "from": {
+            "value": [
+              {
+                "address": "newsletter@techtrends.com",
+                "name": "Tech Trends Weekly"
+              }
+            ],
+            "text": "Tech Trends Weekly <newsletter@techtrends.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-12T08:00:00.000Z",
+          "text": "Tech Trends Weekly #142\n\nThis Week's Top Stories:\n\n1. AI Revolution: How GPT-5 is Changing the Game\nThe latest developments in AI are reshaping industries...\n\n2. Cybersecurity Alert: New Vulnerability Discovered\nA critical zero-day vulnerability has been found in...\n\n3. Startup Spotlight: Five Companies to Watch in 2025\nThese emerging startups are disrupting traditional markets...\n\n4. Remote Work Tools: The Best Apps for Distributed Teams\nProductivity tools that are transforming how we work...\n\nRead more: https://techtrends.com/issue-142\n\nUnsubscribe: https://techtrends.com/unsubscribe",
+          "html": "<h1>Tech Trends Weekly #142</h1><h2>This Week's Top Stories:</h2><h3>1. AI Revolution: How GPT-5 is Changing the Game</h3><p>The latest developments in AI are reshaping industries...</p><h3>2. Cybersecurity Alert: New Vulnerability Discovered</h3><p>A critical zero-day vulnerability has been found in...</p><h3>3. Startup Spotlight: Five Companies to Watch in 2025</h3><p>These emerging startups are disrupting traditional markets...</p><h3>4. Remote Work Tools: The Best Apps for Distributed Teams</h3><p>Productivity tools that are transforming how we work...</p><p><a href='https://techtrends.com/issue-142'>Read more</a></p><p><a href='https://techtrends.com/unsubscribe'>Unsubscribe</a></p>",
+          "attachments": [],
+          "headers": {}
+        }
+      },
+      {
+        "json": {
+          "messageId": "<msg015@mail.example.com>",
+          "subject": "Re: Partnership Opportunity Discussion",
+          "from": {
+            "value": [
+              {
+                "address": "david.lee@partnercompany.com",
+                "name": "David Lee"
+              }
+            ],
+            "text": "David Lee <david.lee@partnercompany.com>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "user@company.com",
+                "name": "John Doe"
+              }
+            ],
+            "text": "John Doe <user@company.com>"
+          },
+          "date": "2025-01-11T17:20:00.000Z",
+          "text": "Hi John,\n\nFollowing up on our call last week. I've discussed the partnership proposal with our leadership team and they're very interested in moving forward.\n\nKey points from our discussion:\n- Revenue share model: 70/30 split\n- Initial pilot period: 3 months\n- Target launch: Q2 2025\n\nCan we schedule a follow-up call next week to discuss the contract details? I'm available Tuesday or Wednesday afternoon.\n\nLooking forward to working together!\n\nBest,\nDavid Lee\nBusiness Development Director\nPartner Company",
+          "html": "<p>Hi John,</p><p>Following up on our call last week. I've discussed the partnership proposal with our leadership team and they're very interested in moving forward.</p><p><strong>Key points from our discussion:</strong></p><ul><li>Revenue share model: 70/30 split</li><li>Initial pilot period: 3 months</li><li>Target launch: Q2 2025</li></ul><p>Can we schedule a follow-up call next week to discuss the contract details? I'm available Tuesday or Wednesday afternoon.</p><p>Looking forward to working together!</p><p>Best,<br>David Lee<br>Business Development Director<br>Partner Company</p>",
+          "attachments": [],
+          "headers": {}
+        }
+      }
+    ]
+  },
+  "connections": {
+    "IMAP Fetch Emails": {
+      "main": [
+        [
+          {
+            "node": "Transform Email Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transform Email Data": {
+      "main": [
+        [
+          {
+            "node": "Insert Email Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Email Logs": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Process Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Emails": {
+      "main": [
+        [
+          {
+            "node": "AI Summarize Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Summarizer": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Summarize Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Summarize Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Summarize Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Telegram Send Response1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond to Webhook1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "AI Summarize Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "versionId": "0ea82781-bc89-4f6c-82e9-a49f11b699d3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "34bd50cb9ae2d4a1e30c06a1260f06e41aa76b6d40f3610f8002cc289adf4293"
+  },
+  "id": "XX4N5P3IiiqTvomnztmvT",
+  "tags": []
+}

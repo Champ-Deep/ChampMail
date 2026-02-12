@@ -1,0 +1,659 @@
+# ChampMail — Implementation Plan
+
+> **ChampMail by LakeB2B** — A white-labeled, self-hosted email marketing and cold outreach platform.  
+> Built by forking BillionMail's mail engine, rebuilding the UI in React, and consolidating onto a unified Python/PostgreSQL stack.
+
+---
+
+## Background & Goal
+
+ChampMail is an email infrastructure product that gives users (primarily the Champions Group / LakeB2B team) full ownership over email sending, domain management, and campaign orchestration. The system must:
+
+- Send emails via self-hosted SMTP (no Gmail dependency)
+- Allow AI agents (OpenClaw) to send emails via API
+- Manage domains, DNS records, and deliverability
+- Run multi-step outreach sequences with AI personalization
+- Provide a unified, branded admin UI ("ChampMail")
+
+### Key Decisions (from brainstorming)
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| BillionMail strategy | **Fork & gut** — keep Go mail engine, rebuild UI in React | Full ownership, consistent tech stack for frontend |
+| Database | **Consolidate to PostgreSQL** | Single DB for analytics, simpler ops |
+| Orchestration | **Celery** (replace n8n) | Keep everything in Python, tighter FastAPI integration |
+| Domain procurement | **Namecheap API** | Already using Namecheap |
+| DNS management | **Cloudflare API** | Programmatic DNS record management |
+| Hosting | **Hostinger VPS** → dedicated server at scale | Port 25 open, PTR/rDNS supported |
+| Prospecting domains | **3–5 domains**, auto IP warmup, domain rotation | Protect sender reputation |
+
+---
+
+## Architecture Overview
+
+```mermaid
+graph TD
+    subgraph "User Layer"
+        A["React Frontend<br/>(ChampMail UI)"]
+        B["OpenClaw / AI Agents"]
+    end
+
+    subgraph "API Layer"
+        C["FastAPI Backend<br/>(Orchestration)"]
+    end
+
+    subgraph "Task Layer"
+        D["Celery Workers<br/>(Async Tasks)"]
+    end
+
+    subgraph "Mail Engine"
+        E["BillionMail Go Service<br/>(Forked, Rebranded)"]
+        F["Postfix SMTP"]
+    end
+
+    subgraph "Data Layer"
+        G["PostgreSQL<br/>(All Data)"]
+        H["FalkorDB<br/>(Knowledge Graph)"]
+        I["Redis<br/>(Cache + Celery Broker)"]
+    end
+
+    subgraph "External APIs"
+        J["Namecheap API<br/>(Domain Search/Purchase)"]
+        K["Cloudflare API<br/>(DNS Management)"]
+        L["OpenRouter<br/>(AI/LLM)"]
+    end
+
+    A --> C
+    B --> C
+    C --> D
+    C --> E
+    D --> E
+    D --> G
+    E --> F
+    E --> G
+    C --> G
+    C --> H
+    C --> I
+    D --> I
+    C --> J
+    C --> K
+    C --> L
+```
+
+### Service Map (Docker Compose)
+
+| Service | Image/Build | Port | Purpose |
+|---------|------------|------|---------|
+| `champmail-frontend` | React + Nginx | 3000 | Unified admin UI |
+| `champmail-api` | FastAPI | 8000 | REST API + orchestration |
+| `champmail-worker` | Celery | — | Async task execution |
+| `champmail-mail` | BillionMail (forked Go) | Internal | Mail engine core |
+| `champmail-smtp` | Postfix | 25, 465, 587 | SMTP server |
+| `champmail-db` | PostgreSQL 16 | 5432 | Primary database |
+| `champmail-graph` | FalkorDB | 6379 | Knowledge graph |
+| `champmail-redis` | Redis 7 | 6380 | Cache + Celery broker |
+| `champmail-flower` | Flower | 5555 | Celery monitoring (dev) |
+
+---
+
+## Proposed Changes
+
+### Phase 1: Fork & Foundation (Week 1–2)
+
+> **Goal**: Fork BillionMail, get the mail engine running in Docker alongside existing stack, establish the codebase structure.
+
+---
+
+#### [NEW] BillionMail Fork Setup
+
+1. Fork `Billionmail/BillionMail` into a private repo
+2. Strip all BillionMail branding from Go source:
+   - Replace package names, CLI tool name (`bm` → `cm`)
+   - Update all user-facing strings: "BillionMail" → "ChampMail"
+   - Replace logos and color scheme assets
+3. Remove the PHP web UI entirely (we're replacing it with React)
+4. Keep only:
+   - Go mail engine (sending, tracking, bounce handling)
+   - Postfix configuration templates
+   - DKIM key generation
+   - IP warmup logic
+   - DNS verification logic
+
+#### [MODIFY] [docker-compose.yml](file:///Users/champion/apps&projects/Champ_mail-main/docker-compose.yml)
+
+Add the forked BillionMail mail engine + Postfix as new services. Add Celery worker + Redis broker configuration. Remove n8n references.
+
+```diff
+ services:
++  # ChampMail Mail Engine (forked BillionMail Go service)
++  mail-engine:
++    build:
++      context: ./mail-engine
++      dockerfile: Dockerfile
++    container_name: champmail-mail
++    restart: unless-stopped
++    depends_on:
++      postgres:
++        condition: service_healthy
++      redis:
++        condition: service_healthy
++    environment:
++      DB_TYPE: postgres
++      DB_HOST: postgres
++      DB_PORT: 5432
++      DB_USER: ${POSTGRES_USER:-champmail}
++      DB_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
++      DB_NAME: ${POSTGRES_DB:-champmail}
++    networks:
++      - champmail-network
++
++  # Postfix SMTP Server
++  smtp:
++    build:
++      context: ./mail-engine/postfix
++      dockerfile: Dockerfile
++    container_name: champmail-smtp
++    restart: unless-stopped
++    ports:
++      - "25:25"
++      - "465:465"
++      - "587:587"
++    volumes:
++      - smtp_data:/var/spool/postfix
++      - dkim_keys:/etc/opendkim/keys
++    networks:
++      - champmail-network
++
++  # Celery Worker
++  worker:
++    build:
++      context: ./backend
++      dockerfile: Dockerfile
++    container_name: champmail-worker
++    command: celery -A app.celery_app worker --loglevel=info --concurrency=4
++    restart: unless-stopped
++    depends_on:
++      - redis
++      - postgres
++    environment:
++      CELERY_BROKER_URL: redis://redis:6379/1
++      CELERY_RESULT_BACKEND: redis://redis:6379/2
++    networks:
++      - champmail-network
++
++  # Celery Beat (Scheduler)
++  beat:
++    build:
++      context: ./backend
++      dockerfile: Dockerfile
++    container_name: champmail-beat
++    command: celery -A app.celery_app beat --loglevel=info
++    restart: unless-stopped
++    depends_on:
++      - redis
++      - postgres
++    networks:
++      - champmail-network
+```
+
+---
+
+### Phase 2: Database Consolidation (Week 2–3)
+
+> **Goal**: Migrate BillionMail's MySQL schema to PostgreSQL. Single source of truth.
+
+---
+
+#### [NEW] PostgreSQL Schema Migration
+
+Translate BillionMail's MySQL tables into PostgreSQL + SQLAlchemy models. Key tables to migrate:
+
+| BillionMail MySQL Table | ChampMail PostgreSQL Model | Purpose |
+|------------------------|---------------------------|---------|
+| `bm_domains` | `domains` | Sending domains + DNS status |
+| `bm_dkim_keys` | `dkim_keys` | DKIM signing keys per domain |
+| `bm_email_templates` | `email_templates` | Campaign templates |
+| `bm_campaigns` | `campaigns` | Campaign definitions |
+| `bm_campaign_stats` | `campaign_analytics` | Open/click/bounce stats |
+| `bm_subscribers` | *(merge into prospects)* | Recipient lists |
+| `bm_send_logs` | `send_logs` | Per-email send records |
+| `bm_bounces` | `bounce_logs` | Bounce tracking |
+| `bm_api_keys` | `api_keys` | API authentication |
+| `bm_ip_warmup` | `ip_warmup_plans` | Warmup schedules |
+
+#### [NEW] [backend/app/models/domain.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/models/domain.py)
+
+New SQLAlchemy model for sending domains:
+
+```python
+class Domain(Base):
+    __tablename__ = "domains"
+    
+    id = Column(UUID, primary_key=True, default=uuid4)
+    domain_name = Column(String, unique=True, nullable=False)  # e.g. "outreach.lakeb2b.com"
+    status = Column(String, default="pending")  # pending | verified | failed
+    
+    # DNS record status
+    mx_verified = Column(Boolean, default=False)
+    spf_verified = Column(Boolean, default=False)
+    dkim_verified = Column(Boolean, default=False)
+    dmarc_verified = Column(Boolean, default=False)
+    
+    # DKIM
+    dkim_selector = Column(String)  # e.g. "champmail"
+    dkim_private_key = Column(Text)  # encrypted
+    dkim_public_key = Column(Text)
+    
+    # Sending config
+    daily_send_limit = Column(Integer, default=50)
+    warmup_enabled = Column(Boolean, default=True)
+    warmup_day = Column(Integer, default=0)  # current warmup day
+    
+    # Namecheap/Cloudflare references
+    namecheap_domain_id = Column(String, nullable=True)
+    cloudflare_zone_id = Column(String, nullable=True)
+    
+    # Deliverability
+    health_score = Column(Float, default=0.0)  # 0-100
+    last_health_check = Column(DateTime, nullable=True)
+    
+    created_at = Column(DateTime, default=func.now())
+    team_id = Column(UUID, ForeignKey("teams.id"))
+```
+
+#### [MODIFY] Go Mail Engine DB Layer
+
+Modify BillionMail's Go code to use `lib/pq` (PostgreSQL driver) instead of `go-sql-driver/mysql`. This involves:
+- Replacing MySQL connection strings with PostgreSQL
+- Updating SQL syntax (e.g., backtick quoting → double-quote, `AUTO_INCREMENT` → `SERIAL`)
+- Updating prepared statement placeholders (`?` → `$1, $2, ...`)
+
+---
+
+### Phase 3: FastAPI ↔ Mail Engine Integration (Week 3–4)
+
+> **Goal**: FastAPI can send emails via the Go mail engine. OpenClaw can call the API.
+
+---
+
+#### [NEW] [backend/app/services/mail_engine_client.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/services/mail_engine_client.py)
+
+Internal client for communicating with the Go mail engine:
+
+```python
+class MailEngineClient:
+    """Client for the ChampMail Go mail engine (forked BillionMail)."""
+    
+    async def send_email(self, recipient: str, subject: str, body: str, 
+                         from_address: str = None, domain_id: str = None,
+                         tracking: bool = True) -> SendResult: ...
+    
+    async def send_batch(self, emails: list[EmailPayload], 
+                         domain_id: str = None) -> BatchResult: ...
+    
+    async def verify_domain_dns(self, domain: str) -> DNSCheckResult: ...
+    
+    async def generate_dkim_keys(self, domain: str, 
+                                  selector: str = "champmail") -> DKIMKeys: ...
+    
+    async def get_send_stats(self, domain_id: str = None, 
+                              date_range: tuple = None) -> SendStats: ...
+```
+
+#### [NEW] [backend/app/api/v1/send.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/api/v1/send.py)
+
+Public-facing send API for OpenClaw and external integrations:
+
+```
+POST /api/v1/send          → Send a single email
+POST /api/v1/send/batch    → Send batch emails
+GET  /api/v1/send/status/{id} → Check send status
+```
+
+Authentication via API key (`X-API-Key` header) or JWT Bearer token.
+
+#### [NEW] [backend/app/api/v1/domains.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/api/v1/domains.py)
+
+Domain management endpoints:
+
+```
+GET    /api/v1/domains                    → List all domains
+POST   /api/v1/domains                    → Add a domain
+GET    /api/v1/domains/{id}               → Get domain details + DNS status
+POST   /api/v1/domains/{id}/verify        → Trigger DNS verification
+DELETE /api/v1/domains/{id}               → Remove a domain
+GET    /api/v1/domains/{id}/dns-records    → Get required DNS records to configure
+GET    /api/v1/domains/{id}/health         → Get deliverability health score
+POST   /api/v1/domains/search              → Search available domains (Namecheap)
+POST   /api/v1/domains/purchase            → Purchase a domain (Namecheap)
+```
+
+---
+
+### Phase 4: External Integrations (Week 4–5)
+
+> **Goal**: Namecheap for domain procurement, Cloudflare for DNS, OpenRouter for AI.
+
+---
+
+#### [NEW] [backend/app/services/namecheap_client.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/services/namecheap_client.py)
+
+Namecheap API integration for domain search and purchase:
+
+```python
+class NamecheapClient:
+    """Namecheap API client for domain procurement."""
+    
+    async def search_domains(self, keyword: str, 
+                              tlds: list[str] = [".com", ".io", ".co"]) -> list[DomainResult]: ...
+    
+    async def check_availability(self, domains: list[str]) -> dict[str, bool]: ...
+    
+    async def purchase_domain(self, domain: str, years: int = 1, 
+                               nameservers: list[str] = None) -> PurchaseResult: ...
+    
+    async def get_domain_info(self, domain: str) -> DomainInfo: ...
+```
+
+> [!IMPORTANT]
+> Namecheap API requires IP whitelisting. The VPS's static IP must be added to the Namecheap account's API access list before this will work.
+
+#### [NEW] [backend/app/services/cloudflare_client.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/services/cloudflare_client.py)
+
+Cloudflare API integration for DNS record management:
+
+```python
+class CloudflareClient:
+    """Cloudflare API client for DNS management."""
+    
+    async def add_zone(self, domain: str) -> Zone: ...
+    
+    async def create_dns_record(self, zone_id: str, record_type: str, 
+                                 name: str, content: str, ttl: int = 3600) -> DNSRecord: ...
+    
+    async def setup_email_dns(self, zone_id: str, server_ip: str, 
+                               dkim_public_key: str, domain: str) -> DNSSetupResult:
+        """One-click setup: creates MX, SPF, DKIM, DMARC records."""
+        ...
+    
+    async def verify_dns_propagation(self, zone_id: str) -> PropagationStatus: ...
+```
+
+#### Domain Onboarding Flow
+
+```mermaid
+sequenceDiagram
+    participant U as User (React UI)
+    participant A as FastAPI
+    participant N as Namecheap API
+    participant C as Cloudflare API
+    participant M as Mail Engine
+
+    U->>A: POST /domains/search {keyword: "lakeb2b"}
+    A->>N: domains.check(["lakeb2b.com", "lakeb2b.io", ...])
+    N-->>A: availability results + pricing
+    A-->>U: Available domains list
+
+    U->>A: POST /domains/purchase {domain: "outreach-lakeb2b.com"}
+    A->>N: domains.create("outreach-lakeb2b.com", nameservers: cloudflare)
+    N-->>A: Purchase confirmed
+
+    A->>C: zones.create("outreach-lakeb2b.com")
+    C-->>A: zone_id
+
+    A->>M: generate_dkim_keys("outreach-lakeb2b.com")
+    M-->>A: DKIM public/private keys
+
+    A->>C: setup_email_dns(zone_id, server_ip, dkim_key, domain)
+    Note over C: Creates MX, SPF, DKIM, DMARC records
+
+    A->>A: Store domain in PostgreSQL
+
+    loop Every 5 min (Celery task)
+        A->>M: verify_domain_dns("outreach-lakeb2b.com")
+        M-->>A: {mx: ✅, spf: ✅, dkim: ✅, dmarc: ✅}
+        A->>A: Update domain status → "verified"
+    end
+
+    A-->>U: Domain ready! Health score: 95/100
+```
+
+---
+
+### Phase 5: Celery Tasks & Smart Sending (Week 5–7)
+
+> **Goal**: Replace n8n with Celery. Implement sequence execution, IP warmup, and domain rotation.
+
+---
+
+#### [NEW] [backend/app/celery_app.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/celery_app.py)
+
+Celery application setup with beat schedule:
+
+```python
+# Key periodic tasks:
+beat_schedule = {
+    "execute-sequence-steps": {
+        "task": "app.tasks.sequences.execute_pending_steps",
+        "schedule": crontab(minute="*/5"),  # Every 5 minutes
+    },
+    "warmup-daily-sends": {
+        "task": "app.tasks.warmup.execute_warmup_sends",
+        "schedule": crontab(hour=9, minute=0),  # 9 AM daily
+    },
+    "check-domain-health": {
+        "task": "app.tasks.domains.check_all_domain_health",
+        "schedule": crontab(hour="*/6"),  # Every 6 hours
+    },
+    "process-bounces": {
+        "task": "app.tasks.bounces.process_bounce_queue",
+        "schedule": crontab(minute="*/10"),  # Every 10 minutes
+    },
+}
+```
+
+#### [NEW] [backend/app/tasks/](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/tasks/)
+
+Task modules:
+
+| File | Purpose |
+|------|---------|
+| `sending.py` | Email sending with domain rotation + rate limiting |
+| `sequences.py` | Execute sequence steps, handle delays, pause on reply |
+| `warmup.py` | IP warmup schedule execution |
+| `domains.py` | DNS verification, health checks |
+| `bounces.py` | Bounce processing and reputation updates |
+| `analytics.py` | Aggregate open/click/bounce stats |
+
+#### Domain Rotation Logic
+
+```python
+class DomainRotator:
+    """Distributes sends across multiple domains to protect reputation."""
+    
+    async def select_domain(self, team_id: str) -> Domain:
+        """
+        Selection strategy:
+        1. Get all verified domains for team
+        2. Filter by daily send limit (not exceeded)
+        3. Filter by warmup status (only send within warmup allowance)
+        4. Select domain with lowest utilization % today
+        5. If all domains at capacity, queue for next day
+        """
+        ...
+```
+
+#### IP Warmup Schedule
+
+Ported from BillionMail's warmup system, adapted for multi-domain:
+
+| Warmup Day | Emails/Day | Notes |
+|-----------|-----------|-------|
+| 1–3 | 10 | Seed emails to known-good addresses |
+| 4–7 | 25 | Mix seed + real prospects |
+| 8–14 | 50 | Monitor bounce rate closely |
+| 15–21 | 100 | Check domain health score |
+| 22–30 | 200 | Gradual ramp |
+| 30+ | 500+ | Full capacity (adjust per domain reputation) |
+
+---
+
+### Phase 6: React Frontend Rebuild (Week 5–8, parallel with Phase 5)
+
+> **Goal**: Unified React admin UI. All BillionMail functionality + existing ChampMail pages under one roof.
+
+---
+
+#### New Pages to Build
+
+| Page | Priority | Source |
+|------|----------|--------|
+| **Domain Manager** | P0 | New — domain list, DNS wizard, health scores |
+| **Send Console** | P0 | New — quick send, API key management |
+| **Campaigns** | P0 | Rebuild [CampaignsPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/CampaignsPage.tsx) (currently 1.3KB scaffold) |
+| **Analytics** | P1 | New — deliverability dashboard, domain reputation |
+| **SMTP Settings** | P1 | Merge into existing [SettingsPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/SettingsPage.tsx) |
+| **IP Warmup** | P1 | New — warmup progress per domain, schedule config |
+| **Domain Search** | P2 | New — search/purchase domains via Namecheap |
+
+#### Existing Pages to Enhance
+
+| Page | Current Size | Enhancement |
+|------|-------------|-------------|
+| [DashboardPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/DashboardPage.tsx) | 12KB | Add email stats, domain health overview, warmup progress |
+| [SettingsPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/SettingsPage.tsx) | 56KB | Add SMTP config, API keys, Namecheap/Cloudflare credentials |
+| [SequencesPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/SequencesPage.tsx) | 11KB | Wire to Celery-based execution (replace n8n webhooks) |
+| [ProspectsPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/ProspectsPage.tsx) | 21KB | Add bulk enroll in sequences, domain assignment |
+| [WorkflowsPage.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/pages/WorkflowsPage.tsx) | 36KB | Repurpose for Celery task monitoring (replace n8n) |
+
+#### Branding
+
+| Element | Value |
+|---------|-------|
+| Product name | ChampMail |
+| Tagline | "by LakeB2B" or "by Champions Group" |
+| Primary color | Champions Group brand color *(need hex code)* |
+| Logo | ChampMail logo *(need asset or generate)* |
+| All "BillionMail" references | Removed entirely |
+
+> [!WARNING]
+> **Branding detail needed**: We need the Champions Group / LakeB2B brand colors (hex codes) and logo assets to finalize the UI theme. Please provide these or confirm if we should design a new one.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **BillionMail License**: BillionMail is AGPLv3 licensed. Forking and using internally is fine. If ChampMail is ever distributed to external customers, AGPL requires source code release OR you'd need a commercial license from BillionMail. For **internal use** (your team, your projects), there's no issue.
+
+> [!IMPORTANT]
+> **Hosting Decision**: Hostinger VPS has a **5 emails/min on port 25** rate limit. For the initial 3–5 domain setup with warmup (10–50 emails/day per domain), this is fine. Once you're sending 500+/day across domains, you'll want to move to a **dedicated server** (Hetzner, OVH, or Hostinger's dedicated plans) where this limit doesn't apply.
+
+> [!IMPORTANT]
+> **API Keys Required Before Development Starts**:
+> - Namecheap API key + whitelisted IP
+> - Cloudflare API token (Zone:Edit, DNS:Edit permissions)
+> - OpenRouter API key (for AI personalization)
+> - Domain(s) to test with
+
+---
+
+## Verification Plan
+
+### Automated Tests
+
+#### 1. Mail Engine Health Check
+```bash
+# After Phase 1 — verify Docker stack comes up
+docker compose up -d
+docker compose ps  # All services should be "healthy"
+
+# Test mail engine API
+curl -X POST http://localhost:8000/api/v1/send \
+  -H "X-API-Key: test-key" \
+  -H "Content-Type: application/json" \
+  -d '{"recipient": "sreedeep@test.com", "subject": "Test", "body": "Hello from ChampMail"}'
+```
+
+#### 2. Domain DNS Verification
+```bash
+# After Phase 4 — test domain onboarding
+curl -X POST http://localhost:8000/api/v1/domains \
+  -H "Authorization: Bearer $JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"domain_name": "test-outreach.com"}'
+
+curl http://localhost:8000/api/v1/domains/{id}/dns-records
+# Should return required MX, SPF, DKIM, DMARC records
+```
+
+#### 3. Celery Task Execution
+```bash
+# After Phase 5 — verify Celery is processing tasks  
+docker logs champmail-worker --tail 50
+# Should show task execution logs
+
+# Test sequence execution
+curl -X POST http://localhost:8000/api/v1/sequences/{id}/enroll \
+  -H "Authorization: Bearer $JWT" \
+  -d '{"prospect_ids": ["uuid1", "uuid2"]}'
+# Verify Celery picks up the task  
+```
+
+#### 4. Unit Tests (Python)
+```bash
+cd /Users/champion/apps&projects/Champ_mail-main/backend
+pytest tests/ -v  # Run existing tests
+
+# New tests to write:
+pytest tests/test_mail_engine_client.py -v   # Mail engine integration
+pytest tests/test_domain_rotation.py -v      # Domain rotation logic
+pytest tests/test_warmup_schedule.py -v      # IP warmup calculations
+pytest tests/test_namecheap_client.py -v     # Namecheap API (mocked)
+pytest tests/test_cloudflare_client.py -v    # Cloudflare API (mocked)
+```
+
+### Manual Verification
+
+#### End-to-End Email Send Test
+1. Deploy full stack via `docker compose up -d`
+2. Log into ChampMail UI at `http://localhost:3000`
+3. Navigate to **Domains** → Add a test domain
+4. Verify DNS records are generated correctly
+5. Navigate to **Send Console** → Send a test email to a personal Gmail
+6. Verify email arrives, check headers for DKIM signature
+7. Check **Analytics** page for the send showing up
+
+#### OpenClaw Integration Test
+1. Configure OpenClaw with the ChampMail API endpoint and API key
+2. Ask OpenClaw: "Send an email to intern@example.com saying 'Meeting at 3pm tomorrow'"
+3. Verify email is sent via ChampMail SMTP
+4. Check send logs in the ChampMail admin panel
+
+---
+
+## Timeline Summary
+
+| Phase | What | Weeks | Team |
+|-------|------|-------|------|
+| 1 | Fork BillionMail + Docker setup | 1–2 | Founder |
+| 2 | DB consolidation (MySQL → PostgreSQL) | 2–3 | Intern (guided) |
+| 3 | FastAPI ↔ Mail Engine integration | 3–4 | Founder |
+| 4 | Namecheap + Cloudflare integrations | 4–5 | Intern |
+| 5 | Celery tasks, warmup, domain rotation | 5–7 | Founder |
+| 6 | React frontend rebuild + branding | 5–8 | Intern (parallel) |
+
+**Day 1 MVP** (end of Week 4): OpenClaw can send emails via `POST /api/v1/send` through ChampMail's self-hosted SMTP.
+
+---
+
+## Files Reference (Existing → Modified)
+
+| Existing File | Action |
+|---------------|--------|
+| [docker-compose.yml](file:///Users/champion/apps&projects/Champ_mail-main/docker-compose.yml) | Add mail-engine, smtp, worker, beat services |
+| [backend/app/main.py](file:///Users/champion/apps&projects/Champ_mail-main/backend/app/main.py) | Add send, domains routers; remove n8n references |
+| [backend/requirements.txt](file:///Users/champion/apps&projects/Champ_mail-main/backend/requirements.txt) | Add celery, cloudflare, namecheap SDK deps |
+| [frontend/src/App.tsx](file:///Users/champion/apps&projects/Champ_mail-main/frontend/src/App.tsx) | Add domain manager, send console, analytics routes |
+| [RALPH-LOOP.md](file:///Users/champion/apps&projects/Champ_mail-main/RALPH-LOOP.md) | Superseded by this plan |
+| [expansion_plan.md.resolved](file:///Users/champion/apps&projects/Champ_mail-main/expansion_plan.md.resolved) | Superseded by this plan |

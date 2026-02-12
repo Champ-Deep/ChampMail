@@ -1,0 +1,138 @@
+# Champion's Email Engine - Infrastructure Stack
+# Cycle 1: Foundation Infrastructure
+#
+# Services:
+#   - FalkorDB: Graph database for knowledge graph
+#   - Graphiti MCP: Knowledge graph framework (optional, can use Python SDK instead)
+#   - Redis: Cache layer
+#
+# BillionMail: Deployed separately (requires its own docker-compose)
+#              See ./billionmail/README.md for setup instructions
+
+networks:
+  champions-network:
+    driver: bridge
+
+volumes:
+  falkordb-data:
+  redis-data:
+  postgres-data:
+
+services:
+  # ============================================
+  # FalkorDB - Graph Database
+  # ============================================
+  # High-performance graph database for knowledge graph storage
+  # Includes built-in browser UI at port 3000
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: champions-falkordb
+    restart: unless-stopped
+    ports:
+      - "${FALKORDB_PORT:-6379}:6379"      # Redis protocol
+      - "${FALKORDB_BROWSER_PORT:-3000}:3000"  # Browser UI
+    volumes:
+      - falkordb-data:/data
+    # Note: No password for local development
+    # For production, use FALKORDB_ARGS with --requirepass
+    networks:
+      - champions-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # PostgreSQL - User Database
+  # ============================================
+  # Relational database for users, teams, settings
+  postgres:
+    image: postgres:16-alpine
+    container_name: champions-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - champions-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-champmail}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Redis - Cache Layer
+  # ============================================
+  # Separate Redis instance for application caching
+  # (FalkorDB uses Redis protocol but is dedicated to graph operations)
+  redis:
+    image: redis:7-alpine
+    container_name: champions-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    networks:
+      - champions-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # Graphiti MCP Server (Optional)
+  # ============================================
+  # Model Context Protocol server for Claude Desktop integration
+  # Only needed if using Claude Desktop directly with the graph
+  # For API usage, use the Python SDK instead
+  graphiti-mcp:
+    image: falkordb/graphiti-knowledge-graph-mcp:latest
+    container_name: champions-graphiti-mcp
+    restart: unless-stopped
+    profiles:
+      - mcp  # Only starts with: docker compose --profile mcp up
+    ports:
+      - "${GRAPHITI_MCP_PORT:-8765}:8765"
+    environment:
+      - DATABASE_TYPE=falkordb
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - FALKORDB_PASSWORD=${FALKORDB_PASSWORD:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    networks:
+      - champions-network
+
+# ============================================
+# Usage Instructions
+# ============================================
+#
+# Basic startup (FalkorDB + Redis):
+#   docker compose up -d
+#
+# With MCP server for Claude Desktop:
+#   docker compose --profile mcp up -d
+#
+# View FalkorDB Browser:
+#   http://localhost:3000
+#
+# Connect to FalkorDB via Redis CLI:
+#   redis-cli -p 6379
+#
+# Stop all services:
+#   docker compose down
+#
+# Stop and remove volumes:
+#   docker compose down -v
