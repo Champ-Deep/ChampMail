@@ -3,8 +3,9 @@ from celery.schedules import crontab
 from kombu import Queue
 import os
 
-celery_broker_url = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
-celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
+_redis_url = os.getenv("REDIS_URL", "")
+celery_broker_url = os.getenv("CELERY_BROKER_URL", f"{_redis_url}/0" if _redis_url else "redis://localhost:6379/0")
+celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", f"{_redis_url}/1" if _redis_url else "redis://localhost:6379/1")
 
 celery_app = Celery(
     "champmail",

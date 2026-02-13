@@ -11,6 +11,7 @@ export { domainsApi } from './domains';
 export { sendingApi } from './sending';
 export { analyticsApi } from './analytics';
 export { adminApi } from './admin';
+export { utmApi } from './utm';
 
 export type { LoginCredentials, RegisterData, User, AuthResponse } from './auth';
 export type { EmailTemplate, TemplateCreate, TemplateUpdate, TemplateListResponse, TemplatePreviewResponse, CompileResponse } from './templates';
@@ -24,3 +25,4 @@ export type { Domain, DNSRecord, DomainHealth, DomainSearchResult, CreateDomainR
 export type { SendEmailRequest, SendEmailResponse, BatchSendRequest, BatchSendResponse, SendStats } from './sending';
 export type { TeamStats, DomainStats, DailyStat, AnalyticsOverview } from './analytics';
 export type { ProspectListItem, ProspectListDetail, CampaignEssence, ResearchResult, Segment, SegmentationResult, Pitch, PersonalizedEmail, PipelineResult, CampaignStyle } from './admin';
+export type { UTMPreset, UTMPresetCreate, CampaignUTMConfig, CampaignUTMConfigUpdate, UTMBreakdownItem, LinkPerformanceItem, UTMOverview } from './utm';

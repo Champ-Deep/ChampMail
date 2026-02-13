@@ -13,6 +13,7 @@ import {
   BarChart3,
   Sparkles,
   Upload,
+  Link2,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { clsx } from 'clsx';
@@ -27,6 +28,7 @@ const navigation = [
   { name: 'Domains', href: '/domains', icon: Globe, tourId: 'nav-domains' },
   { name: 'Send Console', href: '/send', icon: Send, tourId: 'nav-send' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, tourId: 'nav-analytics' },
+  { name: 'UTM Manager', href: '/utm', icon: Link2, tourId: 'nav-utm' },
   { name: 'Workflows', href: '/workflows', icon: Bot, tourId: 'nav-workflows' },
   { name: 'Settings', href: '/settings', icon: Settings, tourId: 'nav-settings' },
 ];

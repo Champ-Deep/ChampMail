@@ -27,6 +27,7 @@ class TokenData(BaseModel):
     user_id: str
     email: str
     role: str = "user"
+    team_id: str | None = None
     exp: datetime | None = None
 
 
@@ -102,6 +103,7 @@ def decode_token(token: str) -> TokenData:
         user_id: str = payload.get("user_id")
         email: str = payload.get("email")
         role: str = payload.get("role", "user")
+        team_id: str | None = payload.get("team_id")
 
         if user_id is None or email is None:
             raise HTTPException(
@@ -110,7 +112,7 @@ def decode_token(token: str) -> TokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        return TokenData(user_id=user_id, email=email, role=role)
+        return TokenData(user_id=user_id, email=email, role=role, team_id=team_id)
 
     except JWTError:
         raise HTTPException(

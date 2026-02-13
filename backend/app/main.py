@@ -20,7 +20,7 @@ from app.middleware.rate_limit import setup_rate_limiting
 
 # Import routers
 from app.api.v1 import auth, prospects, sequences, webhooks, graph, templates, campaigns, email_settings, email_accounts, teams, workflows, email_webhooks, health
-from app.api.v1 import send, domains, tracking, analytics_api
+from app.api.v1 import send, domains, tracking, analytics_api, utm
 from app.api.v1.admin import router as admin_router
 
 
@@ -168,6 +168,7 @@ app.include_router(send.router, prefix=settings.api_v1_prefix, tags=["Send"])
 app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains"])
 app.include_router(tracking.router, prefix=settings.api_v1_prefix, tags=["Tracking"])
 app.include_router(analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"])
+app.include_router(utm.router, prefix=settings.api_v1_prefix, tags=["UTM"])
 app.include_router(admin_router, prefix=settings.api_v1_prefix)
 
 

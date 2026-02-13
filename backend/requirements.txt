@@ -44,9 +44,6 @@ kombu>=5.3.0
 # Cloudflare DNS Management
 cloudflare>=4.0.0
 
-# Namecheap Domain Management
-namecheap>=0.2.0
-
 # Email parsing
 email-validator>=2.0.0
 

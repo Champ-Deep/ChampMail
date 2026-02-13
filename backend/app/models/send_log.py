@@ -43,6 +43,7 @@ class SendLog(Base):
     clicked_at = Column(DateTime, nullable=True)
     first_click_at = Column(DateTime, nullable=True)
     click_count = Column(Integer, default=0)
+    clicked_urls = Column(JSON, nullable=True)
 
     # Bounce handling
     bounced_at = Column(DateTime, nullable=True)

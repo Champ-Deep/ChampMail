@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     redis_port: int = 6380
     redis_password: str = ""
     redis_db: int = 0
+    redis_url_override: str = ""  # Railway: set REDIS_URL_OVERRIDE to override host/port
 
     # PostgreSQL (User Management)
     postgres_host: str = "localhost"
@@ -46,6 +47,7 @@ class Settings(BaseSettings):
     postgres_user: str = "champmail"
     postgres_password: str = "champmail_dev"
     postgres_db: str = "champmail"
+    database_url: str = ""  # Railway: set DATABASE_URL to override individual vars
 
     # JWT Authentication
     jwt_secret_key: str = "your-secret-key-change-in-production"
@@ -110,6 +112,8 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         """Build Redis connection URL."""
+        if self.redis_url_override:
+            return self.redis_url_override
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
@@ -117,6 +121,12 @@ class Settings(BaseSettings):
     @property
     def postgres_url(self) -> str:
         """Build PostgreSQL async connection URL."""
+        if self.database_url:
+            url = self.database_url
+            # Railway provides postgresql://, SQLAlchemy async needs postgresql+asyncpg://
+            if url.startswith("postgresql://"):
+                url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+            return url
         return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
     def validate_production_settings(self) -> None:
@@ -134,8 +144,8 @@ class Settings(BaseSettings):
             if len(self.jwt_secret_key) < 32:
                 errors.append("JWT_SECRET_KEY must be at least 32 characters long")
 
-            # Check database password
-            if not self.postgres_password or self.postgres_password == "champmail_dev":
+            # Check database password (skip if DATABASE_URL is provided)
+            if not self.database_url and (not self.postgres_password or self.postgres_password == "champmail_dev"):
                 errors.append("POSTGRES_PASSWORD must be set to a secure value in production")
 
             # Check webhook secret if webhooks are used

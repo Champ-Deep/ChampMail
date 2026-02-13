@@ -30,18 +30,19 @@ RUN npm run build
 # Production stage with nginx
 FROM nginx:alpine
 
-# Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy nginx config template (envsubst replaces $PORT and $BACKEND_URL at runtime)
+COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
 
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Expose port
-EXPOSE 80
+# Railway assigns PORT dynamically; default to 80 for local Docker
+ENV PORT=80
+ENV BACKEND_URL=http://backend:8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/ || exit 1
 
-# Run nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Use envsubst to inject PORT and BACKEND_URL into nginx config, then start nginx
+CMD sh -c "envsubst '\$PORT \$BACKEND_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"

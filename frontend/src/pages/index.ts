@@ -13,3 +13,4 @@ export { SendConsolePage } from './SendConsolePage';
 export { AnalyticsPage } from './AnalyticsPage';
 export { AdminProspectListsPage } from './AdminProspectListsPage';
 export { AICampaignBuilderPage } from './AICampaignBuilderPage';
+export { UTMManagerPage } from './UTMManagerPage';

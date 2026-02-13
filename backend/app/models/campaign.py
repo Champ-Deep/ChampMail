@@ -81,6 +81,7 @@ class Campaign(Base):
     team = relationship("Team", back_populates="campaigns")
     sequence = relationship("Sequence", back_populates="campaign", uselist=False)
     prospect_enrollments = relationship("CampaignProspect", back_populates="campaign")
+    utm_config = relationship("CampaignUTMConfig", back_populates="campaign", uselist=False, lazy="selectin")
 
 
 class CampaignProspect(Base):

@@ -94,6 +94,7 @@ async def login(
             "user_id": str(user.id),
             "email": user.email,
             "role": user.role,
+            "team_id": str(user.team_id) if user.team_id else None,
         },
         expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
     )
@@ -174,6 +175,7 @@ async def refresh_token(user: TokenData = Depends(require_auth)):
             "user_id": user.user_id,
             "email": user.email,
             "role": user.role,
+            "team_id": user.team_id,
         },
         expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
     )
