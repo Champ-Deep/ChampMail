@@ -11,3 +11,5 @@ export { JoinTeamPage } from './JoinTeamPage';
 export { DomainManagerPage } from './DomainManagerPage';
 export { SendConsolePage } from './SendConsolePage';
 export { AnalyticsPage } from './AnalyticsPage';
+export { AdminProspectListsPage } from './AdminProspectListsPage';
+export { AICampaignBuilderPage } from './AICampaignBuilderPage';

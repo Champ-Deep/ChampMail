@@ -11,12 +11,15 @@ import {
   Globe,
   Send,
   BarChart3,
+  Sparkles,
+  Upload,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { clsx } from 'clsx';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, tourId: 'nav-dashboard' },
+  { name: 'AI Campaign Builder', href: '/ai-campaigns', icon: Sparkles, tourId: 'nav-ai-campaigns' },
   { name: 'Prospects', href: '/prospects', icon: Users, tourId: 'nav-prospects' },
   { name: 'Sequences', href: '/sequences', icon: Zap, tourId: 'nav-sequences' },
   { name: 'Templates', href: '/templates', icon: FileText, tourId: 'nav-templates' },
@@ -26,6 +29,10 @@ const navigation = [
   { name: 'Analytics', href: '/analytics', icon: BarChart3, tourId: 'nav-analytics' },
   { name: 'Workflows', href: '/workflows', icon: Bot, tourId: 'nav-workflows' },
   { name: 'Settings', href: '/settings', icon: Settings, tourId: 'nav-settings' },
+];
+
+const adminNavigation = [
+  { name: 'Prospect Lists', href: '/admin/prospect-lists', icon: Upload, tourId: 'nav-admin-lists' },
 ];
 
 export function Sidebar() {
@@ -41,7 +48,7 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4">
+      <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = location.pathname === item.href ||
             (item.href !== '/' && location.pathname.startsWith(item.href));
@@ -63,6 +70,34 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Admin section - only for admin/data_team roles */}
+        {(user?.role === 'admin' || user?.role === 'data_team') && (
+          <>
+            <div className="pt-4 pb-1 px-3">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admin</p>
+            </div>
+            {adminNavigation.map((item) => {
+              const isActive = location.pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.name}
+                  to={item.href}
+                  data-tour={item.tourId}
+                  className={clsx(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  )}
+                >
+                  <item.icon className="h-5 w-5" />
+                  {item.name}
+                </Link>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* User section */}

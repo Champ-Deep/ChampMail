@@ -14,11 +14,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.db.falkordb import init_graph_db, close_graph_db
 from app.db.postgres import init_db, close_db, get_db
+from app.db.redis import redis_client
 from app.services.user_service import user_service
+from app.middleware.rate_limit import setup_rate_limiting
 
 # Import routers
-from app.api.v1 import auth, prospects, sequences, webhooks, graph, templates, campaigns, email_settings, email_accounts, teams, workflows, email_webhooks
-from app.api.v1 import send, domains
+from app.api.v1 import auth, prospects, sequences, webhooks, graph, templates, campaigns, email_settings, email_accounts, teams, workflows, email_webhooks, health
+from app.api.v1 import send, domains, tracking, analytics_api
+from app.api.v1.admin import router as admin_router
 
 
 @asynccontextmanager
@@ -29,6 +32,17 @@ async def lifespan(app: FastAPI):
     print(f"Environment: {settings.environment}")
     print(f"FalkorDB: {settings.falkordb_host}:{settings.falkordb_port}")
     print(f"PostgreSQL: {settings.postgres_host}:{settings.postgres_port}")
+
+    # Validate production settings
+    try:
+        settings.validate_production_settings()
+        print("Production settings validated successfully")
+    except ValueError as e:
+        if settings.environment == "production":
+            print(f"❌ CRITICAL: {e}")
+            raise  # Stop startup in production with invalid config
+        else:
+            print(f"⚠️  Warning: {e}")
 
     # Initialize PostgreSQL
     try:
@@ -49,9 +63,17 @@ async def lifespan(app: FastAPI):
     else:
         print("FalkorDB unavailable - graph features disabled")
 
+    # Check OpenRouter API key
+    if settings.openrouter_api_key:
+        print("OpenRouter API key configured - AI features enabled")
+    else:
+        print("WARNING: OPENROUTER_API_KEY not set - AI features will fail")
+
     yield
 
     # Shutdown
+    await redis_client.close()
+    print("Redis disconnected")
     close_graph_db()
     print("FalkorDB disconnected")
     await close_db()
@@ -90,48 +112,30 @@ app = FastAPI(
 )
 
 # CORS middleware
+# In production, only allow requests from the frontend domain
+# In development, allow localhost variants
+allowed_origins = [settings.frontend_url]
+if settings.environment == "development":
+    allowed_origins.extend([
+        "http://localhost:3000",
+        "http://localhost:5173",  # Vite default
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly in production
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Rate limiting
+setup_rate_limiting(app)
 
-# Health check endpoint
-@app.get("/health", tags=["Health"])
-async def health_check():
-    """Check API and database health."""
-    from app.db.falkordb import graph_db
-    from sqlalchemy import text
 
-    # Test FalkorDB connection
-    try:
-        graph_db.query("RETURN 1")
-        falkordb_status = "healthy"
-    except Exception as e:
-        falkordb_status = f"unhealthy: {str(e)}"
-
-    # Test PostgreSQL connection
-    try:
-        async with get_db() as session:
-            await session.execute(text("SELECT 1"))
-        postgres_status = "healthy"
-    except Exception as e:
-        postgres_status = f"unhealthy: {str(e)}"
-
-    all_healthy = falkordb_status == "healthy" and postgres_status == "healthy"
-
-    return {
-        "status": "healthy" if all_healthy else "degraded",
-        "version": settings.app_version,
-        "environment": settings.environment,
-        "services": {
-            "falkordb": falkordb_status,
-            "postgresql": postgres_status,
-        },
-    }
+# Health check is now handled by the health router
 
 
 # Root endpoint
@@ -147,6 +151,7 @@ async def root():
 
 
 # Include routers
+app.include_router(health.router)  # Health check at /health (no /api/v1 prefix)
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(prospects.router, prefix=settings.api_v1_prefix)
 app.include_router(sequences.router, prefix=settings.api_v1_prefix)
@@ -161,6 +166,9 @@ app.include_router(email_webhooks.router, prefix=settings.api_v1_prefix, tags=["
 app.include_router(graph.router, prefix=settings.api_v1_prefix)
 app.include_router(send.router, prefix=settings.api_v1_prefix, tags=["Send"])
 app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains"])
+app.include_router(tracking.router, prefix=settings.api_v1_prefix, tags=["Tracking"])
+app.include_router(analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"])
+app.include_router(admin_router, prefix=settings.api_v1_prefix)
 
 
 if __name__ == "__main__":

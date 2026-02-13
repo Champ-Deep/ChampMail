@@ -5,6 +5,8 @@ Handles events from BillionMail, n8n workflows, etc.
 
 from __future__ import annotations
 
+import hmac
+import hashlib
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional, Dict
@@ -14,6 +16,7 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.db.falkordb import graph_db
+from app.services.tracking_service import tracking_service
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
@@ -66,19 +69,43 @@ class N8NWorkflowEvent(BaseModel):
 
 
 def verify_webhook_signature(
+    payload: bytes,
     signature: str | None,
-    expected_key: str,
+    secret: str,
 ) -> bool:
-    """Verify webhook signature for security."""
-    # Simple key comparison for now
-    # TODO: Implement proper HMAC signature verification
-    if not expected_key:
-        return True  # No verification if no key configured
-    return signature == expected_key
+    """
+    Verify HMAC-SHA256 webhook signature for security.
+
+    Args:
+        payload: Raw request body as bytes
+        signature: Signature from X-Webhook-Signature header
+        secret: Webhook secret from settings
+
+    Returns:
+        True if signature is valid, False otherwise
+    """
+    # In development mode with no secret, skip verification
+    if not secret:
+        return True
+
+    # Signature is required in production
+    if not signature:
+        return False
+
+    # Compute expected HMAC signature
+    expected = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+
+    # Use constant-time comparison to prevent timing attacks
+    return hmac.compare_digest(signature, expected)
 
 
 @router.post("/email-events")
 async def handle_email_event(
+    request: Request,
     event: EmailEvent,
     x_webhook_signature: str | None = Header(default=None),
 ):
@@ -95,9 +122,14 @@ async def handle_email_event(
     - unsubscribed: Recipient unsubscribed
     - complained: Recipient marked as spam
     """
-    # Verify signature (optional based on config)
-    # if not verify_webhook_signature(x_webhook_signature, settings.billionmail_webhook_secret):
-    #     raise HTTPException(status_code=401, detail="Invalid webhook signature")
+    # Verify webhook signature in production
+    if settings.environment == "production":
+        body = await request.body()
+        if not verify_webhook_signature(body, x_webhook_signature, settings.webhook_secret):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid webhook signature. Ensure X-Webhook-Signature header is present and correct."
+            )
 
     timestamp = event.timestamp or datetime.utcnow()
 
@@ -152,7 +184,19 @@ async def handle_email_event(
         })
 
     elif event.event_type == EmailEventType.BOUNCED:
-        # Update prospect and enrollment status
+        # Process bounce through tracking service for detailed classification
+        try:
+            await tracking_service.process_bounce_webhook({
+                "email": event.prospect_email,
+                "smtp_code": event.metadata.get("smtp_code", ""),
+                "smtp_response": event.metadata.get("smtp_response", ""),
+                "bounce_type": event.metadata.get("bounce_type", ""),
+                "message_id": event.email_id or "",
+            })
+        except Exception:
+            pass  # Tracking service failure shouldn't break webhook
+
+        # Update prospect and enrollment status in graph DB
         query = """
             MATCH (p:Prospect {email: $email})
             SET p.email_status = 'bounced',

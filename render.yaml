@@ -1,0 +1,113 @@
+# Render deployment configuration for ChampMail
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # Backend API Service
+  - type: web
+    name: champmail-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /health
+    plan: starter
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: PORT
+        value: 8000
+
+      # Database connection (auto-provided by Render PostgreSQL)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: champmail-db
+          property: connectionString
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: champmail-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: champmail-db
+          property: port
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: champmail-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: champmail-db
+          property: password
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: champmail-db
+          property: database
+
+      # Redis connection (auto-provided by Render Redis)
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: champmail-redis
+          property: connectionString
+      - key: REDIS_HOST
+        fromService:
+          type: redis
+          name: champmail-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: redis
+          name: champmail-redis
+          property: port
+
+      # Security (Generate these securely)
+      - key: JWT_SECRET_KEY
+        generateValue: true
+        # Or set manually: openssl rand -hex 32
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: EMAIL_ENCRYPTION_KEY
+        sync: false
+        # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+      # Frontend URL (set after frontend is deployed)
+      - key: FRONTEND_URL
+        value: https://champmail-frontend.onrender.com
+
+      # External APIs (set these in Render dashboard)
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: NAMECHEAP_API_KEY
+        sync: false
+      - key: CLOUDFLARE_API_TOKEN
+        sync: false
+
+  # Frontend Static Site
+  - type: web
+    name: champmail-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: ./frontend/dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        value: https://champmail-backend.onrender.com
+      - key: VITE_ENVIRONMENT
+        value: production
+
+databases:
+  # PostgreSQL Database
+  - name: champmail-db
+    databaseName: champmail
+    user: champmail
+    plan: starter
+
+  # Redis Cache
+  - name: champmail-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru

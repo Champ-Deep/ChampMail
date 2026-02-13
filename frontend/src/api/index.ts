@@ -10,15 +10,17 @@ export { teamsApi } from './teams';
 export { domainsApi } from './domains';
 export { sendingApi } from './sending';
 export { analyticsApi } from './analytics';
+export { adminApi } from './admin';
 
 export type { LoginCredentials, RegisterData, User, AuthResponse } from './auth';
 export type { EmailTemplate, TemplateCreate, TemplateUpdate, TemplateListResponse, TemplatePreviewResponse, CompileResponse } from './templates';
 export type { Prospect, ProspectCreate, ProspectUpdate, ProspectListParams } from './prospects';
 export type { Sequence, SequenceCreate, SequenceUpdate, SequenceStep, SequenceAnalytics, StepType, SequenceStatus } from './sequences';
-export type { Campaign, CampaignCreate, CampaignListResponse, CampaignStats, CampaignRecipient, CampaignStatus } from './campaigns';
+export type { Campaign, CampaignCreate, CampaignListResponse, CampaignStats, CampaignRecipient, CampaignStatus, PipelineStatus, CampaignTracking } from './campaigns';
 export type { EmailSettingsResponse, EmailSettingsUpdate, SMTPSettings, IMAPSettings, SenderIdentity, TestConnectionResponse } from './emailSettings';
 export type { EmailAccount, EmailAccountCreate, EmailAccountUpdate } from './emailAccounts';
 export type { Team, TeamMember, TeamInvite, PendingInvite, CreateTeamData, UpdateTeamData, InviteMemberData, AcceptInviteResponse } from './teams';
 export type { Domain, DNSRecord, DomainHealth, DomainSearchResult, CreateDomainRequest, DNSRecordsResponse } from './domains';
 export type { SendEmailRequest, SendEmailResponse, BatchSendRequest, BatchSendResponse, SendStats } from './sending';
 export type { TeamStats, DomainStats, DailyStat, AnalyticsOverview } from './analytics';
+export type { ProspectListItem, ProspectListDetail, CampaignEssence, ResearchResult, Segment, SegmentationResult, Pitch, PersonalizedEmail, PipelineResult, CampaignStyle } from './admin';

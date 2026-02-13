@@ -30,6 +30,8 @@ export interface CampaignStats {
 
 export interface DomainStats {
   domain_id: string;
+  domain: string;
+  domain_name?: string;
   total_sent: number;
   total_opened: number;
   total_clicked: number;
@@ -106,11 +108,18 @@ export const analyticsApi = {
     if (domainId) params.append('domain_id', domainId);
     if (campaignId) params.append('campaign_id', campaignId);
     const { data } = await api.get(`/analytics/daily?${params.toString()}`);
-    return data;
+    return data.stats || data;
   },
 
   getOverview: async (): Promise<AnalyticsOverview> => {
     const { data } = await api.get('/analytics/overview');
     return data;
+  },
+
+  getAllDomainStats: async (days: number = 30): Promise<DomainStats[]> => {
+    const params = new URLSearchParams();
+    params.append('days', days.toString());
+    const { data } = await api.get(`/analytics/domains?${params.toString()}`);
+    return data.domains || data;
   },
 };

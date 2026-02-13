@@ -8,6 +8,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Depends
 
 from app.db.falkordb import graph_db
+from app.core.security import require_auth, TokenData
 from app.schemas.prospect import (
     ProspectCreate,
     ProspectUpdate,
@@ -248,12 +249,17 @@ async def get_prospect_timeline(email: str):
 
 
 @router.post("/bulk", response_model=BulkImportResponse)
-async def bulk_import_prospects(data: BulkProspectImport):
+async def bulk_import_prospects(
+    data: BulkProspectImport,
+    user: TokenData = Depends(require_auth)
+):
     """
     Bulk import prospects.
 
     Creates prospects and optionally links to companies.
     Returns count of created, updated, and failed records.
+
+    Requires authentication. User must be logged in to import prospects.
     """
     created = 0
     updated = 0

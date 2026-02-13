@@ -20,6 +20,8 @@ import {
   DomainManagerPage,
   SendConsolePage,
   AnalyticsPage,
+  AdminProspectListsPage,
+  AICampaignBuilderPage,
 } from './pages';
 
 const queryClient = new QueryClient({
@@ -109,6 +111,8 @@ function App() {
               <Route path="/domains" element={<DomainManagerPage />} />
               <Route path="/send" element={<SendConsolePage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/admin/prospect-lists" element={<AdminProspectListsPage />} />
+              <Route path="/ai-campaigns" element={<AICampaignBuilderPage />} />
             </Route>
 
             {/* Full-screen template editor (no sidebar) */}

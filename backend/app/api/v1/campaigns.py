@@ -17,6 +17,9 @@ from app.services.campaigns import (
     Campaign,
     CampaignStatus,
 )
+from app.services.campaign_pipeline import campaign_pipeline
+from app.services.send_scheduler import send_scheduler
+from app.services.tracking_service import tracking_service
 
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
@@ -381,3 +384,178 @@ async def resume_campaign(
     background_tasks.add_task(_send_campaign_background, campaign_id)
 
     return {"message": "Campaign resumed", "campaign_id": campaign_id}
+
+
+# ============================================================================
+# Pipeline Status & Scheduling Endpoints
+# ============================================================================
+
+
+class PipelineStatusResponse(BaseModel):
+    """Current status of the AI pipeline for a campaign."""
+    status: str
+    current_step: Optional[str] = None
+    step_index: Optional[int] = None
+    total_steps: Optional[int] = None
+    progress: Optional[int] = None
+    error: Optional[str] = None
+    run_id: Optional[str] = None
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    total_emails: Optional[int] = None
+
+
+class ScheduleRequest(BaseModel):
+    """Request to schedule campaign sends with optimal timing."""
+    pass  # Uses campaign's existing personalized emails
+
+
+class ScheduleResponse(BaseModel):
+    """Campaign schedule summary."""
+    total_scheduled: int
+    first_send: Optional[str] = None
+    last_send: Optional[str] = None
+
+
+class TrackingStatsResponse(BaseModel):
+    """Detailed tracking stats for a campaign."""
+    campaign_id: str
+    campaign_name: str = ""
+    campaign_status: str = ""
+    total_prospects: int = 0
+    sent: int = 0
+    delivered: int = 0
+    opens: dict = {}
+    clicks: dict = {}
+    bounces: dict = {}
+    replies: dict = {}
+    unsubscribes: int = 0
+    delivery_rate: float = 0.0
+
+
+@router.get("/{campaign_id}/pipeline-status", response_model=PipelineStatusResponse)
+async def get_pipeline_status(
+    campaign_id: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Poll the AI pipeline status for a campaign.
+
+    Returns the current step, progress percentage, and any errors.
+    Frontend should poll this every 2-3 seconds while pipeline is running.
+    """
+    status = await campaign_pipeline.get_pipeline_status(campaign_id)
+    if not status:
+        return PipelineStatusResponse(status="not_started")
+
+    return PipelineStatusResponse(**status)
+
+
+@router.get("/{campaign_id}/pipeline-results")
+async def get_pipeline_results(
+    campaign_id: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Get the full pipeline results after completion.
+
+    Returns essence, segments, pitches, and generated emails.
+    """
+    results = await campaign_pipeline.get_all_results(campaign_id)
+    if not results:
+        raise HTTPException(status_code=404, detail="No pipeline results found")
+
+    return results
+
+
+@router.get("/{campaign_id}/pipeline-step/{step_name}")
+async def get_pipeline_step_result(
+    campaign_id: str,
+    step_name: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Get the result of a specific pipeline step.
+
+    Valid step names: extract_essence, research_prospects, segment_prospects,
+    generate_pitches, personalize_emails, generate_html
+    """
+    valid_steps = [
+        "extract_essence", "research_prospects", "segment_prospects",
+        "generate_pitches", "personalize_emails", "generate_html",
+    ]
+    if step_name not in valid_steps:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid step name. Must be one of: {valid_steps}",
+        )
+
+    result = await campaign_pipeline.get_step_result(campaign_id, step_name)
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No result for step '{step_name}'")
+
+    return result
+
+
+@router.post("/{campaign_id}/schedule", response_model=ScheduleResponse)
+async def schedule_campaign(
+    campaign_id: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Schedule campaign sends with intelligent timing.
+
+    Uses timezone detection and B2B heuristics to find optimal send times
+    for each prospect (Tue-Thu, 10am-2pm local time).
+    """
+    campaign = campaign_service.get_campaign(campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    if campaign.owner_id != user.user_id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    # Get pipeline results for personalized emails
+    results = await campaign_pipeline.get_all_results(campaign_id)
+    if not results or not results.get("emails"):
+        raise HTTPException(
+            status_code=400,
+            detail="Run the AI pipeline first to generate personalized emails",
+        )
+
+    schedule = await send_scheduler.schedule_campaign_sends(
+        campaign_id=campaign_id,
+        personalized_emails=results["emails"],
+    )
+
+    return ScheduleResponse(
+        total_scheduled=len(schedule),
+        first_send=schedule[0]["send_at"] if schedule else None,
+        last_send=schedule[-1]["send_at"] if schedule else None,
+    )
+
+
+@router.get("/{campaign_id}/schedule")
+async def get_campaign_schedule(
+    campaign_id: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Get the current send schedule for a campaign."""
+    stats = await send_scheduler.get_campaign_schedule_stats(campaign_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail="No schedule found for this campaign")
+
+    return stats
+
+
+@router.get("/{campaign_id}/tracking", response_model=TrackingStatsResponse)
+async def get_campaign_tracking(
+    campaign_id: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Get comprehensive tracking stats for a campaign.
+
+    Combines real-time Redis counters with database aggregates.
+    Results are cached for 5 minutes.
+    """
+    stats = await tracking_service.get_campaign_tracking_stats(campaign_id)
+    if stats.get("error"):
+        raise HTTPException(status_code=404, detail=stats["error"])
+
+    return TrackingStatsResponse(**stats)

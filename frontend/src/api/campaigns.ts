@@ -59,6 +59,34 @@ export interface CampaignRecipient {
   message_id?: string | null;
 }
 
+export interface PipelineStatus {
+  status: string;
+  current_step?: string;
+  step_index?: number;
+  total_steps?: number;
+  progress?: number;
+  error?: string;
+  run_id?: string;
+  started_at?: string;
+  completed_at?: string;
+  total_emails?: number;
+}
+
+export interface CampaignTracking {
+  campaign_id: string;
+  campaign_name: string;
+  campaign_status: string;
+  total_prospects: number;
+  sent: number;
+  delivered: number;
+  opens: { total: number; unique: number; rate: number };
+  clicks: { total: number; unique: number; rate: number; click_to_open_rate: number };
+  bounces: { total: number; rate: number; breakdown: Record<string, number> };
+  replies: { total: number; rate: number };
+  unsubscribes: number;
+  delivery_rate: number;
+}
+
 export const campaignsApi = {
   async list(
     limit = 50,
@@ -111,6 +139,31 @@ export const campaignsApi = {
 
   async resume(id: string): Promise<{ message: string; campaign_id: string }> {
     const response = await api.post(`/campaigns/${id}/resume`);
+    return response.data;
+  },
+
+  async getPipelineStatus(id: string): Promise<PipelineStatus> {
+    const response = await api.get<PipelineStatus>(`/campaigns/${id}/pipeline-status`);
+    return response.data;
+  },
+
+  async getPipelineResults(id: string): Promise<any> {
+    const response = await api.get(`/campaigns/${id}/pipeline-results`);
+    return response.data;
+  },
+
+  async scheduleSends(id: string): Promise<{ total_scheduled: number; first_send: string | null; last_send: string | null }> {
+    const response = await api.post(`/campaigns/${id}/schedule`);
+    return response.data;
+  },
+
+  async getSchedule(id: string): Promise<any> {
+    const response = await api.get(`/campaigns/${id}/schedule`);
+    return response.data;
+  },
+
+  async getTracking(id: string): Promise<CampaignTracking> {
+    const response = await api.get<CampaignTracking>(`/campaigns/${id}/tracking`);
     return response.data;
   },
 };

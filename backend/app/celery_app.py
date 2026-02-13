@@ -17,6 +17,7 @@ celery_app = Celery(
         "app.tasks.domains",
         "app.tasks.bounces",
         "app.tasks.analytics",
+        "app.tasks.campaign_tasks",
     ],
 )
 

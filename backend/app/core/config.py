@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 1440  # 24 hours
 
+    # Security
+    webhook_secret: str = ""  # HMAC secret for webhook signature verification
+    frontend_url: str = "http://localhost:3000"  # Frontend URL for CORS
+
     # ChampMail Internal Mail Server (Stalwart-based)
     # SMTP (Outbound Email)
     smtp_host: str = "localhost"
@@ -76,20 +80,25 @@ class Settings(BaseSettings):
     n8n_webhook_url: str = "https://championtest.up.railway.app/webhook"
     n8n_api_key: str = ""
 
-    # AI Configuration
-    # Text Generation (Brain)
-    ai_provider: str = "anthropic"  # "openai" or "anthropic"
-    ai_model: str = "claude-3-5-sonnet-latest"
-    anthropic_api_key: str = ""
-    
-    # Embeddings (Knowledge Graph)
-    embedding_provider: str = "openai"  # "openai" or "gemini"
-    openai_api_key: str = ""
-    gemini_api_key: str = ""
+    # AI Configuration - ALL models via OpenRouter
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
-    # External APIs
-    lake_b2b_api_key: str = ""
-    lake_b2b_api_url: str = "https://api.lakeb2b.com"
+    # Model selection (all via OpenRouter)
+    research_model: str = "perplexity/sonar-pro"
+    segmentation_model: str = "anthropic/claude-sonnet-4-20250514"
+    pitch_model: str = "anthropic/claude-sonnet-4-20250514"
+    html_model: str = "anthropic/claude-sonnet-4-20250514"
+    general_model: str = "anthropic/claude-sonnet-4-20250514"
+    embedding_model: str = "openai/text-embedding-3-small"
+
+    # Research caching
+    research_cache_ttl_days: int = 30
+    research_batch_size: int = 50
+
+    # Rate limiting for OpenRouter
+    openrouter_rate_limit: int = 10
+    openrouter_timeout: int = 120
 
     @property
     def falkordb_url(self) -> str:
@@ -109,6 +118,35 @@ class Settings(BaseSettings):
     def postgres_url(self) -> str:
         """Build PostgreSQL async connection URL."""
         return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+
+    def validate_production_settings(self) -> None:
+        """
+        Validate critical settings for production deployment.
+        Raises ValueError if any critical settings are using default/insecure values.
+        """
+        if self.environment == "production":
+            errors = []
+
+            # Check JWT secret
+            if self.jwt_secret_key == "your-secret-key-change-in-production":
+                errors.append("JWT_SECRET_KEY must be changed from default value in production")
+
+            if len(self.jwt_secret_key) < 32:
+                errors.append("JWT_SECRET_KEY must be at least 32 characters long")
+
+            # Check database password
+            if not self.postgres_password or self.postgres_password == "champmail_dev":
+                errors.append("POSTGRES_PASSWORD must be set to a secure value in production")
+
+            # Check webhook secret if webhooks are used
+            if not self.webhook_secret:
+                errors.append("WEBHOOK_SECRET should be set for webhook signature verification in production")
+
+            if errors:
+                raise ValueError(
+                    "Production configuration validation failed:\n" +
+                    "\n".join(f"  - {error}" for error in errors)
+                )
 
 
 @lru_cache
