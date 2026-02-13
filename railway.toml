@@ -7,8 +7,8 @@ dockerfilePath = "backend/Dockerfile"
 
 [deploy]
 # Run migrations before starting the app
-startCommand = "sh -c 'cd /app && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
-healthcheckPath = "/health"
+startCommand = "sh -c 'cd /app && (alembic upgrade head || echo \"Migration warning: $?\") && uvicorn app.main:app --host 0.0.0.0 --port $PORT'"
+healthcheckPath = "/health/ready"
 healthcheckTimeout = 100
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10

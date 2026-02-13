@@ -53,7 +53,7 @@ async def health_check():
         }
         health_status["status"] = "unhealthy"
 
-    # Check Redis cache
+    # Check Redis cache (non-critical — app works without cache)
     try:
         await redis_client.ping()
         health_status["checks"]["redis"] = {
@@ -63,10 +63,10 @@ async def health_check():
         }
     except Exception as e:
         health_status["checks"]["redis"] = {
-            "status": "unhealthy",
-            "error": str(e)
+            "status": "degraded",
+            "error": str(e),
+            "message": "Redis unavailable — caching disabled"
         }
-        health_status["status"] = "unhealthy"
 
     # Check FalkorDB (optional - may not be available in MVP)
     try:

@@ -25,6 +25,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Cache buster: Railway sets RAILWAY_GIT_COMMIT_SHA per deploy,
+# ensuring COPY . . is never stale from a previous build
+ARG RAILWAY_GIT_COMMIT_SHA
 # Copy application code
 COPY . .
 
