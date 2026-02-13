@@ -6,6 +6,8 @@ import { useAuthStore } from './store/authStore';
 import { MainLayout } from './components/layout';
 import { OnboardingProvider } from './components/onboarding';
 import { HelpChatWidget } from './components/help';
+import { ChampMailThesysProvider } from './providers/ThesysProvider';
+import '@crayonai/react-ui/styles/index.css';
 import {
   LoginPage,
   DashboardPage,
@@ -23,6 +25,7 @@ import {
   AdminProspectListsPage,
   AICampaignBuilderPage,
   UTMManagerPage,
+  AIAssistantPage,
 } from './pages';
 
 const queryClient = new QueryClient({
@@ -85,50 +88,53 @@ function App() {
           duration: 4000,
         }}
       />
-      <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route element={<PublicRoute />}>
-            <Route path="/login" element={<LoginPage />} />
-          </Route>
-
-          {/* Protected routes with onboarding and help */}
-          <Route
-            element={
-              <OnboardingProvider>
-                <ProtectedRoute />
-                <HelpChatWidget />
-              </OnboardingProvider>
-            }
-          >
-            <Route element={<MainLayout />}>
-              <Route path="/" element={<DashboardPage />} />
-              <Route path="/prospects" element={<ProspectsPage />} />
-              <Route path="/sequences" element={<SequencesPage />} />
-              <Route path="/templates" element={<TemplatesPage />} />
-              <Route path="/campaigns" element={<CampaignsPage />} />
-              <Route path="/workflows" element={<WorkflowsPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/domains" element={<DomainManagerPage />} />
-              <Route path="/send" element={<SendConsolePage />} />
-              <Route path="/analytics" element={<AnalyticsPage />} />
-              <Route path="/utm" element={<UTMManagerPage />} />
-              <Route path="/admin/prospect-lists" element={<AdminProspectListsPage />} />
-              <Route path="/ai-campaigns" element={<AICampaignBuilderPage />} />
+      <ChampMailThesysProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route element={<PublicRoute />}>
+              <Route path="/login" element={<LoginPage />} />
             </Route>
 
-            {/* Full-screen template editor (no sidebar) */}
-            <Route path="/templates/:id/edit" element={<TemplateEditorPage />} />
-            <Route path="/templates/new" element={<TemplateEditorPage />} />
+            {/* Protected routes with onboarding and help */}
+            <Route
+              element={
+                <OnboardingProvider>
+                  <ProtectedRoute />
+                  <HelpChatWidget />
+                </OnboardingProvider>
+              }
+            >
+              <Route element={<MainLayout />}>
+                <Route path="/" element={<DashboardPage />} />
+                <Route path="/prospects" element={<ProspectsPage />} />
+                <Route path="/sequences" element={<SequencesPage />} />
+                <Route path="/templates" element={<TemplatesPage />} />
+                <Route path="/campaigns" element={<CampaignsPage />} />
+                <Route path="/workflows" element={<WorkflowsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/domains" element={<DomainManagerPage />} />
+                <Route path="/send" element={<SendConsolePage />} />
+                <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route path="/utm" element={<UTMManagerPage />} />
+                <Route path="/admin/prospect-lists" element={<AdminProspectListsPage />} />
+                <Route path="/ai-campaigns" element={<AICampaignBuilderPage />} />
+                <Route path="/assistant" element={<AIAssistantPage />} />
+              </Route>
 
-            {/* Join team page (full-screen, no sidebar) */}
-            <Route path="/join-team" element={<JoinTeamPage />} />
-          </Route>
+              {/* Full-screen template editor (no sidebar) */}
+              <Route path="/templates/:id/edit" element={<TemplateEditorPage />} />
+              <Route path="/templates/new" element={<TemplateEditorPage />} />
 
-          {/* Catch all - redirect to dashboard */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+              {/* Join team page (full-screen, no sidebar) */}
+              <Route path="/join-team" element={<JoinTeamPage />} />
+            </Route>
+
+            {/* Catch all - redirect to dashboard */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </ChampMailThesysProvider>
     </QueryClientProvider>
   );
 }

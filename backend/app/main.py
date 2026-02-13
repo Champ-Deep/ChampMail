@@ -20,7 +20,7 @@ from app.middleware.rate_limit import setup_rate_limiting
 
 # Import routers
 from app.api.v1 import auth, prospects, sequences, webhooks, graph, templates, campaigns, email_settings, email_accounts, teams, workflows, email_webhooks, health
-from app.api.v1 import send, domains, tracking, analytics_api, utm
+from app.api.v1 import send, domains, tracking, analytics_api, utm, c1_chat
 from app.api.v1.admin import router as admin_router
 
 
@@ -68,6 +68,12 @@ async def lifespan(app: FastAPI):
         print("OpenRouter API key configured - AI features enabled")
     else:
         print("WARNING: OPENROUTER_API_KEY not set - AI features will fail")
+
+    # Check Thesys C1 API key
+    if settings.thesys_api_key:
+        print("Thesys C1 API key configured - Generative UI enabled")
+    else:
+        print("INFO: THESYS_API_KEY not set - AI Assistant will be disabled")
 
     yield
 
@@ -169,6 +175,7 @@ app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains
 app.include_router(tracking.router, prefix=settings.api_v1_prefix, tags=["Tracking"])
 app.include_router(analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"])
 app.include_router(utm.router, prefix=settings.api_v1_prefix, tags=["UTM"])
+app.include_router(c1_chat.router, prefix=settings.api_v1_prefix, tags=["C1 Chat"])
 app.include_router(admin_router, prefix=settings.api_v1_prefix)
 
 

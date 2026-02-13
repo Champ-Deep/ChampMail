@@ -1,6 +1,7 @@
 """
 AI services module for ChampMail.
-All AI operations route through OpenRouter.
+OpenRouter handles research/segmentation/pitch/HTML generation.
+Thesys C1 handles generative UI chat.
 """
 
 from app.services.ai.openrouter_service import (
@@ -16,6 +17,8 @@ from app.services.ai.openrouter_service import (
     PitchService,
     HTMLGenerationService,
 )
+from app.services.ai.thesys_service import thesys_service, ThesysC1Service
+from app.services.ai.c1_context import c1_context, C1ContextBuilder
 
 __all__ = [
     "research_service",
@@ -29,4 +32,8 @@ __all__ = [
     "CampaignEssenceService",
     "PitchService",
     "HTMLGenerationService",
+    "thesys_service",
+    "ThesysC1Service",
+    "c1_context",
+    "C1ContextBuilder",
 ]

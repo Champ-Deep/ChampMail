@@ -21,6 +21,7 @@ import {
 } from 'recharts';
 import { Header } from '../components/layout';
 import { Card, CardHeader, CardTitle, Button, Badge } from '../components/ui';
+import { C1AnalyticsQuery } from '../components/c1/C1AnalyticsQuery';
 import { analyticsApi } from '../api';
 import type { AnalyticsOverview, DailyStat, DomainStats } from '../api/analytics';
 
@@ -179,6 +180,9 @@ export function AnalyticsPage() {
       />
 
       <div className="p-6 space-y-6">
+        {/* AI Analytics Query */}
+        <C1AnalyticsQuery />
+
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="bg-gradient-to-br from-blue-50 to-blue-100">

@@ -102,6 +102,12 @@ class Settings(BaseSettings):
     openrouter_rate_limit: int = 10
     openrouter_timeout: int = 120
 
+    # Thesys C1 (Generative UI)
+    thesys_api_key: str = ""
+    thesys_base_url: str = "https://api.thesys.dev/v1/embed"
+    thesys_model: str = "c1/google/gemini-3-flash"
+    thesys_max_tokens: int = 8192
+
     @property
     def falkordb_url(self) -> str:
         """Build FalkorDB connection URL."""

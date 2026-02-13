@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Header } from '../components/layout';
 import { Card, Button, Badge } from '../components/ui';
+import { C1CampaignSuggestions } from '../components/c1/C1CampaignSuggestions';
 import { clsx } from 'clsx';
 import {
   adminApi,
@@ -295,6 +296,11 @@ function StepCampaignDescription({
             )}
           </div>
         </Card>
+      )}
+
+      {/* AI Campaign Suggestions (via Thesys C1) */}
+      {essence && description && (
+        <C1CampaignSuggestions description={description} essence={essence} />
       )}
     </div>
   );

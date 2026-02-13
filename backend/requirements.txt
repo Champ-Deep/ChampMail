@@ -59,3 +59,6 @@ pandas>=2.0.0
 # Timezone detection
 pytz>=2024.1
 timezonefinder>=6.0.0
+
+# Thesys C1 (OpenAI-compatible SDK)
+openai>=1.12.0

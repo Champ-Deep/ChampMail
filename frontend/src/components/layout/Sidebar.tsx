@@ -20,6 +20,7 @@ import { clsx } from 'clsx';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, tourId: 'nav-dashboard' },
+  { name: 'AI Assistant', href: '/assistant', icon: Bot, tourId: 'nav-assistant' },
   { name: 'AI Campaign Builder', href: '/ai-campaigns', icon: Sparkles, tourId: 'nav-ai-campaigns' },
   { name: 'Prospects', href: '/prospects', icon: Users, tourId: 'nav-prospects' },
   { name: 'Sequences', href: '/sequences', icon: Zap, tourId: 'nav-sequences' },
