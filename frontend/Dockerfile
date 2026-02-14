@@ -30,8 +30,15 @@ RUN npm run build
 # Production stage with nginx
 FROM nginx:alpine
 
+# Remove default nginx config to avoid conflicts
+RUN rm -f /etc/nginx/conf.d/default.conf
+
 # Copy nginx config template (envsubst replaces $PORT and $BACKEND_URL at runtime)
 COPY nginx.conf.template /etc/nginx/conf.d/default.conf.template
+
+# Copy entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Copy built assets from builder
 COPY --from=builder /app/dist /usr/share/nginx/html
@@ -40,9 +47,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 ENV PORT=80
 ENV BACKEND_URL=http://backend:8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/healthz || exit 1
+EXPOSE ${PORT}
 
-# Use envsubst to inject PORT and BACKEND_URL into nginx config, then start nginx
-CMD sh -c "envsubst '\$PORT \$BACKEND_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+# Use entrypoint script to substitute env vars and start nginx
+CMD ["/docker-entrypoint.sh"]
