@@ -8,7 +8,6 @@ import {
   Loader2,
   Sparkles,
 } from 'lucide-react';
-import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { c1Api, type ChatMessage, type ConversationSummary } from '../api/c1';
 import { toast } from 'sonner';

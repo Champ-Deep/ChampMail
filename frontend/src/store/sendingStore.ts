@@ -13,12 +13,12 @@ interface SendingState {
   error: string | null;
 
   fetchStats: (domainId?: string) => Promise<void>;
-  sendEmail: (request: Parameters<typeof sendingApi.sendEmail>[0]) => Promise<ReturnType<typeof sendingApi.sendEmail>>;
-  sendBatch: (request: Parameters<typeof sendingApi.sendBatch>[0]) => Promise<ReturnType<typeof sendingApi.sendBatch>>;
+  sendEmail: (request: Parameters<typeof sendingApi.sendEmail>[0]) => ReturnType<typeof sendingApi.sendEmail>;
+  sendBatch: (request: Parameters<typeof sendingApi.sendBatch>[0]) => ReturnType<typeof sendingApi.sendBatch>;
   clearError: () => void;
 }
 
-export const useSendingStore = create<SendingState>((set, get) => ({
+export const useSendingStore = create<SendingState>((set) => ({
   stats: null,
   recentSends: [],
   isLoading: false,

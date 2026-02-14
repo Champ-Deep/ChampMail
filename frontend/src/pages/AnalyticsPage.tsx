@@ -20,12 +20,13 @@ import {
   Cell,
 } from 'recharts';
 import { Header } from '../components/layout';
-import { Card, CardHeader, CardTitle, Button, Badge } from '../components/ui';
+import { Card, CardHeader, CardTitle, Button } from '../components/ui';
 import { C1AnalyticsQuery } from '../components/c1/C1AnalyticsQuery';
 import { analyticsApi } from '../api';
 import type { AnalyticsOverview, DailyStat, DomainStats } from '../api/analytics';
 
 interface EngagementData {
+  [key: string]: unknown;
   name: string;
   value: number;
   color: string;
@@ -152,24 +153,24 @@ export function AnalyticsPage() {
       <Header
         title="Analytics"
         subtitle="Monitor your email performance and engagement metrics"
-        action={
+        actions={
           <div className="flex gap-2">
             <Button
-              variant={period === 7 ? 'default' : 'outline'}
+              variant={period === 7 ? 'primary' : 'outline'}
               size="sm"
               onClick={() => setPeriod(7)}
             >
               7D
             </Button>
             <Button
-              variant={period === 30 ? 'default' : 'outline'}
+              variant={period === 30 ? 'primary' : 'outline'}
               size="sm"
               onClick={() => setPeriod(30)}
             >
               30D
             </Button>
             <Button
-              variant={period === 90 ? 'default' : 'outline'}
+              variant={period === 90 ? 'primary' : 'outline'}
               size="sm"
               onClick={() => setPeriod(90)}
             >

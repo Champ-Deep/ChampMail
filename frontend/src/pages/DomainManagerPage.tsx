@@ -5,15 +5,13 @@ import {
   Trash2,
   RefreshCw,
   Check,
-  X,
   AlertTriangle,
   Clock,
-  TrendingUp,
   ExternalLink,
   Search,
 } from 'lucide-react';
 import { Header } from '../components/layout';
-import { Card, CardHeader, CardTitle, Button, Badge, Input } from '../components/ui';
+import { Card, CardHeader, CardTitle, Button, Badge } from '../components/ui';
 import { useDomainStore } from '../store/domainStore';
 import { clsx } from 'clsx';
 
@@ -22,13 +20,6 @@ const statusColors: Record<string, { bg: string; text: string }> = {
   verifying: { bg: 'bg-blue-100', text: 'text-blue-800' },
   verified: { bg: 'bg-green-100', text: 'text-green-800' },
   failed: { bg: 'bg-red-100', text: 'text-red-800' },
-};
-
-const dnsStatusIcons: Record<string, React.ReactNode> = {
-  mx: <Check className="w-4 h-4 text-green-500" />,
-  spf: <Check className="w-4 h-4 text-green-500" />,
-  dkim: <Check className="w-4 h-4 text-green-500" />,
-  dmarc: <Check className="w-4 h-4 text-green-500" />,
 };
 
 export function DomainManagerPage() {
@@ -92,7 +83,7 @@ export function DomainManagerPage() {
       <Header
         title="Domain Manager"
         subtitle="Manage your sending domains and DNS configuration"
-        action={
+        actions={
           <Button onClick={() => setShowAddModal(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Add Domain

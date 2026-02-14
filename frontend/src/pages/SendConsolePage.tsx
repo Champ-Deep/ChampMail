@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
   Send,
-  Mail,
-  Clock,
   CheckCircle,
   XCircle,
   AlertCircle,
   Loader2,
 } from 'lucide-react';
 import { Header } from '../components/layout';
-import { Card, CardHeader, CardTitle, Button, Badge, Input, Textarea } from '../components/ui';
+import { Card, CardHeader, CardTitle, Button, Input, Textarea } from '../components/ui';
 import { useSendingStore } from '../store/sendingStore';
 import { useDomainStore } from '../store/domainStore';
 import { clsx } from 'clsx';

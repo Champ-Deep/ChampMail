@@ -429,7 +429,7 @@ function CampaignConfigTab() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [presets, setPresets] = useState<UTMPreset[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
-  const [config, setConfig] = useState<CampaignUTMConfig | null>(null);
+  const [, setConfig] = useState<CampaignUTMConfig | null>(null);
   const [previewLinks, setPreviewLinks] = useState<LinkPerformanceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [configLoading, setConfigLoading] = useState(false);
