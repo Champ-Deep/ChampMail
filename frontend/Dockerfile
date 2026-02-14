@@ -42,7 +42,7 @@ ENV BACKEND_URL=http://backend:8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/healthz || exit 1
 
 # Use envsubst to inject PORT and BACKEND_URL into nginx config, then start nginx
 CMD sh -c "envsubst '\$PORT \$BACKEND_URL' < /etc/nginx/conf.d/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"

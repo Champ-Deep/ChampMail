@@ -35,7 +35,14 @@ server {
         proxy_cache_bypass $http_upgrade;
     }
 
-    # Health check endpoint
+    # Health check endpoint (local — no backend dependency)
+    location /healthz {
+        access_log off;
+        return 200 'ok';
+        add_header Content-Type text/plain;
+    }
+
+    # Backend health proxy
     location /health {
         proxy_pass ${BACKEND_URL}/health;
         proxy_http_version 1.1;
