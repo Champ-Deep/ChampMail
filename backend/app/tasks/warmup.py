@@ -1,7 +1,11 @@
+import logging
+
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, queue="warmup")
@@ -38,7 +42,7 @@ def execute_warmup_sends(self):
                             await domain_service.increment_sent_count(session, domain.id)
 
                         except Exception as e:
-                            print(f"Warmup send failed for {domain.domain_name}: {e}")
+                            logger.error("Warmup send failed for %s: %s", domain.domain_name, e)
 
                     if domain.sent_today >= daily_limit:
                         await domain_service.increment_warmup_day(session, domain.id)

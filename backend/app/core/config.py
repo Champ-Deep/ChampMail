@@ -137,32 +137,42 @@ class Settings(BaseSettings):
 
     def validate_production_settings(self) -> None:
         """
-        Validate critical settings for production deployment.
+        Validate critical settings for non-development deployment.
         Raises ValueError if any critical settings are using default/insecure values.
         """
-        if self.environment == "production":
-            errors = []
+        if self.environment == "development":
+            return
 
-            # Check JWT secret
-            if self.jwt_secret_key == "your-secret-key-change-in-production":
-                errors.append("JWT_SECRET_KEY must be changed from default value in production")
+        errors = []
 
-            if len(self.jwt_secret_key) < 32:
-                errors.append("JWT_SECRET_KEY must be at least 32 characters long")
+        # Check JWT secret
+        if self.jwt_secret_key == "your-secret-key-change-in-production":
+            errors.append("JWT_SECRET_KEY must be changed from default value")
 
-            # Check database password (skip if DATABASE_URL is provided)
-            if not self.database_url and (not self.postgres_password or self.postgres_password == "champmail_dev"):
-                errors.append("POSTGRES_PASSWORD must be set to a secure value in production")
+        if len(self.jwt_secret_key) < 32:
+            errors.append("JWT_SECRET_KEY must be at least 32 characters long")
 
-            # Check webhook secret if webhooks are used
-            if not self.webhook_secret:
-                errors.append("WEBHOOK_SECRET should be set for webhook signature verification in production")
+        # Check database password (skip if DATABASE_URL is provided)
+        if not self.database_url and (not self.postgres_password or self.postgres_password == "champmail_dev"):
+            errors.append("POSTGRES_PASSWORD must be set to a secure value")
 
-            if errors:
-                raise ValueError(
-                    "Production configuration validation failed:\n" +
-                    "\n".join(f"  - {error}" for error in errors)
-                )
+        # Check webhook secret
+        if not self.webhook_secret:
+            errors.append("WEBHOOK_SECRET must be set for webhook signature verification")
+
+        # Debug must be off
+        if self.debug:
+            errors.append("DEBUG must be False outside development")
+
+        # Frontend URL must not be localhost
+        if "localhost" in self.frontend_url or "127.0.0.1" in self.frontend_url:
+            errors.append("FRONTEND_URL must not be localhost outside development")
+
+        if errors:
+            raise ValueError(
+                "Configuration validation failed:\n" +
+                "\n".join(f"  - {error}" for error in errors)
+            )
 
 
 @lru_cache

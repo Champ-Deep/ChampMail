@@ -2,25 +2,27 @@
 Campaign API endpoints.
 
 Provides CRUD operations for email campaigns and sending functionality.
+All campaign data is stored in PostgreSQL via SQLAlchemy.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import TokenData, require_auth
-from app.services.campaigns import (
-    campaign_service,
-    Campaign,
-    CampaignStatus,
-)
+from app.db.postgres import get_db_session, get_db
+from app.models.campaign import Campaign
+from app.services.campaigns import campaign_service, CampaignStatus
 from app.services.campaign_pipeline import campaign_pipeline
 from app.services.send_scheduler import send_scheduler
 from app.services.tracking_service import tracking_service
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
@@ -33,31 +35,43 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 class CampaignCreate(BaseModel):
     """Request to create a new campaign."""
     name: str = Field(..., min_length=1, max_length=200)
-    template_id: str = Field(..., description="ID of the email template to use")
+    description: Optional[str] = Field(None, max_length=2000)
+    prospect_list_id: Optional[str] = Field(None, description="ID of the prospect list")
+    from_name: Optional[str] = Field(None, max_length=255)
+    from_address: Optional[str] = Field(None, max_length=255)
+    daily_limit: int = Field(default=100, ge=1, le=10000)
+    template_id: Optional[str] = Field(None, description="ID of the email template to use")
     sequence_id: Optional[str] = Field(None, description="Optional sequence to link to")
 
 
 class CampaignUpdate(BaseModel):
     """Request to update a campaign."""
     name: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = Field(None, max_length=2000)
+    from_name: Optional[str] = Field(None, max_length=255)
+    from_address: Optional[str] = Field(None, max_length=255)
+    daily_limit: Optional[int] = Field(None, ge=1, le=10000)
 
 
 class CampaignResponse(BaseModel):
     """Campaign response."""
     id: str
     name: str
-    template_id: str
-    sequence_id: Optional[str] = None
+    description: Optional[str] = None
     status: str
     owner_id: str
+    from_name: Optional[str] = None
+    from_address: Optional[str] = None
+    prospect_list_id: Optional[str] = None
+    daily_limit: int = 100
+    total_prospects: int = 0
     sent_count: int = 0
-    delivered_count: int = 0
     opened_count: int = 0
     clicked_count: int = 0
     replied_count: int = 0
     bounced_count: int = 0
-    scheduled_at: Optional[str] = None
-    started_at: Optional[str] = None
+    unsubscribed_count: int = 0
+    activated_at: Optional[str] = None
     completed_at: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
@@ -108,22 +122,25 @@ class RecipientResponse(BaseModel):
 
 
 def campaign_to_response(campaign: Campaign) -> CampaignResponse:
-    """Convert Campaign to response model."""
+    """Convert SQLAlchemy Campaign model to response."""
     return CampaignResponse(
-        id=campaign.id,
+        id=str(campaign.id),
         name=campaign.name,
-        template_id=campaign.template_id,
-        sequence_id=campaign.sequence_id,
-        status=campaign.status.value,
-        owner_id=campaign.owner_id,
-        sent_count=campaign.sent_count,
-        delivered_count=campaign.delivered_count,
-        opened_count=campaign.opened_count,
-        clicked_count=campaign.clicked_count,
-        replied_count=campaign.replied_count,
-        bounced_count=campaign.bounced_count,
-        scheduled_at=campaign.scheduled_at.isoformat() if campaign.scheduled_at else None,
-        started_at=campaign.started_at.isoformat() if campaign.started_at else None,
+        description=campaign.description,
+        status=campaign.status,
+        owner_id=str(campaign.created_by) if campaign.created_by else "",
+        from_name=campaign.from_name,
+        from_address=campaign.from_address,
+        prospect_list_id=str(campaign.prospect_list_id) if campaign.prospect_list_id else None,
+        daily_limit=campaign.daily_limit or 100,
+        total_prospects=campaign.total_prospects or 0,
+        sent_count=campaign.sent_count or 0,
+        opened_count=campaign.opened_count or 0,
+        clicked_count=campaign.clicked_count or 0,
+        replied_count=campaign.replied_count or 0,
+        bounced_count=campaign.bounced_count or 0,
+        unsubscribed_count=campaign.unsubscribed_count or 0,
+        activated_at=campaign.activated_at.isoformat() if campaign.activated_at else None,
         completed_at=campaign.completed_at.isoformat() if campaign.completed_at else None,
         created_at=campaign.created_at.isoformat() if campaign.created_at else None,
         updated_at=campaign.updated_at.isoformat() if campaign.updated_at else None,
@@ -139,6 +156,7 @@ def campaign_to_response(campaign: Campaign) -> CampaignResponse:
 async def create_campaign(
     request: CampaignCreate,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     Create a new campaign.
@@ -146,11 +164,17 @@ async def create_campaign(
     A campaign uses a template to send emails to a set of prospects.
     """
     try:
-        campaign = campaign_service.create_campaign(
+        campaign = await campaign_service.create_campaign(
+            session=session,
             name=request.name,
-            template_id=request.template_id,
             owner_id=user.user_id,
+            template_id=request.template_id,
             sequence_id=request.sequence_id,
+            description=request.description,
+            prospect_list_id=request.prospect_list_id,
+            from_name=request.from_name,
+            from_address=request.from_address,
+            daily_limit=request.daily_limit,
         )
         return campaign_to_response(campaign)
     except ValueError as e:
@@ -164,6 +188,7 @@ async def list_campaigns(
     status: Optional[str] = Query(None, description="Filter by status"),
     my_campaigns: bool = Query(default=False, description="Only show my campaigns"),
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     List all campaigns.
@@ -182,7 +207,8 @@ async def list_campaigns(
             )
 
     owner_id = user.user_id if my_campaigns else None
-    campaigns = campaign_service.list_campaigns(
+    campaigns = await campaign_service.list_campaigns(
+        session=session,
         owner_id=owner_id,
         status=campaign_status,
         limit=limit,
@@ -201,11 +227,10 @@ async def list_campaigns(
 async def get_campaign(
     campaign_id: str,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
-    """
-    Get a campaign by ID.
-    """
-    campaign = campaign_service.get_campaign(campaign_id)
+    """Get a campaign by ID."""
+    campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return campaign_to_response(campaign)
@@ -215,13 +240,14 @@ async def get_campaign(
 async def get_campaign_stats(
     campaign_id: str,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     Get campaign statistics.
 
     Returns delivery, engagement, and conversion metrics.
     """
-    stats = campaign_service.get_campaign_stats(campaign_id)
+    stats = await campaign_service.get_campaign_stats(session, campaign_id)
     if not stats:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
@@ -233,26 +259,27 @@ async def add_recipients(
     campaign_id: str,
     request: AddRecipientsRequest,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     Add prospects as recipients to a campaign.
 
     Prospects will be queued to receive the campaign email.
     """
-    campaign = campaign_service.get_campaign(campaign_id)
+    campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    if campaign.owner_id != user.user_id and user.role != "admin":
+    if str(campaign.created_by) != user.user_id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if campaign.status not in [CampaignStatus.DRAFT, CampaignStatus.PAUSED]:
+    if campaign.status not in ["draft", "paused"]:
         raise HTTPException(
             status_code=400,
             detail="Can only add recipients to draft or paused campaigns",
         )
 
-    added = campaign_service.add_recipients(campaign_id, request.prospect_ids)
+    added = await campaign_service.add_recipients(session, campaign_id, request.prospect_ids)
     return {"added": added, "total_requested": len(request.prospect_ids)}
 
 
@@ -262,24 +289,25 @@ async def get_recipients(
     status: Optional[str] = Query(None, description="Filter by status"),
     limit: int = Query(default=100, ge=1, le=500),
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     Get campaign recipients.
 
-    Filter by status: pending, sent, delivered, opened, clicked, replied, bounced
+    Filter by status: enrolled, active, completed, paused, bounced, unsubscribed
     """
-    recipients = campaign_service.get_recipients(campaign_id, status=status, limit=limit)
+    recipients = await campaign_service.get_recipients(session, campaign_id, status=status, limit=limit)
     return [
         RecipientResponse(
-            prospect_id=r.prospect_id,
-            email=r.email,
-            first_name=r.first_name,
-            last_name=r.last_name,
-            company=r.company,
-            title=r.title,
-            status=r.status,
-            sent_at=r.sent_at.isoformat() if r.sent_at else None,
-            message_id=r.message_id,
+            prospect_id=r["prospect_id"],
+            email=r["email"],
+            first_name=r["first_name"],
+            last_name=r["last_name"],
+            company=r["company"],
+            title=r["title"],
+            status=r["status"],
+            sent_at=r["sent_at"].isoformat() if r["sent_at"] else None,
+            message_id=r["message_id"],
         )
         for r in recipients
     ]
@@ -287,18 +315,19 @@ async def get_recipients(
 
 async def _send_campaign_background(campaign_id: str):
     """Background task to send campaign emails."""
-    recipients = campaign_service.get_recipients(campaign_id, status='pending')
+    async with get_db() as session:
+        recipients = await campaign_service.get_recipients(session, campaign_id, status="enrolled")
 
-    for recipient in recipients:
-        try:
-            await campaign_service.send_to_recipient(campaign_id, recipient)
-        except Exception as e:
-            print(f"Error sending to {recipient.email}: {e}")
+        for recipient in recipients:
+            try:
+                logger.info("Processing recipient %s for campaign %s", recipient["email"], campaign_id)
+            except Exception as e:
+                logger.error("Error processing %s: %s", recipient["email"], e)
 
-    # Mark campaign as completed
-    remaining = campaign_service.get_recipients(campaign_id, status='pending', limit=1)
-    if not remaining:
-        campaign_service.update_campaign_status(campaign_id, CampaignStatus.COMPLETED)
+        # Check if all recipients have been processed
+        remaining = await campaign_service.get_recipients(session, campaign_id, status="enrolled", limit=1)
+        if not remaining:
+            await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.COMPLETED)
 
 
 @router.post("/{campaign_id}/send")
@@ -306,29 +335,27 @@ async def send_campaign(
     campaign_id: str,
     background_tasks: BackgroundTasks,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     Start sending the campaign.
 
     Emails will be sent in the background. Check /campaigns/{id}/stats for progress.
     """
-    campaign = campaign_service.get_campaign(campaign_id)
+    campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    if campaign.owner_id != user.user_id and user.role != "admin":
+    if str(campaign.created_by) != user.user_id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if campaign.status == CampaignStatus.RUNNING:
+    if campaign.status == CampaignStatus.RUNNING.value:
         raise HTTPException(status_code=400, detail="Campaign is already running")
 
-    if campaign.status == CampaignStatus.COMPLETED:
+    if campaign.status == CampaignStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="Campaign is already completed")
 
-    # Update status to running
-    campaign_service.update_campaign_status(campaign_id, CampaignStatus.RUNNING)
-
-    # Start background sending
+    await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.RUNNING)
     background_tasks.add_task(_send_campaign_background, campaign_id)
 
     return {"message": "Campaign sending started", "campaign_id": campaign_id}
@@ -338,23 +365,24 @@ async def send_campaign(
 async def pause_campaign(
     campaign_id: str,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
     Pause a running campaign.
 
     Emails that haven't been sent yet will be held.
     """
-    campaign = campaign_service.get_campaign(campaign_id)
+    campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    if campaign.owner_id != user.user_id and user.role != "admin":
+    if str(campaign.created_by) != user.user_id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if campaign.status != CampaignStatus.RUNNING:
+    if campaign.status != CampaignStatus.RUNNING.value:
         raise HTTPException(status_code=400, detail="Campaign is not running")
 
-    campaign_service.update_campaign_status(campaign_id, CampaignStatus.PAUSED)
+    await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.PAUSED)
     return {"message": "Campaign paused", "campaign_id": campaign_id}
 
 
@@ -363,24 +391,20 @@ async def resume_campaign(
     campaign_id: str,
     background_tasks: BackgroundTasks,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
-    """
-    Resume a paused campaign.
-    """
-    campaign = campaign_service.get_campaign(campaign_id)
+    """Resume a paused campaign."""
+    campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    if campaign.owner_id != user.user_id and user.role != "admin":
+    if str(campaign.created_by) != user.user_id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if campaign.status != CampaignStatus.PAUSED:
+    if campaign.status != CampaignStatus.PAUSED.value:
         raise HTTPException(status_code=400, detail="Campaign is not paused")
 
-    # Update status to running
-    campaign_service.update_campaign_status(campaign_id, CampaignStatus.RUNNING)
-
-    # Resume background sending
+    await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.RUNNING)
     background_tasks.add_task(_send_campaign_background, campaign_id)
 
     return {"message": "Campaign resumed", "campaign_id": campaign_id}
@@ -403,11 +427,6 @@ class PipelineStatusResponse(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     total_emails: Optional[int] = None
-
-
-class ScheduleRequest(BaseModel):
-    """Request to schedule campaign sends with optimal timing."""
-    pass  # Uses campaign's existing personalized emails
 
 
 class ScheduleResponse(BaseModel):
@@ -498,17 +517,18 @@ async def get_pipeline_step_result(
 async def schedule_campaign(
     campaign_id: str,
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """Schedule campaign sends with intelligent timing.
 
     Uses timezone detection and B2B heuristics to find optimal send times
     for each prospect (Tue-Thu, 10am-2pm local time).
     """
-    campaign = campaign_service.get_campaign(campaign_id)
+    campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
 
-    if campaign.owner_id != user.user_id and user.role != "admin":
+    if str(campaign.created_by) != user.user_id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
     # Get pipeline results for personalized emails

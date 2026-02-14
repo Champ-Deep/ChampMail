@@ -26,8 +26,9 @@ import {
 import { Header } from '../components/layout';
 import { Card, CardHeader, CardTitle, Button, Input, Badge } from '../components/ui';
 import { useAuthStore } from '../store/authStore';
-import { teamsApi, emailSettingsApi, emailAccountsApi } from '../api';
+import { teamsApi, emailSettingsApi, emailAccountsApi, authApi } from '../api';
 import type { EmailAccount, EmailAccountCreate, EmailAccountUpdate } from '../api';
+import type { ProfileUpdate } from '../api/auth';
 import { clsx } from 'clsx';
 
 const tabs = [
@@ -1337,14 +1338,44 @@ function SmtpImapSettings() {
 // ============================================================================
 
 export function SettingsPage() {
-  const { user } = useAuthStore();
+  const { user, fetchUser } = useAuthStore();
   const [activeTab, setActiveTab] = useState('profile');
-  const [isSaving, setIsSaving] = useState(false);
 
+  // Profile form state
+  const [profileName, setProfileName] = useState(user?.full_name || '');
+  const [profileTitle, setProfileTitle] = useState(user?.job_title || '');
+
+  // Sync form when user data changes
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.full_name || '');
+      setProfileTitle(user.job_title || '');
+    }
+  }, [user]);
+
+  // Stub save for other tabs (security, email, notifications)
+  const [isSaving, setIsSaving] = useState(false);
   const handleSave = async () => {
     setIsSaving(true);
-    // TODO: Save settings
     setTimeout(() => setIsSaving(false), 1000);
+  };
+
+  const profileMutation = useMutation({
+    mutationFn: (data: ProfileUpdate) => authApi.updateProfile(data),
+    onSuccess: () => {
+      toast.success('Profile updated successfully');
+      fetchUser(); // Refresh user in auth store
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.detail || 'Failed to update profile');
+    },
+  });
+
+  const handleProfileSave = () => {
+    profileMutation.mutate({
+      full_name: profileName,
+      job_title: profileTitle,
+    });
   };
 
   return (
@@ -1400,7 +1431,8 @@ export function SettingsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <Input
                       label="Full Name"
-                      defaultValue={user?.full_name || ''}
+                      value={profileName}
+                      onChange={(e) => setProfileName(e.target.value)}
                       placeholder="Your name"
                     />
                     <Input
@@ -1414,11 +1446,13 @@ export function SettingsPage() {
 
                   <Input
                     label="Job Title"
+                    value={profileTitle}
+                    onChange={(e) => setProfileTitle(e.target.value)}
                     placeholder="e.g. Sales Manager"
                   />
 
                   <div className="pt-4 border-t flex justify-end">
-                    <Button onClick={handleSave} isLoading={isSaving}>
+                    <Button onClick={handleProfileSave} isLoading={profileMutation.isPending}>
                       <Save className="h-4 w-4 mr-2" />
                       Save Changes
                     </Button>

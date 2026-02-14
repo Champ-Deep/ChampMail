@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.core.security import get_password_hash, verify_password
+from app.core.config import settings
 
 
 class UserService:
@@ -63,32 +64,31 @@ class UserService:
         email: str,
         password: str,
     ) -> Optional[User]:
-        """
-        Authenticate a user by email and password.
-
-        DEV MODE: Auto-creates user if not exists for easy development.
-        """
+        """Authenticate a user by email and password."""
         user = await self.get_by_email(session, email)
 
-        # DEV MODE: Auto-create user if not exists
         if not user:
-            user = await self.create(
-                session,
-                email=email,
-                password=password,
-                full_name=email.split("@")[0].replace(".", " ").title(),
-                role="admin",  # Give admin role for dev
-            )
-            await session.commit()
-            return user
-
-        # In dev mode, accept any password
-        # TODO: Remove this in production and use proper auth:
-        # if not verify_password(password, user.hashed_password):
-        #     return None
+            if settings.environment == "development":
+                # DEV ONLY: Auto-create user for easy development
+                user = await self.create(
+                    session,
+                    email=email,
+                    password=password,
+                    full_name=email.split("@")[0].replace(".", " ").title(),
+                    role="admin",
+                )
+                await session.commit()
+                return user
+            return None
 
         if not user.is_active:
             return None
+
+        # Always verify password outside development mode
+        if settings.environment != "development":
+            if not verify_password(password, user.hashed_password):
+                return None
+
         return user
 
     async def update_last_login(self, session: AsyncSession, user: User) -> None:
@@ -114,13 +114,32 @@ class UserService:
         user.onboarding_progress = progress
         await session.flush()
 
+    async def update_profile(
+        self,
+        session: AsyncSession,
+        user: User,
+        full_name: Optional[str] = None,
+        job_title: Optional[str] = None,
+    ) -> User:
+        """Update user profile fields."""
+        if full_name is not None:
+            user.full_name = full_name
+        if job_title is not None:
+            user.job_title = job_title
+        user.updated_at = datetime.utcnow()
+        await session.flush()
+        return user
+
     async def email_exists(self, session: AsyncSession, email: str) -> bool:
         """Check if an email is already registered."""
         user = await self.get_by_email(session, email)
         return user is not None
 
     async def ensure_default_admin(self, session: AsyncSession) -> None:
-        """Ensure a default admin user exists for development."""
+        """Ensure a default admin user exists. Only runs in development."""
+        if settings.environment != "development":
+            return
+
         admin_email = "admin@champions.dev"
         existing = await self.get_by_email(session, admin_email)
 
@@ -128,7 +147,7 @@ class UserService:
             await self.create(
                 session,
                 email=admin_email,
-                password="admin123",  # Change in production!
+                password="admin123",
                 full_name="Admin User",
                 role="admin",
             )

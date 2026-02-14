@@ -5,8 +5,9 @@ Multi-step email sequence management.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.core.security import require_auth, TokenData
 from app.db.falkordb import graph_db
 from app.schemas.sequence import (
     SequenceCreate,
@@ -52,6 +53,7 @@ async def list_sequences(
     status: SequenceStatus | None = Query(default=None),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
+    user: TokenData = Depends(require_auth),
 ):
     """
     List all sequences with optional status filter.
@@ -86,7 +88,7 @@ async def list_sequences(
 
 
 @router.post("", response_model=SequenceResponse, status_code=201)
-async def create_sequence(sequence: SequenceCreate):
+async def create_sequence(sequence: SequenceCreate, user: TokenData = Depends(require_auth)):
     """
     Create a new email sequence.
 
@@ -128,7 +130,7 @@ async def create_sequence(sequence: SequenceCreate):
 
 
 @router.get("/{sequence_id}", response_model=SequenceResponse)
-async def get_sequence(sequence_id: int):
+async def get_sequence(sequence_id: int, user: TokenData = Depends(require_auth)):
     """
     Get sequence by ID with enrollment statistics.
     """
@@ -152,7 +154,7 @@ async def get_sequence(sequence_id: int):
 
 
 @router.put("/{sequence_id}", response_model=SequenceResponse)
-async def update_sequence(sequence_id: int, update: SequenceUpdate):
+async def update_sequence(sequence_id: int, update: SequenceUpdate, user: TokenData = Depends(require_auth)):
     """
     Update sequence properties.
     """
@@ -183,7 +185,7 @@ async def update_sequence(sequence_id: int, update: SequenceUpdate):
 
 
 @router.post("/{sequence_id}/enroll", response_model=EnrollmentResponse)
-async def enroll_prospects(sequence_id: int, request: EnrollmentRequest):
+async def enroll_prospects(sequence_id: int, request: EnrollmentRequest, user: TokenData = Depends(require_auth)):
     """
     Enroll prospects in a sequence.
 
@@ -242,7 +244,7 @@ async def enroll_prospects(sequence_id: int, request: EnrollmentRequest):
 
 
 @router.post("/{sequence_id}/pause")
-async def pause_sequence(sequence_id: int):
+async def pause_sequence(sequence_id: int, user: TokenData = Depends(require_auth)):
     """
     Pause a sequence and all active enrollments.
     """
@@ -265,7 +267,7 @@ async def pause_sequence(sequence_id: int):
 
 
 @router.post("/{sequence_id}/resume")
-async def resume_sequence(sequence_id: int):
+async def resume_sequence(sequence_id: int, user: TokenData = Depends(require_auth)):
     """
     Resume a paused sequence and its enrollments.
     """
@@ -288,7 +290,7 @@ async def resume_sequence(sequence_id: int):
 
 
 @router.get("/{sequence_id}/analytics")
-async def get_sequence_analytics(sequence_id: int):
+async def get_sequence_analytics(sequence_id: int, user: TokenData = Depends(require_auth)):
     """
     Get detailed analytics for a sequence.
 

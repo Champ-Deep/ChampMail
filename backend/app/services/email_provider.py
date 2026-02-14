@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import email
+import logging
 import smtplib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ from email.mime.text import MIMEText
 from typing import Optional
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -222,7 +225,7 @@ class IMAPReplyDetector:
             # imaplib is part of stdlib, but handle gracefully
             return []
         except Exception as e:
-            print(f"IMAP error: {e}")
+            logger.error("IMAP error: %s", e)
             return []
 
     def _fetch_messages_sync(self, since_uid: int) -> list[IncomingMessage]:

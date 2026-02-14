@@ -6,6 +6,7 @@ Handles email template storage, MJML compilation, and variable substitution.
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 import json
@@ -15,6 +16,8 @@ from typing import Optional
 from uuid import uuid4
 
 from app.db.falkordb import graph_db
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -208,7 +211,7 @@ class TemplateService:
         if compile_html:
             html_content, error = compile_mjml(mjml_content)
             if error:
-                print(f"Template compilation warning: {error}")
+                logger.warning("Template compilation warning: %s", error)
 
         # Store in FalkorDB
         try:
@@ -236,7 +239,7 @@ class TemplateService:
                 'owner_id': owner_id,
             })
         except Exception as e:
-            print(f"FalkorDB error (template may only exist in memory): {e}")
+            logger.error("FalkorDB error (template may only exist in memory): %s", e)
 
         return EmailTemplate(
             id=template_id,
@@ -272,7 +275,7 @@ class TemplateService:
                 owner_id=t.get('owner_id', ''),
             )
         except Exception as e:
-            print(f"Error getting template: {e}")
+            logger.error("Error getting template: %s", e)
             return None
 
     def list_templates(
@@ -318,7 +321,7 @@ class TemplateService:
                 ))
             return templates
         except Exception as e:
-            print(f"Error listing templates: {e}")
+            logger.error("Error listing templates: %s", e)
             return []
 
     def update_template(
@@ -374,7 +377,7 @@ class TemplateService:
 
             return self.get_template(template_id)
         except Exception as e:
-            print(f"Error updating template: {e}")
+            logger.error("Error updating template: %s", e)
             return None
 
     def delete_template(self, template_id: str) -> bool:
@@ -388,7 +391,7 @@ class TemplateService:
             result = graph_db.query(query, {'id': template_id})
             return result and result[0].get('deleted', 0) > 0
         except Exception as e:
-            print(f"Error deleting template: {e}")
+            logger.error("Error deleting template: %s", e)
             return False
 
     def render_preview(

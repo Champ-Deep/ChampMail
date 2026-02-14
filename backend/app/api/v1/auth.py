@@ -50,9 +50,16 @@ class UserResponse(BaseModel):
     user_id: str
     email: str
     full_name: Optional[str] = None
+    job_title: Optional[str] = None
     role: str
     is_verified: bool = False
     onboarding_progress: Optional[dict] = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    """Profile update request."""
+    full_name: Optional[str] = None
+    job_title: Optional[str] = None
 
 
 # ============================================================================
@@ -136,6 +143,7 @@ async def register(
         user_id=str(user.id),
         email=user.email,
         full_name=user.full_name,
+        job_title=getattr(user, 'job_title', None),
         role=user.role,
         is_verified=user.is_verified,
         onboarding_progress=user.onboarding_progress,
@@ -159,9 +167,43 @@ async def get_current_user_info(
         user_id=str(db_user.id),
         email=db_user.email,
         full_name=db_user.full_name,
+        job_title=db_user.job_title,
         role=db_user.role,
         is_verified=db_user.is_verified,
         onboarding_progress=db_user.onboarding_progress,
+    )
+
+
+@router.put("/profile", response_model=UserResponse)
+async def update_profile(
+    request: ProfileUpdateRequest,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    Update the current user's profile.
+    """
+    db_user = await user_service.get_by_id(session, user.user_id)
+
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updated_user = await user_service.update_profile(
+        session,
+        db_user,
+        full_name=request.full_name,
+        job_title=request.job_title,
+    )
+    await session.commit()
+
+    return UserResponse(
+        user_id=str(updated_user.id),
+        email=updated_user.email,
+        full_name=updated_user.full_name,
+        job_title=updated_user.job_title,
+        role=updated_user.role,
+        is_verified=updated_user.is_verified,
+        onboarding_progress=updated_user.onboarding_progress,
     )
 
 

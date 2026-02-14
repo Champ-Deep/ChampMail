@@ -7,9 +7,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.security import require_auth, TokenData
+from app.core.admin_security import require_admin
 from app.db.falkordb import graph_db
 
 router = APIRouter(prefix="/graph", tags=["Knowledge Graph"])
@@ -35,7 +37,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/query")
-async def execute_cypher_query(request: CypherQuery):
+async def execute_cypher_query(request: CypherQuery, user: TokenData = Depends(require_admin)):
     """
     Execute a raw Cypher query against the knowledge graph.
 
@@ -62,7 +64,7 @@ async def execute_cypher_query(request: CypherQuery):
 
 
 @router.post("/search")
-async def semantic_search(request: SearchRequest):
+async def semantic_search(request: SearchRequest, user: TokenData = Depends(require_auth)):
     """
     Semantic search across the knowledge graph.
 
@@ -118,7 +120,7 @@ async def semantic_search(request: SearchRequest):
 
 
 @router.post("/chat")
-async def conversational_query(request: ChatRequest):
+async def conversational_query(request: ChatRequest, user: TokenData = Depends(require_auth)):
     """
     Natural language interface to the knowledge graph.
 
@@ -220,6 +222,7 @@ async def conversational_query(request: ChatRequest):
 async def get_entity(
     entity_id: int,
     include_relations: bool = Query(default=True),
+    user: TokenData = Depends(require_auth),
 ):
     """
     Get any entity by its internal ID with optional relationships.
@@ -273,7 +276,7 @@ async def get_entity(
 
 
 @router.get("/stats")
-async def get_graph_stats():
+async def get_graph_stats(user: TokenData = Depends(require_auth)):
     """
     Get statistics about the knowledge graph.
     """

@@ -65,10 +65,11 @@ def _parse_prospect_result(result: dict) -> ProspectResponse:
 
 @router.get("", response_model=ProspectListResponse)
 async def list_prospects(
-    query: str = Query(default="", description="Search query"),
-    industry: str = Query(default="", description="Filter by industry"),
+    query: str = Query(default="", max_length=200, description="Search query"),
+    industry: str = Query(default="", max_length=100, description="Filter by industry"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
+    user: TokenData = Depends(require_auth),
 ):
     """
     List prospects with optional search and filtering.
@@ -96,7 +97,7 @@ async def list_prospects(
 
 
 @router.post("", response_model=ProspectResponse, status_code=201)
-async def create_prospect(prospect: ProspectCreate):
+async def create_prospect(prospect: ProspectCreate, user: TokenData = Depends(require_auth)):
     """
     Create a new prospect.
 
@@ -139,7 +140,7 @@ async def create_prospect(prospect: ProspectCreate):
 
 
 @router.get("/{email}", response_model=ProspectResponse)
-async def get_prospect(email: str):
+async def get_prospect(email: str, user: TokenData = Depends(require_auth)):
     """
     Get prospect by email address.
 
@@ -153,7 +154,7 @@ async def get_prospect(email: str):
 
 
 @router.put("/{email}", response_model=ProspectResponse)
-async def update_prospect(email: str, update: ProspectUpdate):
+async def update_prospect(email: str, update: ProspectUpdate, user: TokenData = Depends(require_auth)):
     """
     Update prospect fields.
 
@@ -184,7 +185,7 @@ async def update_prospect(email: str, update: ProspectUpdate):
 
 
 @router.delete("/{email}", status_code=204)
-async def delete_prospect(email: str):
+async def delete_prospect(email: str, user: TokenData = Depends(require_auth)):
     """
     Delete prospect (soft delete - marks as inactive).
 
@@ -204,7 +205,7 @@ async def delete_prospect(email: str):
 
 
 @router.post("/{email}/enrich", response_model=ProspectResponse)
-async def enrich_prospect(email: str):
+async def enrich_prospect(email: str, user: TokenData = Depends(require_auth)):
     """
     Trigger enrichment for a prospect.
 
@@ -223,7 +224,7 @@ async def enrich_prospect(email: str):
 
 
 @router.get("/{email}/timeline")
-async def get_prospect_timeline(email: str):
+async def get_prospect_timeline(email: str, user: TokenData = Depends(require_auth)):
     """
     Get activity timeline for a prospect.
 

@@ -7,6 +7,9 @@ using the user's configured SMTP/IMAP credentials.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import logging
 import os
 import re
 from typing import Optional, Any
@@ -24,6 +27,21 @@ from app.models.user import User
 from app.services.email_service import email_service
 from app.services.workflow_service import workflow_service
 from app.services.email_account_service import email_account_service
+
+logger = logging.getLogger(__name__)
+
+
+def _verify_webhook_hmac(body: bytes, signature: Optional[str]) -> bool:
+    """Verify HMAC-SHA256 webhook signature. Returns True if valid or if no secret configured (dev)."""
+    if not settings.webhook_secret:
+        # No secret configured — allow in development only
+        if settings.environment == "development":
+            return True
+        return False
+    if not signature:
+        return False
+    expected = hmac.new(settings.webhook_secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
 
 router = APIRouter()
 
@@ -152,29 +170,29 @@ async def webhook_send_email(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     x_workflow_id: Optional[str] = Header(None),
-    x_user_id: Optional[str] = Header(None),
-    x_api_key: Optional[str] = Header(None),
+    x_webhook_signature: Optional[str] = Header(None),
 ):
     """
     Webhook endpoint for n8n to send emails.
 
-    n8n workflows call this instead of using their own SMTP node.
-    The app uses the user's configured SMTP credentials.
-
-    Authentication options:
-    1. X-User-Id header: Direct user ID (for trusted internal calls)
-    2. X-Api-Key header: API key for external integrations (future)
-    3. X-Workflow-Id header: Workflow ID to look up owner
+    Authentication: HMAC-SHA256 signature via X-Webhook-Signature header,
+    or workflow ID lookup via X-Workflow-Id header.
     """
-    body = await request.json()
+    raw_body = await request.body()
 
-    # Determine user ID
+    # Verify HMAC signature
+    if not _verify_webhook_hmac(raw_body, x_webhook_signature):
+        # Fallback: try workflow-based auth
+        if not x_workflow_id:
+            raise HTTPException(status_code=401, detail="Missing webhook signature or workflow ID")
+
+    import json
+    body = json.loads(raw_body)
+
+    # Determine user ID from workflow
     user_id = None
 
-    if x_user_id:
-        user_id = x_user_id
-    elif x_workflow_id:
-        # Look up workflow to get owner
+    if x_workflow_id:
         try:
             workflow = await workflow_service.get_workflow(session, UUID(x_workflow_id))
             if workflow and workflow.is_active:
@@ -185,24 +203,11 @@ async def webhook_send_email(
                     "error": "Workflow not found or not active",
                     "status": "WORKFLOW_INACTIVE"
                 }
-        except:
-            pass
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid workflow ID")
 
     if not user_id:
-        # For demo/development: use the first admin user
-        # In production, this should be secured with API keys
-        from sqlalchemy import select
-        from app.models.user import User
-        result = await session.execute(
-            select(User).where(User.role == "admin").limit(1)
-        )
-        admin_user = result.scalar_one_or_none()
-        print(f"[DEBUG webhook] Looking for admin user, found: {admin_user}")
-        if admin_user:
-            user_id = str(admin_user.id)
-            print(f"[DEBUG webhook] Using admin user_id: {user_id}")
-        else:
-            return {"success": False, "error": "No user configured", "status": "NO_USER"}
+        raise HTTPException(status_code=401, detail="Could not determine user from webhook")
 
     # Parse email data from n8n format
     to_email = body.get("to") or body.get("toEmail") or body.get("to_email", "")
@@ -234,9 +239,8 @@ async def webhook_send_email(
             from_name=from_name,
             html_body=html_body,
         )
-        print(f"[DEBUG] Email send result: {result}")
     except Exception as e:
-        print(f"[DEBUG] Email send exception: {e}")
+        logger.error("Webhook email send failed: %s", e)
         result = {"success": False, "error": str(e)}
 
     # Return n8n-compatible response
@@ -257,23 +261,25 @@ async def webhook_fetch_emails(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     x_workflow_id: Optional[str] = Header(None),
-    x_user_id: Optional[str] = Header(None),
-    x_api_key: Optional[str] = Header(None),
+    x_webhook_signature: Optional[str] = Header(None),
 ):
     """
     Webhook endpoint for n8n to fetch emails.
 
-    n8n workflows call this instead of using their own IMAP node.
-    The app uses the user's configured IMAP credentials.
+    Authentication: HMAC-SHA256 signature or workflow ID lookup.
     """
-    body = await request.json()
+    raw_body = await request.body()
 
-    # Determine user ID (same logic as send)
+    if not _verify_webhook_hmac(raw_body, x_webhook_signature):
+        if not x_workflow_id:
+            raise HTTPException(status_code=401, detail="Missing webhook signature or workflow ID")
+
+    import json
+    body = json.loads(raw_body)
+
     user_id = None
 
-    if x_user_id:
-        user_id = x_user_id
-    elif x_workflow_id:
+    if x_workflow_id:
         try:
             workflow = await workflow_service.get_workflow(session, UUID(x_workflow_id))
             if workflow and workflow.is_active:
@@ -284,20 +290,11 @@ async def webhook_fetch_emails(
                     "error": "Workflow not found or not active",
                     "emails": []
                 }
-        except:
-            pass
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid workflow ID")
 
     if not user_id:
-        from sqlalchemy import select
-        from app.models.user import User
-        result = await session.execute(
-            select(User).where(User.role == "admin").limit(1)
-        )
-        admin_user = result.scalar_one_or_none()
-        if admin_user:
-            user_id = str(admin_user.id)
-        else:
-            return {"success": False, "error": "No user configured", "emails": []}
+        raise HTTPException(status_code=401, detail="Could not determine user from webhook")
 
     # Parse request
     mailbox = body.get("mailbox", "INBOX")
@@ -331,6 +328,7 @@ async def webhook_fetch_emails(
 async def webhook_status(
     session: AsyncSession = Depends(get_db_session),
     x_workflow_id: Optional[str] = Header(None),
+    current_user: TokenData = Depends(require_auth),
 ):
     """
     Check if email webhooks are properly configured and active.
@@ -551,9 +549,8 @@ async def chat_with_assistant(
     }
 
     # Debug log the payload being sent to n8n
-    print(f"[CHAT DEBUG] Sending to n8n webhook: {webhook_url}")
-    print(f"[CHAT DEBUG] Parsed email data - to: {to_email}, subject: {subject}")
-    print(f"[CHAT DEBUG] Full payload: {payload}")
+    logger.debug("Sending to n8n webhook: %s", webhook_url)
+    logger.debug("Parsed email data - to: %s", to_email)
 
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -566,8 +563,8 @@ async def chat_with_assistant(
                 },
             )
 
-            print(f"[CHAT DEBUG] n8n response status: {response.status_code}")
-            print(f"[CHAT DEBUG] n8n response body: {response.text[:500]}")
+            logger.debug("n8n response status: %s", response.status_code)
+            logger.debug("n8n response received")
 
             if response.status_code == 200:
                 data = response.json()
@@ -592,7 +589,7 @@ async def chat_with_assistant(
                         "body": draft_body or "",
                         "html_body": data.get("htmlBody") or data.get("html_body"),
                     }
-                    print(f"[CHAT DEBUG] Draft email extracted: subject='{draft_subject}'")
+                    logger.debug("Draft email extracted")
 
                 return ChatResponse(
                     success=True,

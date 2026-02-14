@@ -1,7 +1,11 @@
+import logging
+
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, queue="sending")
@@ -25,7 +29,7 @@ def process_bounce_queue(self):
                     await mail_engine_client.acknowledge_bounce(bounce["id"])
 
                 except Exception as e:
-                    print(f"Failed to process bounce {bounce['id']}: {e}")
+                    logger.error("Failed to process bounce %s: %s", bounce['id'], e)
 
     asyncio.run(_process())
 

@@ -5,12 +5,15 @@ Provides the knowledge graph layer for the email engine.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional, Dict, List
 
 from falkordb import FalkorDB
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class GraphDatabase:
@@ -340,8 +343,8 @@ def init_graph_db() -> bool:
         graph_db.connect()
         return True
     except Exception as e:
-        print(f"Warning: Could not connect to FalkorDB: {e}")
-        print("Running in degraded mode - graph features disabled")
+        logger.warning("Could not connect to FalkorDB: %s", e)
+        logger.warning("Running in degraded mode - graph features disabled")
         return False
 
 

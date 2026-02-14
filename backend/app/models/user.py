@@ -46,6 +46,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
+    job_title = Column(String(255), nullable=True)
     role = Column(String(50), default="user")  # user, admin, team_admin
 
     # Team association

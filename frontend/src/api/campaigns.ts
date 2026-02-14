@@ -5,18 +5,21 @@ export type CampaignStatus = 'draft' | 'scheduled' | 'running' | 'paused' | 'com
 export interface Campaign {
   id: string;
   name: string;
-  template_id: string;
-  sequence_id?: string | null;
+  description?: string | null;
   status: CampaignStatus;
   owner_id: string;
+  from_name?: string | null;
+  from_address?: string | null;
+  prospect_list_id?: string | null;
+  daily_limit: number;
+  total_prospects: number;
   sent_count: number;
-  delivered_count: number;
   opened_count: number;
   clicked_count: number;
   replied_count: number;
   bounced_count: number;
-  scheduled_at?: string | null;
-  started_at?: string | null;
+  unsubscribed_count: number;
+  activated_at?: string | null;
   completed_at?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
@@ -31,7 +34,12 @@ export interface CampaignListResponse {
 
 export interface CampaignCreate {
   name: string;
-  template_id: string;
+  description?: string;
+  prospect_list_id?: string;
+  from_name?: string;
+  from_address?: string;
+  daily_limit?: number;
+  template_id?: string;
   sequence_id?: string;
 }
 

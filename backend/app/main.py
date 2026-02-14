@@ -6,9 +6,12 @@ Main application entry point.
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
@@ -28,63 +31,63 @@ from app.api.v1.admin import router as admin_router
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
     # Startup
-    print(f"Starting {settings.app_name} v{settings.app_version}")
-    print(f"Environment: {settings.environment}")
-    print(f"FalkorDB: {settings.falkordb_host}:{settings.falkordb_port}")
-    print(f"PostgreSQL: {settings.postgres_host}:{settings.postgres_port}")
+    logger.info("Starting %s v%s", settings.app_name, settings.app_version)
+    logger.info("Environment: %s", settings.environment)
+    logger.info("FalkorDB: %s:%s", settings.falkordb_host, settings.falkordb_port)
+    logger.info("PostgreSQL: %s:%s", settings.postgres_host, settings.postgres_port)
 
     # Validate production settings
     try:
         settings.validate_production_settings()
-        print("Production settings validated successfully")
+        logger.info("Production settings validated successfully")
     except ValueError as e:
         if settings.environment == "production":
-            print(f"❌ CRITICAL: {e}")
+            logger.error("CRITICAL: %s", e)
             raise  # Stop startup in production with invalid config
         else:
-            print(f"⚠️  Warning: {e}")
+            logger.warning("Production settings validation: %s", e)
 
     # Initialize PostgreSQL
     try:
         await init_db()
-        print("PostgreSQL connected and tables created")
+        logger.info("PostgreSQL connected and tables created")
 
-        # Create default admin user
-        async with get_db() as session:
-            await user_service.ensure_default_admin(session)
-            print("Default admin user ensured")
+        # Create default admin user (development only)
+        if settings.environment == "development":
+            async with get_db() as session:
+                await user_service.ensure_default_admin(session)
     except Exception as e:
-        print(f"PostgreSQL initialization failed: {e}")
-        print("Auth will NOT work without database!")
+        logger.error("PostgreSQL initialization failed: %s", e)
+        logger.error("Auth will NOT work without database!")
 
     # Initialize FalkorDB
     if init_graph_db():
-        print("FalkorDB connected")
+        logger.info("FalkorDB connected")
     else:
-        print("FalkorDB unavailable - graph features disabled")
+        logger.warning("FalkorDB unavailable - graph features disabled")
 
     # Check OpenRouter API key
     if settings.openrouter_api_key:
-        print("OpenRouter API key configured - AI features enabled")
+        logger.info("OpenRouter API key configured - AI features enabled")
     else:
-        print("WARNING: OPENROUTER_API_KEY not set - AI features will fail")
+        logger.warning("OPENROUTER_API_KEY not set - AI features will fail")
 
     # Check Thesys C1 API key
     if settings.thesys_api_key:
-        print("Thesys C1 API key configured - Generative UI enabled")
+        logger.info("Thesys C1 API key configured - Generative UI enabled")
     else:
-        print("INFO: THESYS_API_KEY not set - AI Assistant will be disabled")
+        logger.info("THESYS_API_KEY not set - AI Assistant will be disabled")
 
     yield
 
     # Shutdown
     await redis_client.close()
-    print("Redis disconnected")
+    logger.info("Redis disconnected")
     close_graph_db()
-    print("FalkorDB disconnected")
+    logger.info("FalkorDB disconnected")
     await close_db()
-    print("PostgreSQL disconnected")
-    print("Shutdown complete")
+    logger.info("PostgreSQL disconnected")
+    logger.info("Shutdown complete")
 
 
 # Create FastAPI app
@@ -133,8 +136,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept"],
 )
 
 # Rate limiting

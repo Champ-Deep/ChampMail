@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { Card } from '../ui/Card';
 import { Mail, User, Send } from 'lucide-react';
 
@@ -31,7 +32,7 @@ export function EmailPreview({ subject, body, from, to }: EmailPreviewProps) {
       </div>
       <div
         className="p-4 prose prose-sm max-w-none text-slate-700"
-        dangerouslySetInnerHTML={{ __html: body }}
+        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(body) }}
       />
     </Card>
   );

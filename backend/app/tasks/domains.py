@@ -1,7 +1,11 @@
+import logging
+
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, queue="domain")
@@ -24,7 +28,7 @@ def check_all_domain_health(self):
                     )
 
                 except Exception as e:
-                    print(f"Health check failed for {domain.domain_name}: {e}")
+                    logger.error("Health check failed for %s: %s", domain.domain_name, e)
 
     asyncio.run(_check())
 

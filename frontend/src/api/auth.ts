@@ -14,7 +14,13 @@ export interface RegisterData {
 export interface User {
   email: string;
   full_name?: string;
+  job_title?: string;
   role: string;
+}
+
+export interface ProfileUpdate {
+  full_name?: string;
+  job_title?: string;
 }
 
 export interface AuthResponse {
@@ -49,6 +55,11 @@ export const authApi = {
 
   async refreshToken(): Promise<AuthResponse> {
     const response = await api.post<AuthResponse>('/auth/refresh');
+    return response.data;
+  },
+
+  async updateProfile(data: ProfileUpdate): Promise<User> {
+    const response = await api.put<User>('/auth/profile', data);
     return response.data;
   },
 

@@ -17,13 +17,17 @@ Routes:
 
 from __future__ import annotations
 
+import hashlib
+import hmac as hmac_mod
 import logging
 from io import BytesIO
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, Response, HTMLResponse
 from pydantic import BaseModel
 
+from app.core.config import settings
 from app.services.tracking_service import tracking_service
 
 logger = logging.getLogger(__name__)
@@ -84,8 +88,7 @@ async def track_click(
     # Verify signature
     if not tracking_service._verify_tracking_signature(tracking_id, sig):
         logger.warning("Invalid tracking signature for click: %s", tracking_id)
-        # Still redirect so the user experience isn't broken
-        return RedirectResponse(url=url, status_code=302)
+        raise HTTPException(status_code=403, detail="Invalid tracking link")
 
     # Record the click event
     try:
@@ -149,12 +152,23 @@ class BounceWebhookPayload(BaseModel):
 
 
 @router.post("/bounce")
-async def handle_bounce_webhook(payload: BounceWebhookPayload):
+async def handle_bounce_webhook(
+    payload: BounceWebhookPayload,
+    x_webhook_secret: Optional[str] = Header(None),
+):
     """Process a bounce notification from the mail server.
 
     This endpoint should be configured as the bounce webhook URL
     in your mail server (BillionMail, Postal, etc.).
+
+    Requires X-Webhook-Secret header matching WEBHOOK_SECRET in production.
     """
+    if settings.environment != "development":
+        if not settings.webhook_secret or not x_webhook_secret:
+            raise HTTPException(status_code=401, detail="Webhook secret required")
+        if not hmac_mod.compare_digest(x_webhook_secret, settings.webhook_secret):
+            raise HTTPException(status_code=401, detail="Invalid webhook secret")
+
     result = await tracking_service.process_bounce_webhook(payload.model_dump())
 
     return {

@@ -7,6 +7,7 @@ using the user's configured SMTP/IMAP credentials from the app.
 
 from __future__ import annotations
 
+import logging
 import smtplib
 import imaplib
 import email
@@ -24,6 +25,8 @@ from app.models.email_settings import EmailSettings
 from app.models.email_account import EmailAccount
 from app.services.email_settings_service import email_settings_service
 from app.services.email_account_service import email_account_service
+
+logger = logging.getLogger(__name__)
 
 
 class EmailService:
@@ -58,7 +61,7 @@ class EmailService:
         Returns:
             Dict with status and message
         """
-        print(f"[EmailService] send_email called for user_id={user_id}, to={to_email}")
+        logger.info("Sending email to %s for user %s", to_email, user_id)
 
         # Try to get email account first (new multi-account system)
         email_account = await email_account_service.get_default_account(session, user_id)
@@ -69,11 +72,11 @@ class EmailService:
             try:
                 settings = await email_settings_service.get_settings(session, user_id)
             except Exception as e:
-                print(f"[EmailService] Error getting settings: {e}")
+                logger.error("Error getting email settings for user %s: %s", user_id, e)
                 return {"success": False, "error": f"Error fetching settings: {str(e)}"}
 
         if not email_account and not settings:
-            print(f"[EmailService] No email configuration found for user {user_id}")
+            logger.warning("No email configuration found for user %s", user_id)
             return {"success": False, "error": "No email settings configured. Please add an email account in Settings."}
 
         # Get SMTP configuration from either source
@@ -85,7 +88,7 @@ class EmailService:
             password = email_account_service.get_decrypted_smtp_password(email_account)
             default_from_email = email_account.email
             default_from_name = email_account.from_name or email_account.name
-            print(f"[EmailService] Using email account: {email_account.name} ({email_account.email})")
+            logger.debug("Using email account: %s", email_account.name)
         else:
             smtp_host = settings.smtp_host
             smtp_port = settings.smtp_port
@@ -94,7 +97,7 @@ class EmailService:
             password = email_settings_service.get_decrypted_smtp_password(settings)
             default_from_email = settings.from_email or settings.smtp_username
             default_from_name = settings.from_name or "ChampMail"
-            print(f"[EmailService] Using legacy settings: smtp_host={smtp_host}")
+            logger.debug("Using legacy email settings")
 
         if not smtp_host or not smtp_username:
             return {"success": False, "error": "SMTP settings incomplete"}
@@ -103,11 +106,8 @@ class EmailService:
             return {"success": False, "error": "SMTP password not configured"}
 
         try:
-            print(f"[EmailService] Got password (length={len(password) if password else 0})")
-
             sender_email = from_email or default_from_email
             sender_name = from_name or default_from_name
-            print(f"[EmailService] Sender: {sender_name} <{sender_email}>")
 
             # Create message
             if html_body:
@@ -132,7 +132,6 @@ class EmailService:
                 msg["Reply-To"] = reply_to or default_reply_to
 
             # Connect and send
-            print(f"[EmailService] Connecting to {smtp_host}:{smtp_port} (TLS={smtp_use_tls})")
             context = ssl.create_default_context()
 
             if smtp_use_tls:
@@ -141,13 +140,10 @@ class EmailService:
             else:
                 server = smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=30)
 
-            print(f"[EmailService] Logging in as {smtp_username}")
             server.login(smtp_username, password)
-
-            print(f"[EmailService] Sending email...")
             server.sendmail(sender_email, to_email, msg.as_string())
             server.quit()
-            print(f"[EmailService] Email sent successfully!")
+            logger.info("Email sent successfully to %s", to_email)
 
             return {
                 "success": True,
@@ -161,15 +157,13 @@ class EmailService:
             }
 
         except smtplib.SMTPAuthenticationError as e:
-            print(f"[EmailService] SMTP auth error: {e}")
+            logger.error("SMTP auth error for user %s: %s", user_id, e)
             return {"success": False, "error": f"SMTP authentication failed: {str(e)}"}
         except smtplib.SMTPConnectError as e:
-            print(f"[EmailService] SMTP connect error: {e}")
+            logger.error("SMTP connect error for user %s: %s", user_id, e)
             return {"success": False, "error": f"Could not connect to SMTP server: {str(e)}"}
         except Exception as e:
-            print(f"[EmailService] Exception: {type(e).__name__}: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Email send failed for user %s", user_id)
             return {"success": False, "error": f"{type(e).__name__}: {str(e)}"}
 
     async def fetch_emails(
@@ -307,7 +301,7 @@ class EmailService:
         date_str = msg.get("Date", "")
         try:
             date_received = email.utils.parsedate_to_datetime(date_str).isoformat()
-        except:
+        except Exception:
             date_received = datetime.utcnow().isoformat()
 
         # Get body
@@ -319,19 +313,19 @@ class EmailService:
                 if content_type == "text/plain":
                     try:
                         body_text = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                    except:
+                    except Exception:
                         pass
                 elif content_type == "text/html":
                     try:
                         body_html = part.get_payload(decode=True).decode("utf-8", errors="ignore")
-                    except:
+                    except Exception:
                         pass
         else:
             try:
                 payload = msg.get_payload(decode=True)
                 if payload:
                     body_text = payload.decode("utf-8", errors="ignore")
-            except:
+            except Exception:
                 pass
 
         # Check for attachments

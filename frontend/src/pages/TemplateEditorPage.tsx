@@ -1,37 +1,66 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { ArrowLeft, Save, Eye, Send } from 'lucide-react';
 import { TemplateEditor } from '../components/templates/TemplateEditor';
 import { Button } from '../components/ui';
+import { templatesApi } from '../api/templates';
 
 export function TemplateEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const isNew = id === 'new';
+  const isNew = !id || id === 'new';
 
-  const [templateName, setTemplateName] = useState(isNew ? '' : 'Welcome Email');
+  const [templateName, setTemplateName] = useState('');
+  const [subjectLine, setSubjectLine] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Fetch existing template when editing
+  const { data: existingTemplate } = useQuery({
+    queryKey: ['template', id],
+    queryFn: () => templatesApi.get(id!),
+    enabled: !isNew && !!id,
+  });
+
+  // Populate form when template loads
+  useEffect(() => {
+    if (existingTemplate) {
+      setTemplateName(existingTemplate.name);
+      setSubjectLine(existingTemplate.subject || '');
+    }
+  }, [existingTemplate]);
+
   const handleSave = useCallback(async (values: any) => {
+    if (!templateName.trim()) {
+      toast.error('Please enter a template name');
+      return;
+    }
+
     setIsSaving(true);
     try {
-      console.log('Saving template:', {
-        name: templateName,
-        content: values,
-      });
-      // TODO: Call API to save template
-      // await templatesApi.create({ name: templateName, mjml_content: values.mjml, json_content: values.content });
-
-      // Show success and navigate back
-      setTimeout(() => {
-        setIsSaving(false);
-        navigate('/templates');
-      }, 1000);
-    } catch (error) {
-      console.error('Failed to save template:', error);
+      if (isNew) {
+        await templatesApi.create({
+          name: templateName,
+          subject: subjectLine || templateName,
+          mjml_content: values.mjml || values.content || '',
+        });
+        toast.success('Template created successfully');
+      } else {
+        await templatesApi.update(id!, {
+          name: templateName,
+          subject: subjectLine || undefined,
+          mjml_content: values.mjml || values.content || undefined,
+        });
+        toast.success('Template updated successfully');
+      }
+      navigate('/templates');
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'Failed to save template');
+    } finally {
       setIsSaving(false);
     }
-  }, [templateName, navigate]);
+  }, [templateName, subjectLine, isNew, id, navigate]);
 
   return (
     <div className="h-screen flex flex-col bg-slate-100">
