@@ -2,10 +2,11 @@ import { useState, useCallback } from 'react';
 import { Sparkles, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { c1Api, type ChatMessage } from '../../api/c1';
+import type { CampaignEssence } from '../../api/admin';
 
 interface C1CampaignSuggestionsProps {
   description: string;
-  essence: Record<string, unknown>;
+  essence: CampaignEssence;
 }
 
 export function C1CampaignSuggestions({ description, essence }: C1CampaignSuggestionsProps) {

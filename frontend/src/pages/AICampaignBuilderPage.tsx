@@ -300,7 +300,7 @@ function StepCampaignDescription({
 
       {/* AI Campaign Suggestions (via Thesys C1) */}
       {essence && description && (
-        <C1CampaignSuggestions description={description} essence={essence as Record<string, unknown>} />
+        <C1CampaignSuggestions description={description} essence={essence} />
       )}
     </div>
   );
