@@ -9,6 +9,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -45,6 +46,11 @@ async def init_db() -> None:
     """Initialize the database (create tables)."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Belt-and-suspenders: ensure job_title column exists even if
+        # migration 008 didn't run (e.g. alembic failed silently on startup)
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title VARCHAR(255)"
+        ))
 
 
 async def close_db() -> None:

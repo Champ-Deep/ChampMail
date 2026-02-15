@@ -116,6 +116,33 @@ async def readiness_check():
         )
 
 
+@router.get("/db-schema")
+async def db_schema_check():
+    """
+    Diagnostic endpoint: report users table columns and alembic migration version.
+    Useful for verifying schema state on Railway without SSH.
+    """
+    result = {"users_columns": [], "alembic_version": None}
+    try:
+        async with async_session_maker() as session:
+            cols = await session.execute(text(
+                "SELECT column_name, data_type FROM information_schema.columns "
+                "WHERE table_name = 'users' ORDER BY ordinal_position"
+            ))
+            result["users_columns"] = [
+                {"name": r[0], "type": r[1]} for r in cols.fetchall()
+            ]
+            try:
+                ver = await session.execute(text("SELECT version_num FROM alembic_version"))
+                row = ver.fetchone()
+                result["alembic_version"] = row[0] if row else "no rows"
+            except Exception:
+                result["alembic_version"] = "table not found"
+    except Exception as e:
+        raise HTTPException(status_code=503, detail={"error": str(e)})
+    return result
+
+
 @router.get("/live")
 async def liveness_check():
     """

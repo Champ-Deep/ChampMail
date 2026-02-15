@@ -6,6 +6,7 @@ JWT-based auth with PostgreSQL user persistence.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 from typing import Annotated, Optional
 
@@ -13,6 +14,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from app.core.config import settings
 from app.core.security import (
@@ -84,7 +87,14 @@ async def login(
     # OAuth2 form uses 'username' field, but we expect email
     email = form_data.username
 
-    user = await user_service.authenticate(session, email, form_data.password)
+    try:
+        user = await user_service.authenticate(session, email, form_data.password)
+    except Exception as e:
+        logger.error("Login DB error for %s: %s: %s", email, type(e).__name__, e)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal error: {type(e).__name__}",
+        )
 
     if not user:
         raise HTTPException(
