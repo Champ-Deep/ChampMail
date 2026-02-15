@@ -50,7 +50,9 @@ server {
     }
 
     # SPA fallback - serve index.html for all routes
+    # no-cache ensures browser revalidates on each visit, picking up new asset hashes after deploys
     location / {
+        add_header Cache-Control "no-cache";
         try_files $uri $uri/ /index.html;
     }
 
