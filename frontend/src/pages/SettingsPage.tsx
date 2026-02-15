@@ -260,7 +260,7 @@ function TeamSettings() {
             members.map((member) => (
               <div key={member.id} className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-medium">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-purple/10 text-brand-purple font-medium">
                     {member.email.charAt(0).toUpperCase()}
                   </div>
                   <div>
@@ -682,7 +682,7 @@ function EmailAccountsSettings() {
               <div className="p-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-medium">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-purple/10 text-brand-purple font-medium">
                       {account.email.charAt(0).toUpperCase()}
                     </div>
                     <div>
@@ -858,7 +858,7 @@ function EmailAccountsSettings() {
                   id="smtp-tls"
                   checked={formData.smtp_use_tls}
                   onChange={(e) => setFormData({ ...formData, smtp_use_tls: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                  className="h-4 w-4 rounded border-slate-300 text-brand-purple"
                 />
                 <label htmlFor="smtp-tls" className="text-sm text-slate-700">
                   Use STARTTLS (recommended for port 587)
@@ -906,7 +906,7 @@ function EmailAccountsSettings() {
                   id="imap-ssl"
                   checked={formData.imap_use_ssl}
                   onChange={(e) => setFormData({ ...formData, imap_use_ssl: e.target.checked })}
-                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                  className="h-4 w-4 rounded border-slate-300 text-brand-purple"
                 />
                 <label htmlFor="imap-ssl" className="text-sm text-slate-700">
                   Use SSL/TLS (recommended for port 993)
@@ -921,7 +921,7 @@ function EmailAccountsSettings() {
                 id="is-default"
                 checked={formData.is_default}
                 onChange={(e) => setFormData({ ...formData, is_default: e.target.checked })}
-                className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                className="h-4 w-4 rounded border-slate-300 text-brand-purple"
               />
               <label htmlFor="is-default" className="text-sm text-slate-700">
                 Set as default sending account
@@ -1186,7 +1186,7 @@ function SmtpImapSettings() {
               id="smtp-tls"
               checked={smtpUseTls}
               onChange={(e) => setSmtpUseTls(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+              className="h-4 w-4 rounded border-slate-300 text-brand-purple"
             />
             <label htmlFor="smtp-tls" className="text-sm text-slate-700">
               Use STARTTLS encryption (recommended for port 587)
@@ -1287,7 +1287,7 @@ function SmtpImapSettings() {
               id="imap-ssl"
               checked={imapUseSsl}
               onChange={(e) => setImapUseSsl(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-blue-600"
+              className="h-4 w-4 rounded border-slate-300 text-brand-purple"
             />
             <label htmlFor="imap-ssl" className="text-sm text-slate-700">
               Use SSL/TLS encryption (recommended for port 993)
@@ -1397,7 +1397,7 @@ export function SettingsPage() {
                   className={clsx(
                     'flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                     activeTab === tab.id
-                      ? 'bg-blue-50 text-blue-700'
+                      ? 'bg-brand-purple/5 text-brand-purple'
                       : 'text-slate-600 hover:bg-slate-100'
                   )}
                 >
@@ -1418,7 +1418,7 @@ export function SettingsPage() {
 
                 <div className="space-y-6">
                   <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-blue-600 text-xl font-bold text-white">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-brand-purple text-xl font-bold text-white">
                       {user?.email?.charAt(0).toUpperCase() || 'U'}
                     </div>
                     <div>
@@ -1501,7 +1501,7 @@ export function SettingsPage() {
                       Email Signature
                     </label>
                     <textarea
-                      className="w-full h-24 px-3 py-2 rounded-lg border border-slate-300 text-sm resize-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      className="w-full h-24 px-3 py-2 rounded-lg border border-slate-300 text-sm resize-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                       placeholder="Your email signature..."
                     />
                   </div>
@@ -1587,7 +1587,7 @@ export function SettingsPage() {
                       </div>
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only peer" defaultChecked />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-brand-purple/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-purple"></div>
                       </label>
                     </div>
                   ))}

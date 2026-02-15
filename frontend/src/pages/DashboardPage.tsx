@@ -74,7 +74,7 @@ const recentActivity = [
 ];
 
 const colorClasses: Record<string, { bg: string; text: string; iconBg: string }> = {
-  blue: { bg: 'bg-blue-50', text: 'text-blue-600', iconBg: 'bg-blue-100' },
+  blue: { bg: 'bg-brand-purple/5', text: 'text-brand-purple', iconBg: 'bg-brand-purple/10' },
   purple: { bg: 'bg-purple-50', text: 'text-purple-600', iconBg: 'bg-purple-100' },
   green: { bg: 'bg-green-50', text: 'text-green-600', iconBg: 'bg-green-100' },
   orange: { bg: 'bg-orange-50', text: 'text-orange-600', iconBg: 'bg-orange-100' },
@@ -144,7 +144,7 @@ export function DashboardPage() {
               <CardTitle>Email Performance (Last 7 Days)</CardTitle>
               <div className="flex items-center gap-4 text-sm">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-500" />
+                  <div className="w-3 h-3 rounded-full bg-brand-purple" />
                   <span className="text-slate-600">Sent</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -162,8 +162,8 @@ export function DashboardPage() {
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.2} />
-                      <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#6D08BE" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#6D08BE" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="colorOpened" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#22C55E" stopOpacity={0.2} />
@@ -187,7 +187,7 @@ export function DashboardPage() {
                   <Area
                     type="monotone"
                     dataKey="sent"
-                    stroke="#3B82F6"
+                    stroke="#6D08BE"
                     fill="url(#colorSent)"
                     strokeWidth={2}
                   />
@@ -237,7 +237,7 @@ export function DashboardPage() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <MousePointerClick className="h-4 w-4 text-blue-500" />
+                    <MousePointerClick className="h-4 w-4 text-brand-purple" />
                     <span className="text-sm text-slate-600">Click Rate</span>
                   </div>
                   <span className="text-lg font-semibold text-slate-900">
@@ -246,7 +246,7 @@ export function DashboardPage() {
                 </div>
                 <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-blue-500 rounded-full"
+                    className="h-full bg-brand-purple rounded-full"
                     style={{ width: `${metrics.clickRate}%` }}
                   />
                 </div>
@@ -289,13 +289,13 @@ export function DashboardPage() {
                     'p-2 rounded-lg',
                     activity.type === 'reply' && 'bg-purple-100',
                     activity.type === 'open' && 'bg-green-100',
-                    activity.type === 'click' && 'bg-blue-100',
+                    activity.type === 'click' && 'bg-brand-purple/10',
                     activity.type === 'bounce' && 'bg-red-100'
                   )}
                 >
                   {activity.type === 'reply' && <Reply className="h-4 w-4 text-purple-600" />}
                   {activity.type === 'open' && <Mail className="h-4 w-4 text-green-600" />}
-                  {activity.type === 'click' && <MousePointerClick className="h-4 w-4 text-blue-600" />}
+                  {activity.type === 'click' && <MousePointerClick className="h-4 w-4 text-brand-purple" />}
                   {activity.type === 'bounce' && <Mail className="h-4 w-4 text-red-600" />}
                 </div>
                 <div className="flex-1 min-w-0">

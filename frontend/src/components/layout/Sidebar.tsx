@@ -43,10 +43,10 @@ export function Sidebar() {
   const { logout, user } = useAuthStore();
 
   return (
-    <div className="flex h-full w-64 flex-col bg-slate-900" data-tour="sidebar">
+    <div className="flex h-full w-64 flex-col bg-brand-navy" data-tour="sidebar">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-2 px-6 border-b border-slate-700">
-        <Mail className="h-8 w-8 text-blue-500" />
+      <div className="flex h-16 items-center gap-2 px-6 border-b border-white/10">
+        <Mail className="h-8 w-8 text-brand-gold" />
         <span className="text-xl font-bold text-white">ChampMail</span>
       </div>
 
@@ -64,8 +64,8 @@ export function Sidebar() {
               className={clsx(
                 'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                 isActive
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  ? 'bg-brand-purple text-white'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
               )}
             >
               <item.icon className="h-5 w-5" />
@@ -90,8 +90,8 @@ export function Sidebar() {
                   className={clsx(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
                     isActive
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                      ? 'bg-brand-purple text-white'
+                      : 'text-slate-300 hover:bg-white/10 hover:text-white'
                   )}
                 >
                   <item.icon className="h-5 w-5" />
@@ -104,9 +104,9 @@ export function Sidebar() {
       </nav>
 
       {/* User section */}
-      <div className="border-t border-slate-700 p-4">
+      <div className="border-t border-white/10 p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-medium text-white">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-purple text-sm font-medium text-white">
             {user?.email?.charAt(0).toUpperCase() || 'U'}
           </div>
           <div className="flex-1 min-w-0">
@@ -117,7 +117,7 @@ export function Sidebar() {
           </div>
           <button
             onClick={logout}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
             title="Logout"
           >
             <LogOut className="h-4 w-4" />

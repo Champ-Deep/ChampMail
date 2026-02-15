@@ -30,7 +30,7 @@ export function ProspectTable({ prospects }: ProspectTableProps) {
         <tbody className="divide-y divide-slate-100">
           {prospects.map((p, i) => (
             <tr key={i} className="hover:bg-slate-50 transition-colors">
-              <td className="px-4 py-3 text-blue-600 font-medium">{p.email}</td>
+              <td className="px-4 py-3 text-brand-purple font-medium">{p.email}</td>
               <td className="px-4 py-3 text-slate-700">{p.name || '-'}</td>
               <td className="px-4 py-3 text-slate-700">{p.company || '-'}</td>
               <td className="px-4 py-3 text-slate-500">{p.title || '-'}</td>

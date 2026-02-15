@@ -1,7 +1,22 @@
 @import "tailwindcss";
 
+@theme {
+  /* Lake B2B Brand Colors — Primary (80% of designs) */
+  --color-brand-gold: #FFB703;
+  --color-brand-red: #E8033A;
+  --color-brand-purple: #6D08BE;
+
+  /* Lake B2B Brand Colors — Secondary (20%) */
+  --color-brand-magenta: #DD1286;
+  --color-brand-teal: #0095A0;
+  --color-brand-lavender: #7A76DA;
+  --color-brand-navy: #011A6B;
+  --color-brand-deep-red: #C1003C;
+  --color-brand-orange: #FF6903;
+}
+
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Montserrat', system-ui, Avenir, Helvetica, Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 }

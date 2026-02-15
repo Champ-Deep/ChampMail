@@ -158,7 +158,7 @@ export function AIAssistantPage() {
             <div
               key={conv.id}
               className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer hover:bg-slate-100 transition-colors group ${
-                activeConversationId === conv.id ? 'bg-blue-50 border-r-2 border-blue-600' : ''
+                activeConversationId === conv.id ? 'bg-brand-purple/5 border-r-2 border-brand-purple' : ''
               }`}
               onClick={() => loadConversation(conv.id)}
             >
@@ -185,17 +185,17 @@ export function AIAssistantPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="h-14 border-b border-slate-200 flex items-center px-6 flex-shrink-0">
-          <Bot className="h-5 w-5 text-blue-600 mr-2" />
+          <Bot className="h-5 w-5 text-brand-purple mr-2" />
           <h1 className="text-lg font-semibold text-slate-900">AI Assistant</h1>
-          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Powered by Thesys C1</span>
+          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-brand-purple/10 text-brand-purple">Powered by Thesys C1</span>
         </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.length === 0 && !isStreaming && (
             <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center mb-4">
-                <Sparkles className="h-8 w-8 text-blue-600" />
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-purple/10 to-brand-lavender/10 flex items-center justify-center mb-4">
+                <Sparkles className="h-8 w-8 text-brand-purple" />
               </div>
               <h2 className="text-xl font-semibold text-slate-900 mb-2">ChampMail AI Assistant</h2>
               <p className="text-sm text-slate-500 mb-6 max-w-md">
@@ -206,7 +206,7 @@ export function AIAssistantPage() {
                   <button
                     key={prompt}
                     onClick={() => handleSend(prompt)}
-                    className="text-xs px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                    className="text-xs px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-brand-purple/10 hover:text-brand-purple transition-colors"
                   >
                     {prompt}
                   </button>
@@ -223,7 +223,7 @@ export function AIAssistantPage() {
               <div
                 className={`max-w-[75%] rounded-2xl px-4 py-3 ${
                   msg.role === 'user'
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-brand-purple text-white'
                     : 'bg-slate-100 text-slate-900'
                 }`}
               >
@@ -263,7 +263,7 @@ export function AIAssistantPage() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
               placeholder="Ask about your campaigns, analytics, prospects..."
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-purple/70 focus:ring-2 focus:ring-brand-purple/10 transition-all"
               disabled={isStreaming}
             />
             <Button

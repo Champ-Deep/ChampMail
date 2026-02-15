@@ -67,15 +67,15 @@ export function C1AnalyticsQuery() {
   }, [query]);
 
   return (
-    <Card padding="none" className="p-4 border-blue-200 bg-gradient-to-r from-blue-50/50 to-indigo-50/50 mb-6">
+    <Card padding="none" className="p-4 border-brand-purple/20 bg-gradient-to-r from-brand-purple/5 to-brand-purple/10 mb-6">
       <div className="flex items-center gap-3 mb-3">
-        <Sparkles className="h-5 w-5 text-blue-600 flex-shrink-0" />
+        <Sparkles className="h-5 w-5 text-brand-purple flex-shrink-0" />
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !isLoading && handleQuery()}
           placeholder="Ask about your analytics... e.g. 'Show open rates by domain this month'"
-          className="flex-1 bg-transparent text-sm outline-none placeholder:text-blue-400 text-slate-900"
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-brand-purple text-slate-900"
           disabled={isLoading}
         />
         <Button
@@ -94,7 +94,7 @@ export function C1AnalyticsQuery() {
             <button
               key={sq}
               onClick={() => { setQuery(sq); handleQuery(sq); }}
-              className="text-xs px-2.5 py-1 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
+              className="text-xs px-2.5 py-1 rounded-full bg-brand-purple/10 text-brand-purple hover:bg-brand-purple/20 transition-colors"
             >
               {sq}
             </button>
@@ -112,9 +112,9 @@ export function C1AnalyticsQuery() {
 
       {/* C1 Response */}
       {c1Response && (
-        <div className="mt-4 border-t border-blue-200 pt-4">
+        <div className="mt-4 border-t border-brand-purple/20 pt-4">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs text-blue-600 font-medium">AI Response</span>
+            <span className="text-xs text-brand-purple font-medium">AI Response</span>
             <button
               onClick={() => { setC1Response(null); setQuery(''); }}
               className="text-xs text-slate-400 hover:text-slate-600"

@@ -132,7 +132,7 @@ export function CampaignsPage() {
               placeholder="Search campaigns..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
             />
           </div>
 
@@ -144,7 +144,7 @@ export function CampaignsPage() {
                 className={clsx(
                   'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
                   statusFilter === tab.value
-                    ? 'bg-blue-100 text-blue-700'
+                    ? 'bg-brand-purple/10 text-brand-purple'
                     : 'text-slate-600 hover:bg-slate-100'
                 )}
               >
@@ -186,7 +186,7 @@ export function CampaignsPage() {
               return (
                 <Card
                   key={campaign.id}
-                  className="hover:border-blue-200 hover:shadow-md transition-all"
+                  className="hover:border-brand-purple/20 hover:shadow-md transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex items-start gap-4">
@@ -312,7 +312,7 @@ export function CampaignsPage() {
                       </div>
                       <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-blue-500 rounded-full"
+                          className="h-full bg-brand-purple rounded-full"
                           style={{
                             width: `${(campaign.sent_count / campaign.total_prospects) * 100}%`,
                           }}

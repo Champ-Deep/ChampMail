@@ -108,7 +108,7 @@ function Stepper({ currentStep, completedSteps }: StepperProps) {
                   className={clsx(
                     'h-10 w-10 rounded-full flex items-center justify-center border-2 transition-all duration-200',
                     isActive
-                      ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-200'
+                      ? 'border-brand-purple bg-brand-purple text-white shadow-lg shadow-brand-purple/20'
                       : isCompleted
                       ? 'border-green-500 bg-green-500 text-white'
                       : 'border-slate-300 bg-white text-slate-400'
@@ -124,7 +124,7 @@ function Stepper({ currentStep, completedSteps }: StepperProps) {
                   className={clsx(
                     'mt-2 text-xs font-medium text-center max-w-[80px] leading-tight',
                     isActive
-                      ? 'text-blue-600'
+                      ? 'text-brand-purple'
                       : isCompleted
                       ? 'text-green-600'
                       : 'text-slate-400'
@@ -199,7 +199,7 @@ function StepCampaignDescription({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={6}
-            className="w-full px-4 py-3 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-200 resize-none placeholder:text-slate-400"
+            className="w-full px-4 py-3 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 resize-none placeholder:text-slate-400"
             placeholder="Example: We sell an AI-powered email platform that helps B2B sales teams automate cold outreach. Our key differentiator is real-time prospect research and hyper-personalization. We want to target VP of Sales and Head of Growth at mid-market SaaS companies (100-1000 employees) who currently use legacy email tools..."
           />
           <p className="text-xs text-slate-400 mt-1.5">
@@ -215,7 +215,7 @@ function StepCampaignDescription({
             type="text"
             value={targetAudience}
             onChange={(e) => setTargetAudience(e.target.value)}
-            className="w-full h-10 px-4 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-200 placeholder:text-slate-400"
+            className="w-full h-10 px-4 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 placeholder:text-slate-400"
             placeholder="e.g., VP of Sales at mid-market SaaS companies"
           />
         </div>
@@ -329,7 +329,7 @@ function StepSelectProspects({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+        <Loader2 className="h-8 w-8 text-brand-purple animate-spin" />
       </div>
     );
   }
@@ -366,7 +366,7 @@ function StepSelectProspects({
               className={clsx(
                 'w-full text-left rounded-xl border-2 p-4 transition-all duration-150',
                 selectedListId === list.id
-                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                  ? 'border-brand-purple bg-brand-purple/5 ring-2 ring-brand-purple/20'
                   : 'border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm'
               )}
             >
@@ -376,7 +376,7 @@ function StepSelectProspects({
                     className={clsx(
                       'h-10 w-10 rounded-lg flex items-center justify-center',
                       selectedListId === list.id
-                        ? 'bg-blue-100'
+                        ? 'bg-brand-purple/10'
                         : 'bg-slate-100'
                     )}
                   >
@@ -384,7 +384,7 @@ function StepSelectProspects({
                       className={clsx(
                         'h-5 w-5',
                         selectedListId === list.id
-                          ? 'text-blue-600'
+                          ? 'text-brand-purple'
                           : 'text-slate-400'
                       )}
                     />
@@ -408,7 +408,7 @@ function StepSelectProspects({
                     {list.total_prospects.toLocaleString()} contacts
                   </Badge>
                   {selectedListId === list.id && (
-                    <CheckCircle2 className="h-5 w-5 text-blue-600" />
+                    <CheckCircle2 className="h-5 w-5 text-brand-purple" />
                   )}
                 </div>
               </div>
@@ -656,7 +656,7 @@ function StepSegmentation({
 
   const priorityColors: Record<string, string> = {
     high: 'border-green-200 bg-green-50',
-    medium: 'border-blue-200 bg-blue-50',
+    medium: 'border-brand-purple/20 bg-brand-purple/5',
     low: 'border-slate-200 bg-slate-50',
   };
 
@@ -697,16 +697,16 @@ function StepSegmentation({
       {segmentation && (
         <div className="space-y-4">
           {/* Strategy overview */}
-          <Card className="border-blue-200 bg-blue-50/30">
+          <Card className="border-brand-purple/20 bg-brand-purple/5">
             <div className="flex items-start gap-3">
-              <Lightbulb className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <Lightbulb className="h-5 w-5 text-brand-purple mt-0.5 flex-shrink-0" />
               <div>
-                <p className="text-sm font-medium text-blue-800 mb-1">
+                <p className="text-sm font-medium text-brand-navy mb-1">
                   Segmentation Strategy
                 </p>
-                <p className="text-sm text-blue-700">{segmentation.strategy}</p>
+                <p className="text-sm text-brand-purple">{segmentation.strategy}</p>
                 {segmentation.unmatched_pct > 0 && (
-                  <p className="text-xs text-blue-500 mt-1">
+                  <p className="text-xs text-brand-purple mt-1">
                     ~{segmentation.unmatched_pct}% of prospects may not match
                     any segment
                   </p>
@@ -916,7 +916,7 @@ function StepPitchGeneration({
                   className={clsx(
                     'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all border',
                     isActive
-                      ? 'border-blue-300 bg-blue-50 text-blue-700'
+                      ? 'border-brand-purple/30 bg-brand-purple/5 text-brand-purple'
                       : 'border-transparent hover:bg-slate-50 text-slate-600'
                   )}
                 >
@@ -1042,7 +1042,7 @@ function StepPitchGeneration({
                         key={i}
                         className="text-sm text-slate-700 flex items-start gap-2"
                       >
-                        <Zap className="h-3.5 w-3.5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <Zap className="h-3.5 w-3.5 text-brand-purple mt-0.5 flex-shrink-0" />
                         {msg}
                       </li>
                     ))}
@@ -1059,7 +1059,7 @@ function StepPitchGeneration({
                       {currentPitch.follow_up_templates.map((fu, i) => (
                         <div
                           key={i}
-                          className="pl-4 border-l-2 border-blue-200"
+                          className="pl-4 border-l-2 border-brand-purple/20"
                         >
                           <div className="flex items-center gap-2 mb-1">
                             <Badge variant="info" size="sm">
@@ -1172,10 +1172,10 @@ function StepPreviewSend({
       {personalizedEmails.length > 0 && (
         <div className="space-y-4">
           {/* Summary Bar */}
-          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl">
+          <div className="flex items-center justify-between p-4 bg-gradient-to-r from-brand-purple/5 to-brand-lavender/10 border border-brand-purple/20 rounded-xl">
             <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Send className="h-6 w-6 text-blue-600" />
+              <div className="h-12 w-12 rounded-lg bg-brand-purple/10 flex items-center justify-center">
+                <Send className="h-6 w-6 text-brand-purple" />
               </div>
               <div>
                 <p className="text-lg font-semibold text-slate-900">
@@ -1191,7 +1191,7 @@ function StepPreviewSend({
               disabled={isSending}
               isLoading={isSending}
               leftIcon={<Send className="h-4 w-4" />}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+              className="bg-gradient-to-r from-brand-purple to-brand-navy hover:from-brand-purple/90 hover:to-brand-navy/90"
             >
               {isSending ? 'Sending...' : 'Send Campaign'}
             </Button>
@@ -1210,7 +1210,7 @@ function StepPreviewSend({
                   className={clsx(
                     'w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all border',
                     idx === selectedEmailIdx
-                      ? 'border-blue-300 bg-blue-50'
+                      ? 'border-brand-purple/30 bg-brand-purple/5'
                       : 'border-transparent hover:bg-slate-50'
                   )}
                 >
@@ -1291,7 +1291,7 @@ function StepPreviewSend({
                             {currentEmail.follow_ups.map((fu, i) => (
                               <div
                                 key={i}
-                                className="pl-3 border-l-2 border-blue-200"
+                                className="pl-3 border-l-2 border-brand-purple/20"
                               >
                                 <div className="flex items-center gap-2">
                                   <Badge variant="info" size="sm">
@@ -1371,7 +1371,7 @@ function StepPreviewSend({
                 />
               ) : isGeneratingHtml ? (
                 <div className="flex flex-col items-center justify-center py-16">
-                  <Loader2 className="h-8 w-8 text-blue-600 animate-spin mb-3" />
+                  <Loader2 className="h-8 w-8 text-brand-purple animate-spin mb-3" />
                   <p className="text-sm text-slate-500">
                     Generating HTML email...
                   </p>

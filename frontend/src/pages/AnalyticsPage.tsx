@@ -120,7 +120,7 @@ export function AnalyticsPage() {
           subtitle="Monitor your email performance and engagement metrics"
         />
         <div className="flex items-center justify-center h-96">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-purple"></div>
         </div>
       </div>
     );
@@ -134,9 +134,9 @@ export function AnalyticsPage() {
           subtitle="Monitor your email performance and engagement metrics"
         />
         <div className="p-6">
-          <Card className="bg-blue-50 border-blue-200">
+          <Card className="bg-brand-purple/5 border-brand-purple/20">
             <div className="p-6 text-center">
-              <Mail className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+              <Mail className="w-12 h-12 text-brand-purple mx-auto mb-3" />
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Analytics Data Yet</h3>
               <p className="text-gray-600">
                 Start sending campaigns to see your email performance metrics here.
@@ -186,20 +186,20 @@ export function AnalyticsPage() {
 
         {/* Key Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+          <Card className="bg-gradient-to-br from-brand-purple/5 to-brand-purple/10">
             <div className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-blue-600 font-medium">Emails Sent</p>
-                  <p className="text-2xl font-bold text-blue-900">
+                  <p className="text-sm text-brand-purple font-medium">Emails Sent</p>
+                  <p className="text-2xl font-bold text-brand-navy">
                     {overview.emails_sent_this_month.toLocaleString()}
                   </p>
                 </div>
-                <div className="w-12 h-12 bg-blue-200 rounded-lg flex items-center justify-center">
-                  <Mail className="w-6 h-6 text-blue-600" />
+                <div className="w-12 h-12 bg-brand-purple/20 rounded-lg flex items-center justify-center">
+                  <Mail className="w-6 h-6 text-brand-purple" />
                 </div>
               </div>
-              <div className="flex items-center gap-1 mt-2 text-sm text-blue-600">
+              <div className="flex items-center gap-1 mt-2 text-sm text-brand-purple">
                 <span>This month</span>
               </div>
             </div>

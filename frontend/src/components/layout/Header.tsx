@@ -23,7 +23,7 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
           <input
             type="text"
             placeholder="Search..."
-            className="h-9 w-64 rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            className="h-9 w-64 rounded-lg border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/50"
           />
         </div>
 

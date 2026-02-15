@@ -89,7 +89,7 @@ export function TemplatesPage() {
           subtitle="Create and manage your email templates"
         />
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+          <Loader2 className="h-8 w-8 text-brand-purple animate-spin" />
         </div>
       </div>
     );
@@ -142,7 +142,7 @@ export function TemplatesPage() {
               placeholder="Search templates..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
             />
           </div>
         </div>
@@ -152,16 +152,16 @@ export function TemplatesPage() {
           {filteredTemplates.map((template) => (
             <Card
               key={template.id}
-              className="group hover:border-blue-200 hover:shadow-md transition-all cursor-pointer"
+              className="group hover:border-brand-purple/20 hover:shadow-md transition-all cursor-pointer"
               onClick={() => navigate(`/templates/${template.id}/edit`)}
             >
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-blue-50">
-                    <FileText className="h-5 w-5 text-blue-600" />
+                  <div className="p-2 rounded-lg bg-brand-purple/5">
+                    <FileText className="h-5 w-5 text-brand-purple" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-slate-900 group-hover:text-blue-600 transition-colors">
+                    <h3 className="font-medium text-slate-900 group-hover:text-brand-purple transition-colors">
                       {template.name}
                     </h3>
                     <p className="text-sm text-slate-500 mt-0.5 line-clamp-1">

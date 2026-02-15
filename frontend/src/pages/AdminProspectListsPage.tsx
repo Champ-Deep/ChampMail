@@ -152,7 +152,7 @@ function FileUploadZone({ onFileSelected, isUploading }: FileUploadZoneProps) {
       className={clsx(
         'relative border-2 border-dashed rounded-xl p-10 text-center transition-all duration-200 cursor-pointer',
         isDragOver
-          ? 'border-blue-400 bg-blue-50 scale-[1.01]'
+          ? 'border-brand-purple/70 bg-brand-purple/5 scale-[1.01]'
           : 'border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-white'
       )}
       onClick={() => fileInputRef.current?.click()}
@@ -167,7 +167,7 @@ function FileUploadZone({ onFileSelected, isUploading }: FileUploadZoneProps) {
 
       {isUploading ? (
         <div className="flex flex-col items-center">
-          <Loader2 className="h-10 w-10 text-blue-500 animate-spin mb-3" />
+          <Loader2 className="h-10 w-10 text-brand-purple animate-spin mb-3" />
           <p className="text-sm font-medium text-slate-700">
             Uploading prospect list...
           </p>
@@ -177,8 +177,8 @@ function FileUploadZone({ onFileSelected, isUploading }: FileUploadZoneProps) {
         </div>
       ) : (
         <div className="flex flex-col items-center">
-          <div className="h-14 w-14 rounded-full bg-blue-100 flex items-center justify-center mb-4">
-            <Upload className="h-6 w-6 text-blue-600" />
+          <div className="h-14 w-14 rounded-full bg-brand-purple/10 flex items-center justify-center mb-4">
+            <Upload className="h-6 w-6 text-brand-purple" />
           </div>
           <p className="text-sm font-medium text-slate-700 mb-1">
             {isDragOver
@@ -315,7 +315,7 @@ export function AdminProspectListsPage() {
       <div className="h-full">
         <Header title="Prospect Lists" subtitle="Loading..." />
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+          <Loader2 className="h-8 w-8 text-brand-purple animate-spin" />
         </div>
       </div>
     );
@@ -397,8 +397,8 @@ export function AdminProspectListsPage() {
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card className="flex items-center gap-4">
-            <div className="h-10 w-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-blue-600" />
+            <div className="h-10 w-10 rounded-lg bg-brand-purple/10 flex items-center justify-center">
+              <FileText className="h-5 w-5 text-brand-purple" />
             </div>
             <div>
               <p className="text-2xl font-bold text-slate-900">
@@ -520,7 +520,7 @@ export function AdminProspectListsPage() {
                             <div className="mt-1">
                               <div className="w-full bg-slate-200 rounded-full h-1.5">
                                 <div
-                                  className="bg-blue-600 h-1.5 rounded-full transition-all duration-500"
+                                  className="bg-brand-purple h-1.5 rounded-full transition-all duration-500"
                                   style={{
                                     width: `${Math.min(
                                       100,
@@ -570,7 +570,7 @@ export function AdminProspectListsPage() {
                             disabled
                             title="Processing..."
                           >
-                            <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                            <Loader2 className="h-4 w-4 text-brand-purple animate-spin" />
                           </Button>
                         )}
                         <Button

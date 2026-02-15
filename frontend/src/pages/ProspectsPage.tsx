@@ -120,7 +120,7 @@ export function ProspectsPage() {
       <div className="h-full">
         <Header title="Prospects" subtitle="Loading..." />
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 text-blue-600 animate-spin" />
+          <Loader2 className="h-8 w-8 text-brand-purple animate-spin" />
         </div>
       </div>
     );
@@ -186,13 +186,13 @@ export function ProspectsPage() {
               placeholder="Search prospects..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
             />
           </div>
 
           {selectedProspects.length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-lg">
-              <span className="text-sm text-blue-700">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-brand-purple/5 rounded-lg">
+              <span className="text-sm text-brand-purple">
                 {selectedProspects.length} selected
               </span>
               <Button
@@ -230,7 +230,7 @@ export function ProspectsPage() {
                         filteredProspects.length > 0
                       }
                       onChange={toggleSelectAll}
-                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      className="h-4 w-4 rounded border-slate-300 text-brand-purple focus:ring-brand-purple"
                     />
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
@@ -257,7 +257,7 @@ export function ProspectsPage() {
                     key={prospect.email}
                     className={clsx(
                       'hover:bg-slate-50 transition-colors',
-                      selectedProspects.includes(prospect.email) && 'bg-blue-50'
+                      selectedProspects.includes(prospect.email) && 'bg-brand-purple/5'
                     )}
                   >
                     <td className="px-4 py-3">
@@ -265,7 +265,7 @@ export function ProspectsPage() {
                         type="checkbox"
                         checked={selectedProspects.includes(prospect.email)}
                         onChange={() => toggleSelect(prospect.email)}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        className="h-4 w-4 rounded border-slate-300 text-brand-purple focus:ring-brand-purple"
                       />
                     </td>
                     <td className="px-4 py-3">
@@ -398,7 +398,7 @@ export function ProspectsPage() {
                   type="email"
                   value={newProspect.email}
                   onChange={(e) => setNewProspect({ ...newProspect, email: e.target.value })}
-                  className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                   placeholder="john@company.com"
                 />
               </div>
@@ -411,7 +411,7 @@ export function ProspectsPage() {
                     type="text"
                     value={newProspect.first_name || ''}
                     onChange={(e) => setNewProspect({ ...newProspect, first_name: e.target.value })}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                     placeholder="John"
                   />
                 </div>
@@ -423,7 +423,7 @@ export function ProspectsPage() {
                     type="text"
                     value={newProspect.last_name || ''}
                     onChange={(e) => setNewProspect({ ...newProspect, last_name: e.target.value })}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                     placeholder="Smith"
                   />
                 </div>
@@ -437,7 +437,7 @@ export function ProspectsPage() {
                     type="text"
                     value={newProspect.company_name || ''}
                     onChange={(e) => setNewProspect({ ...newProspect, company_name: e.target.value })}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                     placeholder="Acme Corp"
                   />
                 </div>
@@ -449,7 +449,7 @@ export function ProspectsPage() {
                     type="text"
                     value={newProspect.title || ''}
                     onChange={(e) => setNewProspect({ ...newProspect, title: e.target.value })}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                     placeholder="VP of Sales"
                   />
                 </div>
@@ -462,7 +462,7 @@ export function ProspectsPage() {
                   type="text"
                   value={newProspect.industry || ''}
                   onChange={(e) => setNewProspect({ ...newProspect, industry: e.target.value })}
-                  className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                  className="w-full h-10 px-3 rounded-lg border border-slate-200 text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
                   placeholder="Technology"
                 />
               </div>

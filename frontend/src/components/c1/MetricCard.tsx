@@ -11,7 +11,7 @@ interface MetricCardProps {
 }
 
 const colorMap = {
-  blue: { bg: 'from-blue-50 to-blue-100', text: 'text-blue-900', accent: 'text-blue-600' },
+  blue: { bg: 'from-brand-purple/5 to-brand-purple/10', text: 'text-brand-navy', accent: 'text-brand-purple' },
   green: { bg: 'from-green-50 to-green-100', text: 'text-green-900', accent: 'text-green-600' },
   purple: { bg: 'from-purple-50 to-purple-100', text: 'text-purple-900', accent: 'text-purple-600' },
   red: { bg: 'from-red-50 to-red-100', text: 'text-red-900', accent: 'text-red-600' },

@@ -35,7 +35,7 @@ import { workflowsApi, type Workflow as WorkflowType, type WorkflowExecution, ty
 const WORKFLOW_TYPE_CONFIG: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
   auto_reply: {
     icon: <MessageSquare className="h-5 w-5" />,
-    color: 'bg-blue-100 text-blue-700',
+    color: 'bg-brand-purple/10 text-brand-purple',
     label: 'Auto Reply',
   },
   email_writer: {
@@ -248,7 +248,7 @@ function WorkflowCard({ workflow, onToggle, onTrigger, onDelete, isToggling, isT
                   <Copy className="h-3 w-3" />
                 </Button>
               </div>
-              <code className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded block overflow-x-auto">
+              <code className="text-xs text-brand-purple bg-brand-purple/5 px-2 py-1 rounded block overflow-x-auto">
                 POST {webhookSendUrl}
               </code>
               <p className="text-xs text-slate-500 mt-1">
@@ -269,7 +269,7 @@ function WorkflowCard({ workflow, onToggle, onTrigger, onDelete, isToggling, isT
                   <Copy className="h-3 w-3" />
                 </Button>
               </div>
-              <code className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded block overflow-x-auto">
+              <code className="text-xs text-brand-purple bg-brand-purple/5 px-2 py-1 rounded block overflow-x-auto">
                 POST {webhookFetchUrl}
               </code>
               <p className="text-xs text-slate-500 mt-1">
@@ -309,7 +309,7 @@ function WorkflowCard({ workflow, onToggle, onTrigger, onDelete, isToggling, isT
                     ) : exec.status === 'failed' ? (
                       <XCircle className="h-4 w-4 text-red-600" />
                     ) : (
-                      <RefreshCw className="h-4 w-4 text-blue-600 animate-spin" />
+                      <RefreshCw className="h-4 w-4 text-brand-purple animate-spin" />
                     )}
                     <span className="text-slate-700">{exec.trigger_type || 'manual'}</span>
                   </div>
@@ -767,7 +767,7 @@ function VoiceAgent() {
   };
 
   return (
-    <Card className="p-6 bg-gradient-to-br from-purple-50 to-blue-50 border-purple-200">
+    <Card className="p-6 bg-gradient-to-br from-purple-50 to-brand-purple/5 border-purple-200">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="p-3 bg-purple-600 rounded-full">

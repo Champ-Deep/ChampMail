@@ -183,8 +183,8 @@ export function HelpChatWidget() {
         onClick={() => setIsOpen(true)}
         className={clsx(
           'fixed bottom-6 right-6 z-50 flex items-center justify-center',
-          'h-14 w-14 rounded-full bg-blue-600 text-white shadow-lg',
-          'hover:bg-blue-700 hover:scale-105 transition-all duration-200',
+          'h-14 w-14 rounded-full bg-brand-purple text-white shadow-lg',
+          'hover:bg-brand-purple hover:scale-105 transition-all duration-200',
           isOpen && 'hidden'
         )}
         title="Help & Documentation"
@@ -196,14 +196,14 @@ export function HelpChatWidget() {
       {isOpen && (
         <div className="fixed bottom-6 right-6 z-50 w-96 h-[500px] bg-white rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-blue-600 text-white">
+          <div className="flex items-center justify-between px-4 py-3 bg-brand-purple text-white">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5" />
               <span className="font-semibold">ChampMail Help</span>
             </div>
             <button
               onClick={() => setIsOpen(false)}
-              className="p-1 hover:bg-blue-700 rounded-lg transition-colors"
+              className="p-1 hover:bg-brand-purple rounded-lg transition-colors"
             >
               <X className="h-5 w-5" />
             </button>
@@ -223,7 +223,7 @@ export function HelpChatWidget() {
                   className={clsx(
                     'max-w-[85%] rounded-2xl px-4 py-2.5 text-sm',
                     message.role === 'user'
-                      ? 'bg-blue-600 text-white rounded-br-md'
+                      ? 'bg-brand-purple text-white rounded-br-md'
                       : 'bg-white text-slate-700 shadow-sm border border-slate-100 rounded-bl-md'
                   )}
                 >
@@ -250,7 +250,7 @@ export function HelpChatWidget() {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="bg-white rounded-2xl rounded-bl-md px-4 py-3 shadow-sm border border-slate-100">
-                  <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+                  <Loader2 className="h-5 w-5 animate-spin text-brand-purple" />
                 </div>
               </div>
             )}
@@ -285,7 +285,7 @@ export function HelpChatWidget() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="Ask a question..."
-                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-full outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                className="flex-1 px-4 py-2.5 text-sm border border-slate-200 rounded-full outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
               />
               <button
                 onClick={handleSend}
@@ -293,7 +293,7 @@ export function HelpChatWidget() {
                 className={clsx(
                   'p-2.5 rounded-full transition-colors',
                   input.trim() && !isLoading
-                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    ? 'bg-brand-purple text-white hover:bg-brand-purple/90'
                     : 'bg-slate-100 text-slate-400'
                 )}
               >

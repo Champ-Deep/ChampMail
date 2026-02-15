@@ -85,7 +85,7 @@ const EMPTY_PRESET_FORM: UTMPresetCreate = {
 function LoadingSpinner() {
   return (
     <div className="flex items-center justify-center h-64">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-purple" />
     </div>
   );
 }
@@ -96,9 +96,9 @@ function EmptyState({ icon: Icon, title, description }: {
   description: string;
 }) {
   return (
-    <Card className="bg-blue-50 border-blue-200">
+    <Card className="bg-brand-purple/5 border-brand-purple/20">
       <div className="p-6 text-center">
-        <Icon className="w-12 h-12 text-blue-600 mx-auto mb-3" />
+        <Icon className="w-12 h-12 text-brand-purple mx-auto mb-3" />
         <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
         <p className="text-gray-600">{description}</p>
       </div>
@@ -126,7 +126,7 @@ function CampaignSelector({
         value={selectedId}
         onChange={(e) => onSelect(e.target.value)}
         disabled={loading}
-        className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-200 disabled:bg-slate-50 disabled:cursor-not-allowed"
+        className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20 disabled:bg-slate-50 disabled:cursor-not-allowed"
       >
         <option value="">-- Choose a campaign --</option>
         {campaigns.map((c) => (
@@ -300,7 +300,7 @@ function PresetsTab() {
               Available variables:{' '}
               {TEMPLATE_VARIABLES.map((v, i) => (
                 <span key={v}>
-                  <code className="bg-slate-100 px-1 py-0.5 rounded text-blue-600">
+                  <code className="bg-slate-100 px-1 py-0.5 rounded text-brand-purple">
                     {v}
                   </code>
                   {i < TEMPLATE_VARIABLES.length - 1 && ', '}
@@ -396,7 +396,7 @@ function PresetsTab() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => handleEdit(preset)}
-                          className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          className="p-1.5 text-slate-400 hover:text-brand-purple hover:bg-brand-purple/5 rounded-lg transition-colors"
                           title="Edit"
                         >
                           <Pencil className="h-4 w-4" />
@@ -601,7 +601,7 @@ function CampaignConfigTab() {
               <button
                 onClick={() => setEnabled(!enabled)}
                 className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  enabled ? 'bg-blue-600' : 'bg-slate-300'
+                  enabled ? 'bg-brand-purple' : 'bg-slate-300'
                 }`}
               >
                 <span
@@ -622,7 +622,7 @@ function CampaignConfigTab() {
                   <select
                     value={selectedPresetId}
                     onChange={(e) => setSelectedPresetId(e.target.value)}
-                    className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 bg-white text-sm outline-none transition-colors focus:border-brand-purple focus:ring-2 focus:ring-brand-purple/20"
                   >
                     <option value="">-- No preset (manual) --</option>
                     {presets.map((p) => (
@@ -681,7 +681,7 @@ function CampaignConfigTab() {
                     type="checkbox"
                     checked={preserveExisting}
                     onChange={(e) => setPreserveExisting(e.target.checked)}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    className="h-4 w-4 rounded border-slate-300 text-brand-purple focus:ring-brand-purple"
                   />
                   <div>
                     <p className="text-sm font-medium text-slate-900">
@@ -753,7 +753,7 @@ function CampaignConfigTab() {
               <tbody className="divide-y">
                 {previewLinks.map((link, idx) => (
                   <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-blue-600 font-mono text-xs max-w-xs truncate">
+                    <td className="px-4 py-3 text-sm text-brand-purple font-mono text-xs max-w-xs truncate">
                       {link.original_url.length > 60
                         ? link.original_url.slice(0, 60) + '...'
                         : link.original_url}
@@ -883,17 +883,17 @@ function AnalyticsTab() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="bg-gradient-to-br from-blue-50 to-blue-100">
+        <Card className="bg-gradient-to-br from-brand-purple/5 to-brand-purple/10">
           <div className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-blue-600 font-medium">Tracked Links</p>
-                <p className="text-2xl font-bold text-blue-900">
+                <p className="text-sm text-brand-purple font-medium">Tracked Links</p>
+                <p className="text-2xl font-bold text-brand-navy">
                   {overview.total_tracked_links.toLocaleString()}
                 </p>
               </div>
-              <div className="w-12 h-12 bg-blue-200 rounded-lg flex items-center justify-center">
-                <Link2 className="w-6 h-6 text-blue-600" />
+              <div className="w-12 h-12 bg-brand-purple/20 rounded-lg flex items-center justify-center">
+                <Link2 className="w-6 h-6 text-brand-purple" />
               </div>
             </div>
           </div>
@@ -1147,7 +1147,7 @@ function LinkPerformanceTab() {
               <tbody className="divide-y">
                 {links.map((link, idx) => (
                   <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm font-mono text-xs text-blue-600 max-w-xs">
+                    <td className="px-4 py-3 text-sm font-mono text-xs text-brand-purple max-w-xs">
                       <span title={link.original_url}>
                         {link.original_url.length > 60
                           ? link.original_url.slice(0, 60) + '...'
@@ -1219,7 +1219,7 @@ export function UTMManagerPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center gap-2 pb-3 text-sm font-medium transition-colors border-b-2 ${
                     isActive
-                      ? 'border-blue-600 text-blue-600'
+                      ? 'border-brand-purple text-brand-purple'
                       : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
                   }`}
                 >

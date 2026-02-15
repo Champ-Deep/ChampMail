@@ -102,7 +102,7 @@ export function SequencesPage() {
               placeholder="Search sequences..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              className="w-full h-10 pl-10 pr-4 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
             />
           </div>
 
@@ -114,7 +114,7 @@ export function SequencesPage() {
                 className={clsx(
                   'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
                   (status === 'all' && !statusFilter) || statusFilter === status
-                    ? 'bg-blue-100 text-blue-700'
+                    ? 'bg-brand-purple/10 text-brand-purple'
                     : 'text-slate-600 hover:bg-slate-100'
                 )}
               >
@@ -127,7 +127,7 @@ export function SequencesPage() {
         {/* Loading State */}
         {isLoading && (
           <div className="py-12 text-center">
-            <Loader2 className="h-12 w-12 text-blue-500 animate-spin mx-auto mb-4" />
+            <Loader2 className="h-12 w-12 text-brand-purple animate-spin mx-auto mb-4" />
             <p className="text-slate-500">Loading sequences...</p>
           </div>
         )}
@@ -157,7 +157,7 @@ export function SequencesPage() {
             {filteredSequences.map((sequence) => (
               <Card
                 key={sequence.id}
-                className="hover:border-blue-200 hover:shadow-md transition-all"
+                className="hover:border-brand-purple/20 hover:shadow-md transition-all"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-4">
@@ -185,7 +185,7 @@ export function SequencesPage() {
                     <div>
                       <div className="flex items-center gap-3">
                         <h3
-                          className="font-semibold text-slate-900 hover:text-blue-600 cursor-pointer"
+                          className="font-semibold text-slate-900 hover:text-brand-purple cursor-pointer"
                           onClick={() => navigate(`/sequences/${sequence.id}`)}
                         >
                           {sequence.name}
@@ -278,7 +278,7 @@ export function SequencesPage() {
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-blue-500 rounded-full"
+                        className="h-full bg-brand-purple rounded-full"
                         style={{
                           width: `${((sequence.completed_count || 0) / (sequence.enrolled_count || 1)) * 100}%`,
                         }}

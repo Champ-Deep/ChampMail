@@ -17,7 +17,7 @@ import { clsx } from 'clsx';
 
 const statusColors: Record<string, { bg: string; text: string }> = {
   pending: { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-  verifying: { bg: 'bg-blue-100', text: 'text-blue-800' },
+  verifying: { bg: 'bg-brand-purple/10', text: 'text-brand-purple' },
   verified: { bg: 'bg-green-100', text: 'text-green-800' },
   failed: { bg: 'bg-red-100', text: 'text-red-800' },
 };
@@ -106,7 +106,7 @@ export function DomainManagerPage() {
               placeholder="Search domains..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent"
             />
           </div>
           <Button variant="outline" onClick={() => fetchDomains()}>
@@ -135,7 +135,7 @@ export function DomainManagerPage() {
                       key={domain.id}
                       className={clsx(
                         'p-4 cursor-pointer transition-colors hover:bg-gray-50',
-                        selectedDomain === domain.id && 'bg-blue-50'
+                        selectedDomain === domain.id && 'bg-brand-purple/5'
                       )}
                       onClick={() => handleSelectDomain(domain.id)}
                     >
@@ -221,12 +221,12 @@ export function DomainManagerPage() {
                     </div>
 
                     {selectedDomainData.warmup_enabled && (
-                      <div className="bg-blue-50 rounded-lg p-3">
-                        <div className="flex items-center gap-2 text-blue-700">
+                      <div className="bg-brand-purple/5 rounded-lg p-3">
+                        <div className="flex items-center gap-2 text-brand-purple">
                           <Clock className="w-4 h-4" />
                           <span className="text-sm font-medium">Warmup in progress</span>
                         </div>
-                        <div className="text-sm text-blue-600 mt-1">
+                        <div className="text-sm text-brand-purple mt-1">
                           Day {selectedDomainData.warmup_day}/30
                         </div>
                       </div>
@@ -316,7 +316,7 @@ export function DomainManagerPage() {
                   value={newDomainName}
                   onChange={(e) => setNewDomainName(e.target.value)}
                   placeholder="e.g., outreach.yourcompany.com"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent"
                 />
               </div>
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-700">

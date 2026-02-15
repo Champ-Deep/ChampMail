@@ -117,7 +117,7 @@ export function SendConsolePage() {
                   <select
                     value={selectedDomain}
                     onChange={(e) => setSelectedDomain(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple"
                   >
                     <option value="">Select a domain</option>
                     {verifiedDomains.map((domain) => (
@@ -221,7 +221,7 @@ export function SendConsolePage() {
                   <>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="text-center p-3 bg-gray-50 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600">{stats.today_sent}</div>
+                        <div className="text-2xl font-bold text-brand-purple">{stats.today_sent}</div>
                         <div className="text-xs text-gray-500">Sent</div>
                       </div>
                       <div className="text-center p-3 bg-gray-50 rounded-lg">

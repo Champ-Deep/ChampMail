@@ -102,7 +102,7 @@ export function CreateCampaignModal({ isOpen, onClose }: CreateCampaignModalProp
             <select
               value={templateId}
               onChange={(e) => setTemplateId(e.target.value)}
-              className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+              className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm bg-white focus:border-brand-purple focus:ring-1 focus:ring-brand-purple outline-none"
             >
               <option value="">None (add later)</option>
               {templateData?.templates?.map((t) => (

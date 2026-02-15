@@ -70,7 +70,7 @@ export function JoinTeamPage() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
-          <Mail className="h-10 w-10 text-blue-600" />
+          <Mail className="h-10 w-10 text-brand-purple" />
           <span className="text-2xl font-bold text-slate-900">ChampMail</span>
         </div>
 
@@ -82,7 +82,7 @@ export function JoinTeamPage() {
           <div className="p-6">
             {status === 'loading' && (
               <div className="text-center py-8">
-                <Loader2 className="h-12 w-12 text-blue-500 animate-spin mx-auto mb-4" />
+                <Loader2 className="h-12 w-12 text-brand-purple animate-spin mx-auto mb-4" />
                 <p className="text-slate-600">Validating invitation...</p>
               </div>
             )}
@@ -90,15 +90,15 @@ export function JoinTeamPage() {
             {status === 'ready' && matchingInvite && (
               <div className="text-center py-4">
                 <div className="flex justify-center mb-6">
-                  <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center">
-                    <Users className="h-8 w-8 text-blue-600" />
+                  <div className="h-16 w-16 rounded-full bg-brand-purple/10 flex items-center justify-center">
+                    <Users className="h-8 w-8 text-brand-purple" />
                   </div>
                 </div>
 
                 <h3 className="text-lg font-medium text-slate-900 mb-2">
                   You've been invited to join
                 </h3>
-                <p className="text-2xl font-bold text-blue-600 mb-2">
+                <p className="text-2xl font-bold text-brand-purple mb-2">
                   {matchingInvite.team_name}
                 </p>
                 <p className="text-sm text-slate-500 mb-6">

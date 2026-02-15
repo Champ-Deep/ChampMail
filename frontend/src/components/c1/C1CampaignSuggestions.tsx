@@ -79,25 +79,25 @@ Format your response with clear sections and actionable recommendations.`;
   }, [description, essence, response, isExpanded]);
 
   return (
-    <Card padding="none" className="border-blue-200 bg-blue-50/30 overflow-hidden mt-4">
+    <Card padding="none" className="border-brand-purple/20 bg-brand-purple/5 overflow-hidden mt-4">
       <button
         onClick={fetchSuggestions}
-        className="w-full flex items-center justify-between px-4 py-3 hover:bg-blue-50 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-brand-purple/5 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-blue-600" />
-          <span className="text-sm font-medium text-blue-900">AI Campaign Suggestions</span>
-          {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />}
+          <Sparkles className="h-4 w-4 text-brand-purple" />
+          <span className="text-sm font-medium text-brand-navy">AI Campaign Suggestions</span>
+          {isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-purple" />}
         </div>
         {isExpanded ? (
-          <ChevronUp className="h-4 w-4 text-blue-500" />
+          <ChevronUp className="h-4 w-4 text-brand-purple" />
         ) : (
-          <ChevronDown className="h-4 w-4 text-blue-500" />
+          <ChevronDown className="h-4 w-4 text-brand-purple" />
         )}
       </button>
 
       {isExpanded && (
-        <div className="px-4 pb-4 border-t border-blue-200">
+        <div className="px-4 pb-4 border-t border-brand-purple/20">
           {error && (
             <p className="text-sm text-red-600 mt-3">{error}</p>
           )}
@@ -107,7 +107,7 @@ Format your response with clear sections and actionable recommendations.`;
             </div>
           )}
           {!response && !isLoading && !error && (
-            <p className="text-sm text-blue-500 mt-3">Click to generate AI-powered campaign suggestions...</p>
+            <p className="text-sm text-brand-purple mt-3">Click to generate AI-powered campaign suggestions...</p>
           )}
         </div>
       )}
