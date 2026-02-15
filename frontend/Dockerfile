@@ -7,12 +7,12 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Build arguments for environment variables
-# Use relative path so nginx can proxy to backend
-ARG VITE_API_URL=/api/v1
+# VITE_API_URL is hardcoded to /api/v1 so nginx proxies API calls to the backend.
+# Do NOT set VITE_API_URL as a Railway service variable — it would override this at build time.
 ARG VITE_N8N_WEBHOOK_URL=https://championtest.up.railway.app/webhook/email_agent
 
 # Set environment variables for build
-ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_API_URL=/api/v1
 ENV VITE_N8N_WEBHOOK_URL=$VITE_N8N_WEBHOOK_URL
 
 # Copy package files and npm config
