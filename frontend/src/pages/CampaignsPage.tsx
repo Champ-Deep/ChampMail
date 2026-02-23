@@ -337,7 +337,7 @@ export function CampaignsPage() {
                     : 'Create your first campaign to get started'}
                 </p>
                 {!searchQuery && statusFilter === 'all' && (
-                  <Button leftIcon={<Plus className="h-4 w-4" />}>
+                  <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
                     New Campaign
                   </Button>
                 )}

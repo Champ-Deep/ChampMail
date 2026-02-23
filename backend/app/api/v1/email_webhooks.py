@@ -567,7 +567,15 @@ async def chat_with_assistant(
             logger.debug("n8n response received")
 
             if response.status_code == 200:
-                data = response.json()
+                try:
+                    data = response.json()
+                except Exception:
+                    return ChatResponse(
+                        success=False,
+                        response="",
+                        session_id=session_id,
+                        error="n8n returned an invalid response. Please check if n8n is properly configured.",
+                    )
                 # Extract response from various possible fields
                 ai_response = (
                     data.get("response") or

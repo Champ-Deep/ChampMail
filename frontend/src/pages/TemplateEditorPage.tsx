@@ -1,8 +1,8 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Eye, Send } from 'lucide-react';
+import { ArrowLeft, Save } from 'lucide-react';
 import { TemplateEditor } from '../components/templates/TemplateEditor';
 import { Button } from '../components/ui';
 import { templatesApi } from '../api/templates';
@@ -15,6 +15,7 @@ export function TemplateEditorPage() {
   const [templateName, setTemplateName] = useState('');
   const [subjectLine, setSubjectLine] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const contentRef = useRef('');
 
   // Fetch existing template when editing
   const { data: existingTemplate } = useQuery({
@@ -28,12 +29,22 @@ export function TemplateEditorPage() {
     if (existingTemplate) {
       setTemplateName(existingTemplate.name);
       setSubjectLine(existingTemplate.subject || '');
+      contentRef.current = existingTemplate.mjml_content || existingTemplate.html_content || '';
     }
   }, [existingTemplate]);
 
-  const handleSave = useCallback(async (values: any) => {
+  const handleContentChange = useCallback((content: string) => {
+    contentRef.current = content;
+  }, []);
+
+  const handleSave = useCallback(async () => {
     if (!templateName.trim()) {
       toast.error('Please enter a template name');
+      return;
+    }
+
+    if (!contentRef.current.trim()) {
+      toast.error('Template content cannot be empty');
       return;
     }
 
@@ -43,14 +54,14 @@ export function TemplateEditorPage() {
         await templatesApi.create({
           name: templateName,
           subject: subjectLine || templateName,
-          mjml_content: values.mjml || values.content || '',
+          mjml_content: contentRef.current,
         });
         toast.success('Template created successfully');
       } else {
         await templatesApi.update(id!, {
           name: templateName,
           subject: subjectLine || undefined,
-          mjml_content: values.mjml || values.content || undefined,
+          mjml_content: contentRef.current,
         });
         toast.success('Template updated successfully');
       }
@@ -84,32 +95,44 @@ export function TemplateEditorPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" leftIcon={<Eye className="h-4 w-4" />}>
-            Preview
-          </Button>
-          <Button variant="outline" size="sm" leftIcon={<Send className="h-4 w-4" />}>
-            Send Test
-          </Button>
+          <div className="hidden sm:flex items-center gap-2 mr-2">
+            <label className="text-sm text-slate-500">Subject:</label>
+            <input
+              type="text"
+              value={subjectLine}
+              onChange={(e) => setSubjectLine(e.target.value)}
+              placeholder="Email subject line..."
+              className="text-sm bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5 outline-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple/20 w-64"
+            />
+          </div>
           <Button
             size="sm"
             leftIcon={<Save className="h-4 w-4" />}
             isLoading={isSaving}
-            onClick={() => {
-              // Trigger save from editor
-              const saveButton = document.querySelector('[data-save-trigger]');
-              if (saveButton) {
-                (saveButton as HTMLButtonElement).click();
-              }
-            }}
+            onClick={handleSave}
           >
             Save Template
           </Button>
         </div>
       </header>
 
+      {/* Subject line for mobile */}
+      <div className="sm:hidden px-4 py-2 bg-white border-b border-slate-200">
+        <input
+          type="text"
+          value={subjectLine}
+          onChange={(e) => setSubjectLine(e.target.value)}
+          placeholder="Email subject line..."
+          className="w-full text-sm bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5 outline-none focus:border-brand-purple"
+        />
+      </div>
+
       {/* Editor */}
       <div className="flex-1 overflow-hidden">
-        <TemplateEditor onSave={handleSave} />
+        <TemplateEditor
+          initialContent={existingTemplate?.mjml_content || existingTemplate?.html_content || undefined}
+          onContentChange={handleContentChange}
+        />
       </div>
     </div>
   );

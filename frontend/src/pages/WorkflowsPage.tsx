@@ -20,7 +20,6 @@ import {
   XCircle,
   AlertCircle,
   Phone,
-  PhoneOff,
   Copy,
   Link,
   Power,
@@ -375,12 +374,16 @@ function ChatAssistant() {
         setSessionId(response.session_id);
       }
 
+      const errorContent = response.error?.includes('line 1')
+        ? 'The email assistant backend (n8n) is not configured or not running. Please set up n8n to use this feature.'
+        : response.error || 'Sorry, I encountered an error processing your request.';
+
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
         content: response.success
           ? response.response
-          : response.error || 'Sorry, I encountered an error processing your request.',
+          : errorContent,
         timestamp: new Date(),
         error: !response.success,
         draft: response.draft,
@@ -393,16 +396,22 @@ function ChatAssistant() {
         setPendingDraft(response.draft);
         toast.info('Email drafted! Enter recipient and click Send.');
       }
-    } catch (error) {
+    } catch (error: unknown) {
+      const axiosMsg = (error as { response?: { data?: { error?: string; detail?: string } } })?.response?.data;
+      const detail = axiosMsg?.error || axiosMsg?.detail || '';
+      const friendlyMsg = detail.includes('line 1') || detail.includes('n8n')
+        ? 'The email assistant backend (n8n) is not configured. Set up an n8n instance to use the chat assistant.'
+        : 'Failed to connect to the email assistant. Please check if the backend is running.';
+
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'assistant',
-        content: 'Failed to connect to the email assistant. Please check if the backend and n8n are running.',
+        content: friendlyMsg,
         timestamp: new Date(),
         error: true,
       };
       setMessages(prev => [...prev, errorMessage]);
-      toast.error('Failed to send message');
+      toast.error('Email assistant unavailable');
     } finally {
       setIsLoading(false);
       inputRef.current?.focus();
@@ -650,127 +659,13 @@ function ChatAssistant() {
   );
 }
 
-// ElevenLabs Voice Agent Component
+// Voice Agent - Coming Soon
 function VoiceAgent() {
-  const [isListening, setIsListening] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [response, setResponse] = useState('');
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-
-  const startVoiceAgent = async () => {
-    try {
-      // Request microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaStreamRef.current = stream;
-
-      // Initialize audio context
-      audioContextRef.current = new AudioContext({ sampleRate: 16000 });
-
-      // Connect to the head_bot workflow webhook
-      const webhookUrl = (import.meta as unknown as { env: Record<string, string> }).env.VITE_N8N_WEBHOOK_URL || 'http://localhost:5678/webhook/email_agent';
-
-      setIsListening(true);
-      setIsConnected(true);
-      toast.success('Voice agent connected! Speak your command...');
-
-      // For now, we'll use the Web Speech API for recognition
-      // In production, this would connect to ElevenLabs Conversational AI
-      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-        const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-
-        recognition.onresult = async (event: any) => {
-          const current = event.resultIndex;
-          const result = event.results[current];
-
-          if (result.isFinal) {
-            const text = result[0].transcript;
-            setTranscript(text);
-
-            // Send to head_bot workflow
-            try {
-              const res = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  userMessage: text,
-                  chatId: 'voice_agent_' + Date.now(),
-                  userName: 'Voice User',
-                }),
-              });
-
-              if (res.ok) {
-                const data = await res.json();
-                setResponse(data.response || data.output || 'Command processed');
-
-                // Use speech synthesis for response
-                if ('speechSynthesis' in window) {
-                  const utterance = new SpeechSynthesisUtterance(data.response || 'Command processed');
-                  speechSynthesis.speak(utterance);
-                }
-              }
-            } catch (error) {
-              console.error('Failed to send to workflow:', error);
-              setResponse('Failed to process command');
-            }
-          }
-        };
-
-        recognition.onerror = (event: any) => {
-          console.error('Speech recognition error:', event.error);
-          toast.error('Speech recognition error: ' + event.error);
-          stopVoiceAgent();
-        };
-
-        recognition.start();
-        (window as any).currentRecognition = recognition;
-      } else {
-        toast.error('Speech recognition not supported in this browser');
-        stopVoiceAgent();
-      }
-    } catch (error) {
-      console.error('Failed to start voice agent:', error);
-      toast.error('Failed to access microphone');
-      setIsListening(false);
-      setIsConnected(false);
-    }
-  };
-
-  const stopVoiceAgent = () => {
-    // Stop speech recognition
-    if ((window as any).currentRecognition) {
-      (window as any).currentRecognition.stop();
-      (window as any).currentRecognition = null;
-    }
-
-    // Stop media stream
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-
-    // Close audio context
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-
-    setIsListening(false);
-    setIsConnected(false);
-    setTranscript('');
-    setResponse('');
-    toast.info('Voice agent disconnected');
-  };
-
   return (
-    <Card className="p-6 bg-gradient-to-br from-purple-50 to-brand-purple/5 border-purple-200">
+    <Card className="p-6 bg-gradient-to-br from-purple-50 to-brand-purple/5 border-purple-200 opacity-75">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-purple-600 rounded-full">
+          <div className="p-3 bg-purple-600/50 rounded-full">
             <Bot className="h-6 w-6 text-white" />
           </div>
           <div>
@@ -778,47 +673,26 @@ function VoiceAgent() {
             <p className="text-sm text-slate-500">Talk to control your email workflows</p>
           </div>
         </div>
-        <Badge className={isConnected ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}>
-          {isConnected ? 'Connected' : 'Disconnected'}
+        <Badge className="bg-purple-100 text-purple-700">
+          Coming Soon
         </Badge>
       </div>
 
       <div className="flex items-center gap-4 mb-4">
         <Button
           size="lg"
-          variant={isListening ? 'outline' : 'primary'}
-          onClick={isListening ? stopVoiceAgent : startVoiceAgent}
-          leftIcon={isListening ? <PhoneOff className="h-5 w-5" /> : <Phone className="h-5 w-5" />}
-          className={isListening ? 'border-red-300 text-red-600 hover:bg-red-50' : 'bg-purple-600 hover:bg-purple-700'}
+          variant="outline"
+          disabled
+          leftIcon={<Phone className="h-5 w-5" />}
+          className="opacity-50 cursor-not-allowed"
         >
-          {isListening ? 'End Call' : 'Start Voice Call'}
+          Start Voice Call
         </Button>
-        {isListening && (
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-sm text-slate-600">Listening...</span>
-          </div>
-        )}
       </div>
 
-      {transcript && (
-        <div className="bg-white rounded-lg p-4 mb-3">
-          <p className="text-xs text-slate-500 mb-1">You said:</p>
-          <p className="text-slate-800">{transcript}</p>
-        </div>
-      )}
-
-      {response && (
-        <div className="bg-purple-100 rounded-lg p-4">
-          <p className="text-xs text-purple-600 mb-1">Assistant response:</p>
-          <p className="text-purple-900">{response}</p>
-        </div>
-      )}
-
-      <div className="mt-4 pt-4 border-t border-purple-200">
+      <div className="pt-4 border-t border-purple-200">
         <p className="text-xs text-slate-500">
-          <strong>Try saying:</strong> "Check my emails", "Write an email to john@example.com about the meeting",
-          "Reply to the last email from marketing"
+          Voice-powered email management is coming soon. Use the Email Assistant chat above in the meantime.
         </p>
       </div>
     </Card>
