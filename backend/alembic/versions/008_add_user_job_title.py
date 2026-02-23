@@ -7,11 +7,14 @@ Create Date: 2026-02-16
 The User model defines job_title but migration 001 omitted it.
 Without this column, any SQLAlchemy query on User fails with
 "column users.job_title does not exist" — causing 500 errors on login.
+
+Guarded with existence check so the migration is idempotent.
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect as sa_inspect
 
 # revision identifiers, used by Alembic.
 revision: str = "008_add_job_title"
@@ -20,8 +23,14 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _column_exists(table: str, column: str) -> bool:
+    cols = [c["name"] for c in sa_inspect(op.get_bind()).get_columns(table)]
+    return column in cols
+
+
 def upgrade() -> None:
-    op.add_column("users", sa.Column("job_title", sa.String(255), nullable=True))
+    if not _column_exists("users", "job_title"):
+        op.add_column("users", sa.Column("job_title", sa.String(255), nullable=True))
 
 
 def downgrade() -> None:
