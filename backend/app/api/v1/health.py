@@ -126,19 +126,17 @@ async def readiness_check():
 @router.get("/db-schema")
 async def db_schema_check():
     """
-    Diagnostic endpoint: report users table columns and alembic migration version.
+    Diagnostic endpoint: report all tables and alembic migration version.
     Useful for verifying schema state on Railway without SSH.
     """
-    result = {"users_columns": [], "alembic_version": None}
+    result = {"tables": [], "alembic_version": None}
     try:
         async with async_session_maker() as session:
-            cols = await session.execute(text(
-                "SELECT column_name, data_type FROM information_schema.columns "
-                "WHERE table_name = 'users' ORDER BY ordinal_position"
+            tables = await session.execute(text(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = 'public' ORDER BY table_name"
             ))
-            result["users_columns"] = [
-                {"name": r[0], "type": r[1]} for r in cols.fetchall()
-            ]
+            result["tables"] = [r[0] for r in tables.fetchall()]
             try:
                 ver = await session.execute(text("SELECT version_num FROM alembic_version"))
                 row = ver.fetchone()

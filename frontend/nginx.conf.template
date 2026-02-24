@@ -4,6 +4,10 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # DNS resolver for Railway private networking (IPv6)
+    # Extracted from /etc/resolv.conf at container startup
+    resolver ${DNS_RESOLVER} valid=30s;
+
     # Gzip compression
     gzip on;
     gzip_vary on;
@@ -23,8 +27,10 @@ server {
     }
 
     # API proxy to backend
+    # Using variable forces nginx to re-resolve DNS at request time (required for Railway IPv6 private networking)
     location /api {
-        proxy_pass ${BACKEND_URL};
+        set $backend_api ${BACKEND_URL};
+        proxy_pass $backend_api;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -44,7 +50,8 @@ server {
 
     # Backend health proxy
     location /health {
-        proxy_pass ${BACKEND_URL}/health;
+        set $backend_health ${BACKEND_URL}/health;
+        proxy_pass $backend_health;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
     }
