@@ -16,6 +16,7 @@ type Config struct {
 	PostgresUser            string
 	PostgresPassword        string
 	PostgresDB              string
+	PostgresSSLMode         string
 	PostgresMaxOpenConns    int
 	PostgresMaxIdleConns    int
 	PostgresConnMaxLifetime time.Duration
@@ -38,7 +39,7 @@ type Config struct {
 
 func Load() (*Config, error) {
 	cfg := &Config{
-		ServerPort:  getEnv("SERVER_PORT", "8025"),
+		ServerPort:  getEnvWithFallback("SERVER_PORT", "PORT", "8025"),
 		Environment: getEnv("ENVIRONMENT", "development"),
 		Debug:       getEnvAsBool("DEBUG", false),
 
@@ -47,6 +48,7 @@ func Load() (*Config, error) {
 		PostgresUser:            getEnv("POSTGRES_USER", "champmail"),
 		PostgresPassword:        getEnv("POSTGRES_PASSWORD", "champmail_dev"),
 		PostgresDB:              getEnv("POSTGRES_DB", "champmail"),
+		PostgresSSLMode:         getEnv("POSTGRES_SSLMODE", "disable"),
 		PostgresMaxOpenConns:    getEnvAsInt("POSTGRES_MAX_OPEN_CONNS", 25),
 		PostgresMaxIdleConns:    getEnvAsInt("POSTGRES_MAX_IDLE_CONNS", 5),
 		PostgresConnMaxLifetime: getEnvAsDuration("POSTGRES_CONN_MAX_LIFETIME", time.Hour),
@@ -81,6 +83,16 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+func getEnvWithFallback(primary, fallback, defaultValue string) string {
+	if value := os.Getenv(primary); value != "" {
+		return value
+	}
+	if value := os.Getenv(fallback); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 func getEnvAsInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil {
@@ -97,9 +109,11 @@ func getEnvAsBool(key string, defaultValue bool) bool {
 	return defaultValue
 }
 
-func getEnvAsDuration(key string, defaultValue time.Duration) string {
+func getEnvAsDuration(key string, defaultValue time.Duration) time.Duration {
 	if value := os.Getenv(key); value != "" {
-		return value
+		if parsed, err := time.ParseDuration(value); err == nil {
+			return parsed
+		}
 	}
-	return defaultValue.String()
+	return defaultValue
 }

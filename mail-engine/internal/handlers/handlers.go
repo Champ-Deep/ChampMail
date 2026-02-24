@@ -3,20 +3,18 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"net"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/champmail/mail-engine/internal/config"
 	"github.com/champmail/mail-engine/internal/db"
 	"github.com/champmail/mail-engine/internal/models"
+	"github.com/gin-gonic/gin"
 )
 
 type HealthHandler struct {
@@ -110,7 +108,7 @@ func (h *SendHandler) SendEmail(c *gin.Context) {
 		return
 	}
 
-	go h.processSend(sendLog, req)
+	go h.processSend(*sendLog, req)
 
 	c.JSON(http.StatusAccepted, models.SendEmailResponse{
 		MessageID: sendLog.ID,
@@ -153,7 +151,7 @@ func (h *SendHandler) SendBatch(c *gin.Context) {
 			continue
 		}
 
-		go h.processSend(sendLog, email)
+		go h.processSend(*sendLog, email)
 
 		results = append(results, models.SendEmailResponse{
 			MessageID: sendLog.ID,
@@ -452,20 +450,24 @@ func (h *DomainHandler) VerifyDomain(c *gin.Context) {
 		return
 	}
 
-	var allVerified bool
-	var mxRecords []string
 	var spfValid, dkimValid, dmarcValid bool
 
-	mxRecords, _ = net.LookupMX(domainName)
+	mxResults, _ := net.LookupMX(domainName)
+	var mxRecords []string
+	for _, mx := range mxResults {
+		mxRecords = append(mxRecords, mx.Host)
+	}
 	spfValid = len(mxRecords) > 0
 
 	query := `
 		UPDATE domains SET mx_verified = $1, spf_verified = $2, dkim_verified = $3, dmarc_verified = $4,
 		       status = $5 WHERE id = $6
 	`
-	if mxRecords != nil && spfValid {
+	if len(mxRecords) > 0 && spfValid {
 		h.db.ExecContext(ctx, query, true, spfValid, dkimValid, dmarcValid, "verified", domainID)
 	}
+
+	allVerified := spfValid && dkimValid && dmarcValid
 
 	c.JSON(http.StatusOK, models.DNSCheckResult{
 		Domain:      domainName,
@@ -704,8 +706,9 @@ MIIEpAIBAAKCAQEAxqZsGqD7GCe7e6VwK1cE1sLqJG/cLb3M6W3yY6xMrbKcM4c
 	}, nil
 }
 
-func StartBounceProcessor(redis *db.RedisClient, db *db.PostgresDB) {
+func StartBounceProcessor(redis *db.RedisClient, pgDB *db.PostgresDB) {
 	queue := db.NewBounceQueue(redis)
+	_ = pgDB // used for future bounce persistence
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -717,7 +720,7 @@ func StartBounceProcessor(redis *db.RedisClient, db *db.PostgresDB) {
 	}
 }
 
-func StartOpenClickTracker(redis *db.RedisClient, db *db.PostgresDB) {
+func StartOpenClickTracker(redis *db.RedisClient, _ *db.PostgresDB) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 

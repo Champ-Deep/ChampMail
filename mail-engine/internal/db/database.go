@@ -15,9 +15,13 @@ type PostgresDB struct {
 }
 
 func NewPostgresDB(cfg *config.Config) (*PostgresDB, error) {
+	sslMode := cfg.PostgresSSLMode
+	if sslMode == "" {
+		sslMode = "disable"
+	}
 	connStr := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB,
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB, sslMode,
 	)
 
 	db, err := sql.Open("postgres", connStr)

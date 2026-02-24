@@ -95,7 +95,8 @@ func (t *OpenTracker) TrackOpen(ctx context.Context, messageID string, userAgent
 }
 
 func (t *OpenTracker) IsTracked(ctx context.Context, messageID string) (bool, error) {
-	return t.client.Exists(ctx, fmt.Sprintf("opens:%s", messageID)).Result()
+	n, err := t.client.Exists(ctx, fmt.Sprintf("opens:%s", messageID)).Result()
+	return n > 0, err
 }
 
 type BounceQueue struct {

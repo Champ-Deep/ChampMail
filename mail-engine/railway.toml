@@ -1,0 +1,31 @@
+# Railway deployment configuration for ChampMail Mail Engine (Go)
+# This is a separate Railway service from the main backend.
+# Deploy from the same repo, set Root Directory to "mail-engine"
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+[env]
+# SERVER_PORT is set automatically by Railway via $PORT
+# Required environment variables (set in Railway dashboard):
+#
+# POSTGRES_HOST=<from Railway PostgreSQL plugin - same as backend>
+# POSTGRES_PORT=<from Railway PostgreSQL plugin>
+# POSTGRES_USER=<from Railway PostgreSQL plugin>
+# POSTGRES_PASSWORD=<from Railway PostgreSQL plugin>
+# POSTGRES_DB=<from Railway PostgreSQL plugin>
+# POSTGRES_SSLMODE=require
+#
+# REDIS_HOST=<from Railway Redis plugin - same as backend>
+# REDIS_PORT=<from Railway Redis plugin>
+# REDIS_PASSWORD=<from Railway Redis plugin>
+#
+# MASTER_API_KEY=<generate with: openssl rand -hex 32>
+# ENVIRONMENT=production

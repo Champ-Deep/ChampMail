@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 WORKDIR /app
 
@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mail-engine ./cmd
 
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates git
+RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 
