@@ -311,7 +311,7 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 
 	rows, err := h.db.QueryContext(ctx, `
 		SELECT id, domain_name, status, mx_verified, spf_verified, dkim_verified, dmarc_verified,
-		       daily_send_limit, sent_today, warmup_enabled, warmup_day, health_score, created_at
+		       dkim_selector, daily_send_limit, sent_today, warmup_enabled, warmup_day, health_score, created_at
 		FROM domains ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -323,11 +323,11 @@ func (h *DomainHandler) ListDomains(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var domains []db.Domain
+	domains := make([]db.Domain, 0)
 	for rows.Next() {
 		var d db.Domain
 		if err := rows.Scan(&d.ID, &d.DomainName, &d.Status, &d.MXVerified, &d.SPFVerified,
-			&d.DKIMVerified, &d.DMARCVerified, &d.DailySendLimit, &d.SentToday,
+			&d.DKIMVerified, &d.DMARCVerified, &d.DKIMSelector, &d.DailySendLimit, &d.SentToday,
 			&d.WarmupEnabled, &d.WarmupDay, &d.HealthScore, &d.CreatedAt); err != nil {
 			continue
 		}

@@ -90,7 +90,7 @@ class PurchaseDomainResponse(BaseModel):
 async def list_domains(current_user = Depends(get_current_user)):
     try:
         domains = await mail_engine_client.list_domains()
-        return domains
+        return domains or []
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list domains: {str(e)}")
 

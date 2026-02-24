@@ -71,8 +71,15 @@ async def health_check():
     # Check FalkorDB (optional - may not be available in MVP)
     try:
         from app.db.falkordb import graph_db
-        if graph_db:
-            graph_db.query("RETURN 1")
+        if graph_db and graph_db._client:
+            graph_db._client.connection.ping()
+            health_status["checks"]["falkordb"] = {
+                "status": "healthy",
+                "host": settings.falkordb_host,
+                "port": settings.falkordb_port
+            }
+        elif graph_db:
+            graph_db.connect()
             health_status["checks"]["falkordb"] = {
                 "status": "healthy",
                 "host": settings.falkordb_host,
