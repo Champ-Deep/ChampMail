@@ -16,6 +16,7 @@ import { Card, Button, Badge } from '../components/ui';
 import { campaignsApi, type Campaign, type CampaignStatus } from '../api/campaigns';
 import { CreateCampaignModal } from '../components/campaigns/CreateCampaignModal';
 import { clsx } from 'clsx';
+import { usePermissions } from '../hooks/usePermissions';
 
 const statusConfig: Record<
   CampaignStatus,
@@ -44,6 +45,7 @@ function computeRate(numerator: number, denominator: number): string {
 
 export function CampaignsPage() {
   const queryClient = useQueryClient();
+  const { canCreate } = usePermissions();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<CampaignStatus | 'all'>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -116,9 +118,11 @@ export function CampaignsPage() {
         title="Campaigns"
         subtitle="Manage your email campaigns"
         actions={
-          <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
-            New Campaign
-          </Button>
+          canCreate ? (
+            <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
+              New Campaign
+            </Button>
+          ) : undefined
         }
       />
 
@@ -336,7 +340,7 @@ export function CampaignsPage() {
                     ? 'Try adjusting your search or filters'
                     : 'Create your first campaign to get started'}
                 </p>
-                {!searchQuery && statusFilter === 'all' && (
+                {!searchQuery && statusFilter === 'all' && canCreate && (
                   <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
                     New Campaign
                   </Button>

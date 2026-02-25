@@ -5,7 +5,7 @@ import {
   Trash2,
   RefreshCw,
   Check,
-  AlertTriangle,
+  Info,
   Clock,
   ExternalLink,
   Search,
@@ -319,10 +319,10 @@ export function DomainManagerPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple focus:border-transparent"
                 />
               </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-700">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <p>You'll need to configure DNS records after adding the domain.</p>
+                  <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <p>DNS setup can be done later. After adding the domain, share the required DNS records with your IT team. Verification runs automatically.</p>
                 </div>
               </div>
             </div>

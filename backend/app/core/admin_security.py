@@ -22,7 +22,7 @@ def require_data_team_or_admin(
     Raises:
         HTTPException: 403 if user doesn't have required role
     """
-    if user.role not in ["data_team", "admin"]:
+    if user.role not in ["data_team", "admin", "superadmin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Data team or admin access required. Your role: " + (user.role or "user")
@@ -45,7 +45,7 @@ def require_admin(
     Raises:
         HTTPException: 403 if user is not admin
     """
-    if user.role != "admin":
+    if user.role not in ["admin", "superadmin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required. Your role: " + (user.role or "user")
@@ -68,7 +68,7 @@ def require_team_admin(
     Raises:
         HTTPException: 403 if user doesn't have required role
     """
-    if user.role not in ["team_admin", "admin"]:
+    if user.role not in ["team_admin", "admin", "superadmin"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Team admin or admin access required. Your role: " + (user.role or "user")
@@ -80,7 +80,7 @@ def require_team_admin(
 
 def is_admin(user: TokenData) -> bool:
     """Check if user is admin."""
-    return user.role == "admin"
+    return user.role in ["admin", "superadmin"]
 
 
 def is_data_team(user: TokenData) -> bool:
@@ -95,14 +95,14 @@ def is_team_admin(user: TokenData) -> bool:
 
 def can_manage_team(user: TokenData) -> bool:
     """Check if user can manage team (admin or team_admin)."""
-    return user.role in ["admin", "team_admin"]
+    return user.role in ["admin", "superadmin", "team_admin"]
 
 
 def can_upload_prospects(user: TokenData) -> bool:
     """Check if user can upload prospect lists (data_team or admin)."""
-    return user.role in ["data_team", "admin"]
+    return user.role in ["data_team", "admin", "superadmin"]
 
 
 def can_access_admin_portal(user: TokenData) -> bool:
     """Check if user can access admin portal."""
-    return user.role in ["data_team", "admin"]
+    return user.role in ["data_team", "admin", "superadmin"]

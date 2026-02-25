@@ -1,0 +1,53 @@
+# ChampMail Simplification & Audit PRD
+
+## 1. Executive Summary
+ChampMail currently suffers from codebase bloat, unfinished feature sets, and overlapping functionality that detracts from its core value proposition. The goal of this "Simplified" branch is to strip back the "vibe-coded" chaos, consolidate redundant logic, and clearly delineate functional features from experimental ones.
+
+## 2. Codebase Audit & Redundancies identified
+- **Conflicting List Logic**: There is a split between [AdminProspectListsPage.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/AdminProspectListsPage.tsx) and standard [ProspectsPage.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/ProspectsPage.tsx). The admin upload functionality is broken.
+- **AI Campaign Builder vs. Campaigns**: [AICampaignBuilderPage.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/AICampaignBuilderPage.tsx) is highly complex (1700+ lines) but currently non-functional for end-to-end sends, competing with the standard [CampaignsPage.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/CampaignsPage.tsx).
+- **Navigation Bloat**: [Sidebar.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/components/layout/Sidebar.tsx) lists 13+ primary navigation items, many of which are non-functional (e.g., Send Console, Workflows, AI tools).
+
+## 3. Core Simplification Requirements
+
+### A. Navigation & Sidebar Overhaul ([Sidebar.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/components/layout/Sidebar.tsx))
+1. **Move to "Beta / Coming Soon" Section (Push to bottom)**:
+   - AI Assistant
+   - AI Campaign Builder (Combine these two AI tools into a single visual section if possible)
+   - Workflows
+   > *Note: These pages should still resolve, but their UI should be wrapped in a "Coming Soon" or "Beta" empty state.*
+2. **Rename & Repurpose**:
+   - `Send Console` -> Rename to `Test Console`. Its purpose is strictly for testing email recipients/deliverability, not actual campaign sending.
+3. **Reorder**:
+   - [Analytics](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/UTMManagerPage.tsx#793-1030) needs to be moved UP in the hierarchy (placed prominently near Campaigns).
+4. **Keep As Primary**:
+   - Dashboard, Prospects, Sequences, Templates, Campaigns, Domains, UTM Manager, Analytics, Test Console.
+
+### B. Prospect Lists & Data Team Access
+- **Admin Prospect Lists**: Fix the broken upload functionality inside [AdminProspectListsPage.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/AdminProspectListsPage.tsx).
+- **Role-Based Access**: Introduce/Refine a "Data Team" role. 
+  - Data Team members should have **Read-Only** access to Prospect Lists (to see lists) and Campaigns (to monitor outbound sequences).
+  - They should be able to suggest improvements outside the app, but within the app, their view is restricted to monitoring list performance.
+
+### C. Sequences & Templates Flow
+- **Sequences**: Needs to be "flowed" properly. It must directly connect to Templates. 
+- **Templates Integration**: The templates page must act as a showcase pulling data directly from `https://campaigntemplate.com/` (via iframe or API fetch). Users should be able to view these templates as potential campaign templates for their own sequences.
+
+### D. Domains Management
+- **Immediate Fix**: The current domain manager blocks users from adding a domain by demanding immediate DNS configuration ("you will need to configure DNS records after adding"). 
+  - *Fix*: Allow users to add the domain regardless of immediate DNS validation. This allows the IT team to configure DNS subsequently.
+- **Future Integration (Placeholder)**: Prepare the data model to eventually tie into a domain provider API (like Namecheap) for direct procurement.
+
+### E. UTM Manager (Premier Feature)
+- Make [UTMManagerPage.tsx](file:///Users/deep/Apps&Projects/ChampMail/frontend/src/pages/UTMManagerPage.tsx) a flagship tool. 
+- **Functionality**:
+  - Allow users to create presets (Source, Medium, Campaign, Content, Term).
+  - Generate a trackable slug/URL seamlessly.
+  - **Crucial Requirement**: Must be usable *outside* the core application flow. Users must be able to paste any external link (e.g., a social media link), apply a ChampMail UTM preset, and generate the tagged link for external use.
+
+## 4. Execution Phases for Claude Code
+- **Phase 1: Sidebar & Routing Cleanup** (Reorder nav, rename Send Console, implement Beta/Coming Soon wrappers for AI tools and Workflows).
+- **Phase 2: Role Management & Prospects** (Fix admin uploads, implement Read-Only Data Team views).
+- **Phase 3: Domain & Templates Integration** (Remove DNS blockers on Domain Add, integrate `campaigntemplate.com` into Templates).
+- **Phase 4: UTM Manager Enhancement** (Build the standalone link generator / preset tools).
+- **Phase 5: Refactoring & Redundancy Removal** (Clean up unused API endpoints and legacy components associated with the old Send Console and merged AI features).

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -16,10 +16,9 @@ import {
   ChevronDown,
   X,
   Users,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { Header } from '../components/layout';
-import { Card, Button, Badge } from '../components/ui';
+import { Card, Button, Badge, FileUploadZone } from '../components/ui';
 import { clsx } from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import {
@@ -81,132 +80,6 @@ function statusBadge(status: ProspectListStatus) {
 }
 
 // ============================================================
-// Drag-and-Drop Upload Component
-// ============================================================
-
-interface FileUploadZoneProps {
-  onFileSelected: (file: File) => void;
-  isUploading: boolean;
-}
-
-function FileUploadZone({ onFileSelected, isUploading }: FileUploadZoneProps) {
-  const [isDragOver, setIsDragOver] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragOver(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: React.DragEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragOver(false);
-
-      const files = e.dataTransfer.files;
-      if (files.length > 0) {
-        const file = files[0];
-        if (
-          file.type === 'text/csv' ||
-          file.name.endsWith('.csv') ||
-          file.type ===
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-          file.name.endsWith('.xlsx')
-        ) {
-          onFileSelected(file);
-        } else {
-          toast.error('Please upload a CSV or XLSX file');
-        }
-      }
-    },
-    [onFileSelected]
-  );
-
-  const handleFileInput = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-        onFileSelected(file);
-      }
-      // Reset input so same file can be selected again
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    },
-    [onFileSelected]
-  );
-
-  return (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={clsx(
-        'relative border-2 border-dashed rounded-xl p-10 text-center transition-all duration-200 cursor-pointer',
-        isDragOver
-          ? 'border-brand-purple/70 bg-brand-purple/5 scale-[1.01]'
-          : 'border-slate-300 bg-slate-50 hover:border-slate-400 hover:bg-white'
-      )}
-      onClick={() => fileInputRef.current?.click()}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".csv,.xlsx"
-        onChange={handleFileInput}
-        className="hidden"
-      />
-
-      {isUploading ? (
-        <div className="flex flex-col items-center">
-          <Loader2 className="h-10 w-10 text-brand-purple animate-spin mb-3" />
-          <p className="text-sm font-medium text-slate-700">
-            Uploading prospect list...
-          </p>
-          <p className="text-xs text-slate-500 mt-1">
-            This may take a moment for large files
-          </p>
-        </div>
-      ) : (
-        <div className="flex flex-col items-center">
-          <div className="h-14 w-14 rounded-full bg-brand-purple/10 flex items-center justify-center mb-4">
-            <Upload className="h-6 w-6 text-brand-purple" />
-          </div>
-          <p className="text-sm font-medium text-slate-700 mb-1">
-            {isDragOver
-              ? 'Drop your file here'
-              : 'Drag and drop your CSV file here'}
-          </p>
-          <p className="text-xs text-slate-500 mb-4">or click to browse</p>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              fileInputRef.current?.click();
-            }}
-          >
-            <FileSpreadsheet className="h-4 w-4 mr-1.5" />
-            Browse Files
-          </Button>
-          <p className="text-xs text-slate-400 mt-4">
-            Accepted: .csv, .xlsx -- Required column: email
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============================================================
 // Main Page Component
 // ============================================================
 
@@ -248,7 +121,7 @@ export function AdminProspectListsPage() {
   const uploadMutation = useMutation({
     mutationFn: (file: File) => adminApi.uploadProspectList(file),
     onSuccess: (data) => {
-      toast.success(`Uploaded "${data.file_name}" with ${data.total_rows} rows`);
+      toast.success(`Uploaded "${data.filename}" with ${data.total_rows} rows`);
       queryClient.invalidateQueries({ queryKey: ['admin', 'prospect-lists'] });
       setShowUploadModal(false);
     },
@@ -354,7 +227,7 @@ export function AdminProspectListsPage() {
   // ----------------------------------------------------------
 
   const totalProspects = prospectLists.reduce(
-    (sum, l) => sum + (l.total_prospects || 0),
+    (sum, l) => sum + (l.total_rows || 0),
     0
   );
   const processingCount = prospectLists.filter(
@@ -493,10 +366,10 @@ export function AdminProspectListsPage() {
                         </div>
                         <div className="min-w-0">
                           <p className="font-medium text-slate-900 truncate">
-                            {list.name || list.file_name}
+                            {list.name || list.filename}
                           </p>
                           <p className="text-xs text-slate-500 truncate">
-                            {list.file_name}
+                            {list.filename}
                           </p>
                         </div>
                         <ChevronDown
@@ -513,7 +386,7 @@ export function AdminProspectListsPage() {
                     <td className="px-4 py-3 text-right">
                       <div>
                         <span className="text-sm font-medium text-slate-900">
-                          {list.total_prospects.toLocaleString()}
+                          {list.total_rows.toLocaleString()}
                         </span>
                         {list.status === 'processing' &&
                           list.processed_prospects > 0 && (
@@ -525,7 +398,7 @@ export function AdminProspectListsPage() {
                                     width: `${Math.min(
                                       100,
                                       (list.processed_prospects /
-                                        list.total_prospects) *
+                                        list.total_rows) *
                                         100
                                     )}%`,
                                   }}
@@ -533,7 +406,7 @@ export function AdminProspectListsPage() {
                               </div>
                               <p className="text-[10px] text-slate-400 mt-0.5">
                                 {list.processed_prospects} /{' '}
-                                {list.total_prospects}
+                                {list.total_rows}
                               </p>
                             </div>
                           )}
@@ -541,7 +414,7 @@ export function AdminProspectListsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="text-sm text-slate-600">
-                        {list.uploaded_by || 'System'}
+                        {list.created_by || 'System'}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -579,7 +452,7 @@ export function AdminProspectListsPage() {
                           onClick={() => {
                             if (
                               confirm(
-                                `Delete "${list.name || list.file_name}"? This cannot be undone.`
+                                `Delete "${list.name || list.filename}"? This cannot be undone.`
                               )
                             ) {
                               deleteMutation.mutate(list.id);
@@ -643,7 +516,7 @@ export function AdminProspectListsPage() {
             </div>
 
             <FileUploadZone
-              onFileSelected={(file) => uploadMutation.mutate(file)}
+              onFileSelected={(file: File) => uploadMutation.mutate(file)}
               isUploading={uploadMutation.isPending}
             />
 

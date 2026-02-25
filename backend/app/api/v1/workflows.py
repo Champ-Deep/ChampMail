@@ -1,4 +1,7 @@
 """
+DEPRECATED: API endpoints associated with experimental/legacy features. 
+Slated for removal/refactor in Phase 5 simplification.
+
 Workflow API endpoints for n8n email automation integration.
 
 Provides CRUD operations for workflows and execution triggering.

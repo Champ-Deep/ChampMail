@@ -18,20 +18,25 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { clsx } from 'clsx';
 
-const navigation = [
+const mainNavigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, tourId: 'nav-dashboard' },
-  { name: 'AI Assistant', href: '/assistant', icon: Bot, tourId: 'nav-assistant' },
-  { name: 'AI Campaign Builder', href: '/ai-campaigns', icon: Sparkles, tourId: 'nav-ai-campaigns' },
   { name: 'Prospects', href: '/prospects', icon: Users, tourId: 'nav-prospects' },
+  { name: 'Campaigns', href: '/campaigns', icon: Mail, tourId: 'nav-campaigns' },
   { name: 'Sequences', href: '/sequences', icon: Zap, tourId: 'nav-sequences' },
   { name: 'Templates', href: '/templates', icon: FileText, tourId: 'nav-templates' },
-  { name: 'Campaigns', href: '/campaigns', icon: Mail, tourId: 'nav-campaigns' },
-  { name: 'Domains', href: '/domains', icon: Globe, tourId: 'nav-domains' },
-  { name: 'Send Console', href: '/send', icon: Send, tourId: 'nav-send' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, tourId: 'nav-analytics' },
+];
+
+const aiNavigation = [
+  { name: 'AI Assistant', href: '/assistant', icon: Bot, tourId: 'nav-assistant' },
+  { name: 'AI Campaign Builder', href: '/ai-campaigns', icon: Sparkles, tourId: 'nav-ai-campaigns' },
+];
+
+const toolsNavigation = [
+  { name: 'Domains', href: '/domains', icon: Globe, tourId: 'nav-domains' },
   { name: 'UTM Manager', href: '/utm', icon: Link2, tourId: 'nav-utm' },
-  { name: 'Workflows', href: '/workflows', icon: Bot, tourId: 'nav-workflows' },
-  { name: 'Settings', href: '/settings', icon: Settings, tourId: 'nav-settings' },
+  { name: 'Test Console', href: '/send', icon: Send, tourId: 'nav-send' },
+  { name: 'Workflows', href: '/workflows', icon: Zap, tourId: 'nav-workflows' },
 ];
 
 const adminNavigation = [
@@ -42,6 +47,28 @@ export function Sidebar() {
   const location = useLocation();
   const { logout, user } = useAuthStore();
 
+  const renderLink = (item: any) => {
+    const isActive = location.pathname === item.href ||
+      (item.href !== '/' && location.pathname.startsWith(item.href));
+
+    return (
+      <Link
+        key={item.name}
+        to={item.href}
+        data-tour={item.tourId}
+        className={clsx(
+          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+          isActive
+            ? 'bg-brand-purple text-white'
+            : 'text-slate-300 hover:bg-white/10 hover:text-white'
+        )}
+      >
+        <item.icon className="h-4 w-4" />
+        {item.name}
+      </Link>
+    );
+  };
+
   return (
     <div className="flex h-full w-64 flex-col bg-brand-navy" data-tour="sidebar">
       {/* Logo */}
@@ -51,60 +78,57 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
-        {navigation.map((item) => {
-          const isActive = location.pathname === item.href ||
-            (item.href !== '/' && location.pathname.startsWith(item.href));
+      <nav className="flex-1 space-y-6 px-3 py-4 overflow-y-auto">
+        <div>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">Main</p>
+          <div className="space-y-1">
+            {mainNavigation.map(renderLink)}
+          </div>
+        </div>
 
-          return (
-            <Link
-              key={item.name}
-              to={item.href}
-              data-tour={item.tourId}
-              className={clsx(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-brand-purple text-white'
-                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              {item.name}
-            </Link>
-          );
-        })}
+        <div>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">AI Tools</p>
+          <div className="space-y-1">
+            {aiNavigation.map(renderLink)}
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">Tools & Setup</p>
+          <div className="space-y-1">
+            {toolsNavigation.map(renderLink)}
+          </div>
+        </div>
 
         {/* Admin section - only for admin/data_team roles */}
         {(user?.role === 'admin' || user?.role === 'data_team') && (
-          <>
-            <div className="pt-4 pb-1 px-3">
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Admin</p>
+          <div>
+            <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest px-3 mb-2">Admin</p>
+            <div className="space-y-1">
+              {adminNavigation.map(renderLink)}
             </div>
-            {adminNavigation.map((item) => {
-              const isActive = location.pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.name}
-                  to={item.href}
-                  data-tour={item.tourId}
-                  className={clsx(
-                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-brand-purple text-white'
-                      : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.name}
-                </Link>
-              );
-            })}
-          </>
+          </div>
         )}
       </nav>
 
       {/* User section */}
       <div className="border-t border-white/10 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <Link
+            to="/settings"
+            data-tour="nav-settings"
+            className={clsx(
+              'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors w-full',
+              location.pathname.startsWith('/settings')
+                ? 'bg-brand-purple text-white'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+            )}
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </Link>
+        </div>
+
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-purple text-sm font-medium text-white">
             {user?.email?.charAt(0).toUpperCase() || 'U'}

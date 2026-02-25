@@ -97,12 +97,6 @@ export const prospectsTour: Step[] = [
     disableBeacon: true,
   },
   {
-    target: '[data-tour="import-btn"]',
-    content: 'Import prospects from a CSV file. Required column: email. Optional: first_name, last_name, company, title.',
-    placement: 'bottom',
-    title: 'Import CSV',
-  },
-  {
     target: '[data-tour="prospect-table"]',
     content: 'View and manage all your prospects here. Select multiple prospects to add them to a campaign or delete them.',
     placement: 'top',

@@ -20,6 +20,7 @@ import { Card, Button, Badge } from '../components/ui';
 import { clsx } from 'clsx';
 import { sequencesApi } from '../api/sequences';
 import type { SequenceStatus } from '../api/sequences';
+import { usePermissions } from '../hooks/usePermissions';
 
 const statusConfig: Record<string, { label: string; variant: 'success' | 'warning' | 'default' | 'danger' }> = {
   active: { label: 'Active', variant: 'success' },
@@ -31,6 +32,7 @@ const statusConfig: Record<string, { label: string; variant: 'success' | 'warnin
 export function SequencesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = usePermissions();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
 
@@ -83,12 +85,14 @@ export function SequencesPage() {
         title="Email Sequences"
         subtitle="Automate your outreach campaigns"
         actions={
-          <Button
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => navigate('/sequences/new')}
-          >
-            New Sequence
-          </Button>
+          canEdit ? (
+            <Button
+              leftIcon={<Plus className="h-4 w-4" />}
+              onClick={() => navigate('/sequences/new')}
+            >
+              New Sequence
+            </Button>
+          ) : undefined
         }
       />
 
@@ -234,36 +238,43 @@ export function SequencesPage() {
                     )}
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2">
-                      {sequence.status === 'active' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          leftIcon={<Pause className="h-4 w-4" />}
-                          onClick={() => pauseMutation.mutate(sequence.id)}
-                          disabled={pauseMutation.isPending}
-                        >
-                          {pauseMutation.isPending ? 'Pausing...' : 'Pause'}
-                        </Button>
-                      ) : sequence.status === 'paused' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          leftIcon={<Play className="h-4 w-4" />}
-                          onClick={() => resumeMutation.mutate(sequence.id)}
-                          disabled={resumeMutation.isPending}
-                        >
-                          {resumeMutation.isPending ? 'Resuming...' : 'Resume'}
-                        </Button>
-                      ) : (
-                        <Button size="sm" leftIcon={<Play className="h-4 w-4" />}>
-                          Launch
-                        </Button>
-                      )}
-                      <button className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600">
-                        <MoreVertical className="h-4 w-4" />
-                      </button>
-                    </div>
+                    {canEdit && (
+                      <div className="flex items-center gap-2">
+                        {sequence.status === 'active' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={<Pause className="h-4 w-4" />}
+                            onClick={() => pauseMutation.mutate(sequence.id)}
+                            disabled={pauseMutation.isPending}
+                          >
+                            {pauseMutation.isPending ? 'Pausing...' : 'Pause'}
+                          </Button>
+                        ) : sequence.status === 'paused' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={<Play className="h-4 w-4" />}
+                            onClick={() => resumeMutation.mutate(sequence.id)}
+                            disabled={resumeMutation.isPending}
+                          >
+                            {resumeMutation.isPending ? 'Resuming...' : 'Resume'}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            leftIcon={<Play className="h-4 w-4" />}
+                            disabled
+                            title="Launch functionality coming soon"
+                          >
+                            Launch
+                          </Button>
+                        )}
+                        <button className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600">
+                          <MoreVertical className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 

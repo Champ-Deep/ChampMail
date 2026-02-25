@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   Link2,
   Plus,
@@ -26,7 +28,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Header } from '../components/layout';
-import { Card, CardHeader, CardTitle, Button, Badge, Input } from '../components/ui';
+import { Card, CardHeader, CardTitle, Button, Badge, Input, LoadingSpinner, EmptyState } from '../components/ui';
 import { utmApi } from '../api/utm';
 import { campaignsApi } from '../api/campaigns';
 import type {
@@ -48,6 +50,7 @@ const TABS = [
   { id: 'config', label: 'Campaign Config', icon: Settings2 },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'links', label: 'Link Performance', icon: Activity },
+  { id: 'generator', label: 'Link Generator', icon: Link2 },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -82,29 +85,7 @@ const EMPTY_PRESET_FORM: UTMPresetCreate = {
 // Sub-components
 // ============================================================
 
-function LoadingSpinner() {
-  return (
-    <div className="flex items-center justify-center h-64">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-brand-purple" />
-    </div>
-  );
-}
 
-function EmptyState({ icon: Icon, title, description }: {
-  icon: React.ElementType;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Card className="bg-brand-purple/5 border-brand-purple/20">
-      <div className="p-6 text-center">
-        <Icon className="w-12 h-12 text-brand-purple mx-auto mb-3" />
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">{title}</h3>
-        <p className="text-gray-600">{description}</p>
-      </div>
-    </Card>
-  );
-}
 
 function CampaignSelector({
   campaigns,
@@ -1236,9 +1217,253 @@ export function UTMManagerPage() {
         {activeTab === 'config' && <CampaignConfigTab />}
         {activeTab === 'analytics' && <AnalyticsTab />}
         {activeTab === 'links' && <LinkPerformanceTab />}
+        {activeTab === 'generator' && <LinkGeneratorTab />}
       </div>
     </div>
   );
 }
 
 export default UTMManagerPage;
+// LinkGeneratorTab.tsx inline code to insert
+function LinkGeneratorTab() {
+  const [baseUrl, setBaseUrl] = useState('');
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('');
+  const [utmSource, setUtmSource] = useState('');
+  const [utmMedium, setUtmMedium] = useState('');
+  const [utmCampaign, setUtmCampaign] = useState('');
+  const [utmTerm, setUtmTerm] = useState('');
+  const [utmContent, setUtmContent] = useState('');
+  const [history, setHistory] = useState<{ url: string; generatedAt: string }[]>([]);
+
+  // Fetch presets
+  const { data: presets = [] } = useQuery({
+    queryKey: ['utm', 'presets'],
+    queryFn: () => utmApi.getPresets(),
+  });
+
+  // Load history on mount
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem('champmail_utm_history');
+      if (stored) {
+        setHistory(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error('Failed to load UTM history', e);
+    }
+  }, []);
+
+  // Update fields when preset changes
+  useEffect(() => {
+    if (selectedPresetId) {
+      const preset = presets.find((p) => p.id === selectedPresetId);
+      if (preset) {
+        setUtmSource(preset.utm_source || '');
+        setUtmMedium(preset.utm_medium || '');
+        setUtmCampaign(preset.utm_campaign || '');
+        setUtmTerm(preset.utm_term || '');
+        setUtmContent(preset.utm_content || '');
+      }
+    } else {
+      setUtmSource('');
+      setUtmMedium('');
+      setUtmCampaign('');
+      setUtmTerm('');
+      setUtmContent('');
+    }
+  }, [selectedPresetId, presets]);
+
+  // Generate URL
+  const generateUrl = () => {
+    if (!baseUrl) return '';
+    try {
+      const url = new URL(baseUrl);
+      if (utmSource) url.searchParams.set('utm_source', utmSource);
+      if (utmMedium) url.searchParams.set('utm_medium', utmMedium);
+      if (utmCampaign) url.searchParams.set('utm_campaign', utmCampaign);
+      if (utmTerm) url.searchParams.set('utm_term', utmTerm);
+      if (utmContent) url.searchParams.set('utm_content', utmContent);
+      return url.toString();
+    } catch {
+      return '';
+    }
+  };
+
+  const finalUrl = generateUrl();
+
+  const handleCopy = () => {
+    if (!finalUrl) {
+      toast.error('Please enter a valid base URL');
+      return;
+    }
+    navigator.clipboard.writeText(finalUrl);
+    toast.success('URL copied to clipboard');
+
+    // Add to history
+    const newHistory = [
+      { url: finalUrl, generatedAt: new Date().toISOString() },
+      ...history.filter((h) => h.url !== finalUrl).slice(0, 9),
+    ];
+    setHistory(newHistory);
+    localStorage.setItem('champmail_utm_history', JSON.stringify(newHistory));
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Link Generator</CardTitle>
+            <p className="text-sm text-slate-500">
+              Create trackable links for use outside of ChampMail campaigns.
+            </p>
+          </CardHeader>
+          <div className="p-6 pt-0 space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Base URL
+              </label>
+              <Input
+                placeholder="https://example.com/page"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+              />
+            </div>
+
+            <div className="border-t border-slate-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-slate-900">UTM Parameters</h3>
+                <div className="w-1/2">
+                  <select
+                    className="w-full text-sm border-slate-200 rounded-lg focus:ring-brand-purple focus:border-brand-purple"
+                    value={selectedPresetId}
+                    onChange={(e) => setSelectedPresetId(e.target.value)}
+                  >
+                    <option value="">Load from Preset...</option>
+                    {presets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Campaign Source (utm_source)
+                    </label>
+                    <Input
+                      placeholder="e.g. linkedin, newsletter"
+                      value={utmSource}
+                      onChange={(e) => setUtmSource(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Campaign Medium (utm_medium)
+                    </label>
+                    <Input
+                      placeholder="e.g. social, email, cpc"
+                      value={utmMedium}
+                      onChange={(e) => setUtmMedium(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Campaign Name (utm_campaign)
+                  </label>
+                  <Input
+                    placeholder="e.g. spring_sale, product_launch"
+                    value={utmCampaign}
+                    onChange={(e) => setUtmCampaign(e.target.value)}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Campaign Term (utm_term) <span className="text-slate-400 font-normal">(optional)</span>
+                    </label>
+                    <Input
+                      placeholder="e.g. b2b_software"
+                      value={utmTerm}
+                      onChange={(e) => setUtmTerm(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Campaign Content (utm_content) <span className="text-slate-400 font-normal">(optional)</span>
+                    </label>
+                    <Input
+                      placeholder="e.g. logo_link, text_link"
+                      value={utmContent}
+                      onChange={(e) => setUtmContent(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Generated URL</h4>
+              <div className="flex items-start gap-3">
+                <div className="flex-1 bg-white border border-slate-200 rounded p-3 min-h-[3rem] text-sm break-all font-mono text-slate-700 overflow-x-auto">
+                  {finalUrl || <span className="text-slate-400 italic">Enter a base URL to generate your link</span>}
+                </div>
+                <Button onClick={handleCopy} disabled={!finalUrl}>
+                  Copy URL
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Recent Links</CardTitle>
+          </CardHeader>
+          <div className="p-0">
+            {history.length === 0 ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                No links generated yet
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 max-h-[500px] overflow-y-auto">
+                {history.map((item, i) => (
+                  <div key={i} className="p-4 hover:bg-slate-50 transition-colors group">
+                    <p className="text-xs text-brand-purple font-mono break-all line-clamp-2 mb-2" title={item.url}>
+                      {item.url}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-400">
+                        {new Date(item.generatedAt).toLocaleString()}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        onClick={() => {
+                          navigator.clipboard.writeText(item.url);
+                          toast.success('Copied from history');
+                        }}
+                      >
+                        Copy
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}

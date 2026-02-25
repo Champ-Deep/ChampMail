@@ -1,4 +1,6 @@
 """
+DEPRECATED: Unused API endpoint. Slated for removal in Phase 5 simplification.
+
 Knowledge Graph API endpoints.
 Direct graph queries and conversational interface.
 """

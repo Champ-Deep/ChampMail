@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Search, FileText, MoreVertical, Edit, Trash2, Copy, Eye, Loader2 } from 'lucide-react';
+import { Plus, Search, FileText, MoreVertical, Edit, Trash2, Copy, Eye, Loader2, ExternalLink } from 'lucide-react';
 import { Header } from '../components/layout';
 import { Card, Button, Badge } from '../components/ui';
 import { templatesApi, type EmailTemplate } from '../api';
+import { usePermissions } from '../hooks/usePermissions';
 
 export function TemplatesPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { canEdit } = usePermissions();
   const [searchQuery, setSearchQuery] = useState('');
   const [activeMenu, setActiveMenu] = useState<string | null>(null);
 
@@ -123,16 +125,47 @@ export function TemplatesPage() {
         title="Email Templates"
         subtitle="Create and manage your email templates"
         actions={
-          <Button
-            leftIcon={<Plus className="h-4 w-4" />}
-            onClick={() => navigate('/templates/new')}
-          >
-            New Template
-          </Button>
+          canEdit ? (
+            <Button
+              leftIcon={<Plus className="h-4 w-4" />}
+              onClick={() => navigate('/templates/new')}
+            >
+              New Template
+            </Button>
+          ) : undefined
         }
       />
 
       <div className="p-6 space-y-6">
+        {/* Promotional Banner */}
+        <Card className="bg-gradient-to-r from-brand-purple/5 to-transparent border-brand-purple/20">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-2">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg bg-brand-purple/10 flex items-center justify-center flex-shrink-0">
+                <FileText className="h-5 w-5 text-brand-purple" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">Professional Template Gallery</h3>
+                <p className="text-sm text-slate-500">Access hundreds of high-converting B2B outreach templates</p>
+              </div>
+            </div>
+            <a 
+              href="https://campaigntemplate.com/" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="w-full sm:w-auto"
+            >
+              <Button 
+                variant="outline" 
+                className="w-full border-brand-purple/30 text-brand-purple hover:bg-brand-purple/5"
+                rightIcon={<ExternalLink className="h-4 w-4" />}
+              >
+                Browse Gallery
+              </Button>
+            </a>
+          </div>
+        </Card>
+
         {/* Search and Filters */}
         <div className="flex items-center gap-4">
           <div className="relative flex-1 max-w-md">
@@ -195,31 +228,37 @@ export function TemplatesPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          toast.info('Preview coming soon');
-                          setActiveMenu(null);
+                          // toast.info('Preview coming soon');
+                          // setActiveMenu(null);
                         }}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+                        disabled
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-400 cursor-not-allowed"
+                        title="Preview coming soon"
                       >
                         <Eye className="h-4 w-4" />
                         Preview
                       </button>
-                      <button
-                        onClick={(e) => handleDuplicate(e, template)}
-                        disabled={duplicateMutation.isPending}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                      >
-                        <Copy className="h-4 w-4" />
-                        Duplicate
-                      </button>
-                      <hr className="my-1" />
-                      <button
-                        onClick={(e) => handleDelete(e, template)}
-                        disabled={deleteMutation.isPending}
-                        className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                        Delete
-                      </button>
+                      {canEdit && (
+                        <>
+                          <button
+                            onClick={(e) => handleDuplicate(e, template)}
+                            disabled={duplicateMutation.isPending}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                          >
+                            <Copy className="h-4 w-4" />
+                            Duplicate
+                          </button>
+                          <hr className="my-1" />
+                          <button
+                            onClick={(e) => handleDelete(e, template)}
+                            disabled={deleteMutation.isPending}
+                            className="flex items-center gap-2 w-full px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            Delete
+                          </button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -255,7 +294,7 @@ export function TemplatesPage() {
                   ? 'Try adjusting your search query'
                   : 'Create your first email template to get started'}
               </p>
-              {!searchQuery && (
+              {!searchQuery && canEdit && (
                 <Button onClick={() => navigate('/templates/new')}>
                   Create Template
                 </Button>

@@ -13,12 +13,11 @@ export type ProspectListStatus =
 export interface ProspectListItem {
   id: string;
   name: string;
-  file_name: string;
+  filename: string;
   status: ProspectListStatus;
-  total_prospects: number;
+  total_rows: number;
   processed_prospects: number;
-  failed_prospects: number;
-  uploaded_by: string;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -38,10 +37,18 @@ export interface ProspectListDetail extends ProspectListItem {
 export interface UploadProspectListResponse {
   id: string;
   name: string;
-  file_name: string;
+  filename: string;
   total_rows: number;
   status: ProspectListStatus;
-  message: string;
+  message?: string;
+  file_size?: number;
+  file_hash?: string;
+  valid_prospects?: number;
+  errors?: any[];
+  warnings?: string[];
+  headers_found?: string[];
+  uploaded_at?: string;
+  uploaded_by?: string;
 }
 
 // AI Campaign Pipeline Types
@@ -181,8 +188,8 @@ export const adminApi = {
   },
 
   async getProspectLists(): Promise<ProspectListItem[]> {
-    const response = await api.get<ProspectListItem[]>('/admin/prospect-lists');
-    return response.data;
+    const response = await api.get<{ items: ProspectListItem[], total: number }>('/admin/prospect-lists');
+    return response.data.items;
   },
 
   async getProspectList(id: string): Promise<ProspectListDetail> {

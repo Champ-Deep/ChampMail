@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Design System | LakeB2B - Enabling Growth</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* CORE BRAND TOKENS */
+        :root {
+            --brand-navy: #011A6B;
+            --brand-yellow: #FFB703;
+            --brand-red: #E8033A;
+            --brand-purple: #6D08BE;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            color: var(--brand-navy);
+            background-color: #F8FAFC;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* GRADIENTS */
+        .brand-gradient {
+            background: linear-gradient(90deg, #FFB703 0%, #E8033A 50%, #6D08BE 100%);
+        }
+
+        .brand-gradient-subtle {
+            background: linear-gradient(135deg, rgba(255, 183, 3, 0.1) 0%, rgba(232, 3, 58, 0.1) 50%, rgba(109, 8, 190, 0.1) 100%);
+        }
+
+        .brand-text-gradient {
+            background: linear-gradient(90deg, #FFB703 0%, #E8033A 50%, #6D08BE 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand-border-gradient {
+            position: relative;
+            background: #fff;
+            background-clip: padding-box;
+            border: 2px solid transparent;
+            border-radius: 1rem;
+        }
+
+        .brand-border-gradient::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: -1;
+            margin: -2px;
+            border-radius: inherit;
+            background: linear-gradient(90deg, #FFB703, #E8033A, #6D08BE);
+        }
+
+        /* INTERACTIVITY */
+        .btn-hover-effect:hover {
+            filter: brightness(1.1);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(232, 3, 58, 0.3);
+        }
+
+        /* DOCUMENTATION SPECIFIC STYLES */
+        .code-block {
+            background: #0f172a;
+            color: #cbd5e1;
+            border-radius: 0.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            padding: 1rem;
+            border: 1px solid #1e293b;
+        }
+
+        .token-swatch {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s;
+        }
+
+        .token-swatch:hover {
+            transform: scale(1.05);
+        }
+
+        .section-title {
+            position: relative;
+            display: inline-block;
+            margin-bottom: 2rem;
+        }
+
+        .section-title::after {
+            content: '';
+            display: block;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #FFB703 0%, #E8033A 100%);
+            border-radius: 2px;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50">
+
+    <!-- Sidebar / Nav Layout -->
+    <div class="flex min-h-screen">
+
+        <!-- Left Sidebar Navigation -->
+        <aside class="w-64 bg-white border-r border-slate-200 fixed h-full hidden lg:block z-10">
+            <div class="p-8">
+                <div class="flex flex-col mb-10">
+                    <span class="text-2xl font-extrabold tracking-tighter text-[#011A6B]">Lake<span
+                            class="brand-text-gradient">B2B</span></span>
+                    <span class="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400">Design System
+                        v2.0</span>
+                </div>
+                <nav class="space-y-1">
+                    <a href="#foundations"
+                        class="block px-4 py-2 text-sm font-semibold text-[#011A6B] bg-slate-50 rounded-lg">01.
+                        Foundations</a>
+                    <a href="#typography"
+                        class="block px-4 py-2 text-sm font-medium text-slate-500 hover:text-[#E8033A] hover:bg-slate-50 rounded-lg transition">02.
+                        Typography</a>
+                    <a href="#buttons"
+                        class="block px-4 py-2 text-sm font-medium text-slate-500 hover:text-[#E8033A] hover:bg-slate-50 rounded-lg transition">03.
+                        Buttons & CTAs</a>
+                    <a href="#cards"
+                        class="block px-4 py-2 text-sm font-medium text-slate-500 hover:text-[#E8033A] hover:bg-slate-50 rounded-lg transition">04.
+                        Cards & Containers</a>
+                    <a href="#visuals"
+                        class="block px-4 py-2 text-sm font-medium text-slate-500 hover:text-[#E8033A] hover:bg-slate-50 rounded-lg transition">05.
+                        Visual FX</a>
+                </nav>
+            </div>
+            <div class="absolute bottom-0 w-full p-8 border-t border-slate-100 bg-slate-50">
+                <p class="text-xs text-slate-400 font-medium">Maintained by Champions Group Engineering.</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="lg:ml-64 flex-1 p-8 lg:p-16">
+
+            <!-- Header -->
+            <header class="mb-20 max-w-4xl">
+                <div
+                    class="inline-flex items-center space-x-2 bg-white px-3 py-1 rounded-full shadow-sm mb-6 border border-slate-100">
+                    <span class="flex h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-600">System Status: Stable</span>
+                </div>
+                <h1 class="text-5xl lg:text-6xl font-extrabold text-[#011A6B] leading-tight mb-6">
+                    The <span class="brand-text-gradient">LakeB2B</span><br>Visual Language.
+                </h1>
+                <p class="text-xl text-slate-600 leading-relaxed">
+                    This document serves as the single source of truth for our web presence. By following these
+                    guidelines, we ensure consistency, accessibility, and the premium aesthetic that defines the
+                    Champions Group brand.
+                </p>
+            </header>
+
+            <!-- 01. Foundations (Colors) -->
+            <section id="foundations" class="mb-24 scroll-mt-20">
+                <h2 class="text-3xl font-bold mb-2">01. Brand Colors</h2>
+                <p class="text-slate-500 mb-10">Our palette is built on high-contrast Navy for authority, balanced by a
+                    vibrant gradient representing growth and energy.</p>
+
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12">
+                    <!-- Primary Navy -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                        <div class="h-24 rounded-xl bg-[#011A6B] mb-4 token-swatch"></div>
+                        <p class="font-bold text-sm">Primary Navy</p>
+                        <p class="font-mono text-xs text-slate-400">#011A6B</p>
+                        <p class="font-mono text-xs text-slate-400 mt-2">Use for: Headings, Text</p>
+                    </div>
+                    <!-- Brand Yellow -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                        <div class="h-24 rounded-xl bg-[#FFB703] mb-4 token-swatch"></div>
+                        <p class="font-bold text-sm">Growth Yellow</p>
+                        <p class="font-mono text-xs text-slate-400">#FFB703</p>
+                        <p class="font-mono text-xs text-slate-400 mt-2">Use for: Accents, Start Gradient</p>
+                    </div>
+                    <!-- Brand Red -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                        <div class="h-24 rounded-xl bg-[#E8033A] mb-4 token-swatch"></div>
+                        <p class="font-bold text-sm">Action Red</p>
+                        <p class="font-mono text-xs text-slate-400">#E8033A</p>
+                        <p class="font-mono text-xs text-slate-400 mt-2">Use for: Hovers, Mid Gradient</p>
+                    </div>
+                    <!-- Brand Purple -->
+                    <div class="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                        <div class="h-24 rounded-xl bg-[#6D08BE] mb-4 token-swatch"></div>
+                        <p class="font-bold text-sm">Future Purple</p>
+                        <p class="font-mono text-xs text-slate-400">#6D08BE</p>
+                        <p class="font-mono text-xs text-slate-400 mt-2">Use for: End Gradient</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-3xl border border-slate-100 shadow-lg">
+                    <h3 class="font-bold mb-6 flex items-center"><i data-lucide="palette" class="w-5 h-5 mr-2"></i> The
+                        "Growth Gradient"</h3>
+                    <div
+                        class="h-24 brand-gradient rounded-2xl mb-6 relative overflow-hidden flex items-center justify-center">
+                        <span class="text-white font-bold text-opacity-90 tracking-widest uppercase text-sm">The LakeB2B
+                            Signature</span>
+                    </div>
+                    <div class="code-block">
+                        <span class="text-purple-400">background</span>: <span
+                            class="text-yellow-300">linear-gradient</span>(90deg, #FFB703 0%, #E8033A 50%, #6D08BE
+                        100%);
+                    </div>
+                </div>
+            </section>
+
+            <!-- 02. Typography -->
+            <section id="typography" class="mb-24 scroll-mt-20">
+                <h2 class="text-3xl font-bold mb-2">02. Typography</h2>
+                <p class="text-slate-500 mb-10">We use <strong>Montserrat</strong>. It is geometric, professional, and
+                    highly legible. Headings are typically bold/extrabold, while body text is light/regular.</p>
+
+                <div class="bg-white p-8 rounded-3xl border border-slate-100 shadow-lg space-y-8">
+                    <div class="border-b border-slate-100 pb-8">
+                        <h1 class="text-6xl font-extrabold text-[#011A6B] tracking-tight mb-4">Heading 1</h1>
+                        <p class="font-mono text-xs text-slate-400 mb-2">text-6xl font-extrabold text-[#011A6B]
+                            tracking-tight</p>
+                    </div>
+                    <div class="border-b border-slate-100 pb-8">
+                        <h2 class="text-4xl font-bold text-[#011A6B] mb-4">Heading 2</h2>
+                        <p class="font-mono text-xs text-slate-400 mb-2">text-4xl font-bold text-[#011A6B]</p>
+                    </div>
+                    <div class="border-b border-slate-100 pb-8">
+                        <h3 class="text-2xl font-bold text-[#011A6B] mb-4">Heading 3</h3>
+                        <p class="font-mono text-xs text-slate-400 mb-2">text-2xl font-bold text-[#011A6B]</p>
+                    </div>
+                    <div>
+                        <p class="text-lg text-slate-600 leading-relaxed max-w-2xl mb-4">
+                            This is standard body paragraph text. It uses Slate-600 for softer contrast against the
+                            white background. Line height is relaxed to improve readability on complex B2B topics.
+                        </p>
+                        <p class="font-mono text-xs text-slate-400">text-lg text-slate-600 leading-relaxed</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 03. Buttons -->
+            <section id="buttons" class="mb-24 scroll-mt-20">
+                <h2 class="text-3xl font-bold mb-2">03. Buttons & Interactions</h2>
+                <p class="text-slate-500 mb-10">Buttons must be rounded-full for primary actions and rounded-xl for
+                    secondary actions. We strictly avoid square buttons.</p>
+
+                <div class="grid lg:grid-cols-2 gap-8">
+                    <!-- Primary Button -->
+                    <div
+                        class="bg-white p-8 rounded-3xl border border-slate-100 shadow-lg flex flex-col justify-between">
+                        <div>
+                            <h4 class="font-bold text-sm uppercase text-slate-400 mb-6">Primary Action</h4>
+                            <div class="flex flex-col space-y-4 items-start">
+                                <button
+                                    class="brand-gradient text-white px-8 py-3 rounded-full font-bold shadow-lg btn-hover-effect transition flex items-center">
+                                    Get Started
+                                    <i data-lucide="arrow-right" class="ml-2 w-4 h-4"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-8 code-block">
+                            brand-gradient text-white rounded-full shadow-lg hover:shadow-xl hover:-translate-y-1
+                            transition
+                        </div>
+                    </div>
+
+                    <!-- Secondary Button -->
+                    <div
+                        class="bg-white p-8 rounded-3xl border border-slate-100 shadow-lg flex flex-col justify-between">
+                        <div>
+                            <h4 class="font-bold text-sm uppercase text-slate-400 mb-6">Secondary Action</h4>
+                            <div class="flex flex-col space-y-4 items-start">
+                                <button
+                                    class="bg-white text-[#011A6B] border-2 border-slate-200 px-8 py-3 rounded-xl font-bold hover:border-[#E8033A] transition flex items-center">
+                                    View Documentation
+                                </button>
+                            </div>
+                        </div>
+                        <div class="mt-8 code-block">
+                            bg-white border-2 border-slate-200 rounded-xl hover:border-[#E8033A] transition
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 04. Cards -->
+            <section id="cards" class="mb-24 scroll-mt-20">
+                <h2 class="text-3xl font-bold mb-2">04. Cards & Containers</h2>
+                <p class="text-slate-500 mb-10">We use three types of card surfaces depending on the density of
+                    information.</p>
+
+                <div class="grid md:grid-cols-3 gap-6">
+                    <!-- Standard Card -->
+                    <div
+                        class="p-8 rounded-3xl border border-slate-100 bg-white shadow-sm hover:shadow-xl transition group">
+                        <div
+                            class="w-10 h-10 rounded-lg bg-blue-50 text-[#011A6B] flex items-center justify-center mb-4 group-hover:scale-110 transition">
+                            <i data-lucide="box"></i>
+                        </div>
+                        <h4 class="font-bold text-[#011A6B] mb-2">Standard Card</h4>
+                        <p class="text-xs text-slate-500">Used for features, benefits, or grid layouts. White
+                            background, subtle border.</p>
+                    </div>
+
+                    <!-- Glass Card -->
+                    <div
+                        class="p-8 rounded-3xl border border-white/40 bg-white/60 backdrop-blur-md shadow-sm relative overflow-hidden">
+                        <div
+                            class="absolute -right-4 -top-4 w-20 h-20 bg-gradient-to-br from-yellow-300 to-red-500 rounded-full opacity-20 blur-xl">
+                        </div>
+                        <h4 class="font-bold text-[#011A6B] mb-2 relative z-10">Glass Card</h4>
+                        <p class="text-xs text-slate-500 relative z-10">Used when placed over complex backgrounds or
+                            gradients. High transparency.</p>
+                    </div>
+
+                    <!-- Highlight Card -->
+                    <div class="p-8 rounded-3xl brand-border-gradient shadow-xl">
+                        <h4 class="font-bold text-[#011A6B] mb-2">Gradient Border</h4>
+                        <p class="text-xs text-slate-500">Used for "Recommended" pricing tiers or active states.
+                            Requires the pseudo-element CSS method.</p>
+                    </div>
+                </div>
+
+                <div class="mt-8 code-block">
+                    /* Standard Card Classes */<br>
+                    bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl transition
+                </div>
+            </section>
+
+            <!-- 05. Visual FX -->
+            <section id="visuals" class="mb-24 scroll-mt-20">
+                <h2 class="text-3xl font-bold mb-2">05. Visual FX & Data Rep</h2>
+                <p class="text-slate-500 mb-10">LakeB2B is about data. We represent data using abstract rounded pills,
+                    progress bars, and floating UI elements.</p>
+
+                <div class="bg-[#011A6B] p-12 rounded-[2.5rem] relative overflow-hidden">
+                    <!-- Background Grid -->
+                    <div class="absolute inset-0 opacity-10"
+                        style="background-image: radial-gradient(#fff 1px, transparent 1px); background-size: 20px 20px;">
+                    </div>
+
+                    <div class="relative z-10 grid lg:grid-cols-2 gap-12 items-center">
+                        <div>
+                            <h3 class="text-white font-bold text-2xl mb-4">The "Data Stack" Visual</h3>
+                            <p class="text-slate-300 text-sm mb-6">Use this pattern to represent AI processing or data
+                                enrichment.</p>
+                            <div class="code-block border-slate-700 bg-slate-900">
+                                Use absolute positioning and <span class="text-yellow-400">animate-pulse</span> on
+                                indicator dots.
+                            </div>
+                        </div>
+
+                        <!-- Component Demo -->
+                        <div class="bg-white rounded-2xl p-6 shadow-2xl border border-white/10 w-full max-w-sm mx-auto">
+                            <div class="flex items-center justify-between mb-6">
+                                <div class="flex items-center space-x-3">
+                                    <div
+                                        class="w-10 h-10 rounded-full brand-gradient flex items-center justify-center text-white">
+                                        <i data-lucide="zap" class="w-5 h-5"></i>
+                                    </div>
+                                    <div>
+                                        <p class="text-xs font-bold text-slate-400 uppercase">Enrichment Status</p>
+                                        <p class="text-[#011A6B] font-bold">Processing...</p>
+                                    </div>
+                                </div>
+                                <span
+                                    class="flex h-3 w-3 rounded-full bg-green-500 animate-pulse shadow-[0_0_10px_#22c55e]"></span>
+                            </div>
+
+                            <!-- Animated Bars -->
+                            <div class="space-y-3">
+                                <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div class="h-full w-3/4 brand-gradient rounded-full"></div>
+                                </div>
+                                <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div class="h-full w-1/2 brand-gradient opacity-60 rounded-full"></div>
+                                </div>
+                                <div class="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                    <div class="h-full w-1/4 brand-gradient opacity-30 rounded-full"></div>
+                                </div>
+                            </div>
+
+                            <div class="mt-6 flex justify-between text-xs font-mono text-slate-400">
+                                <span>ID: 88219-X</span>
+                                <span class="text-[#E8033A]">98% Match</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>

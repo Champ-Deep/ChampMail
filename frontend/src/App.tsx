@@ -6,6 +6,7 @@ import { useAuthStore } from './store/authStore';
 import { MainLayout } from './components/layout';
 import { OnboardingProvider } from './components/onboarding';
 import { HelpChatWidget } from './components/help';
+import { ComingSoonWrapper } from './components/ui';
 import { ChampMailThesysProvider } from './providers/ThesysProvider';
 import '@crayonai/react-ui/styles/index.css';
 import {
@@ -111,15 +112,15 @@ function App() {
                 <Route path="/sequences" element={<SequencesPage />} />
                 <Route path="/templates" element={<TemplatesPage />} />
                 <Route path="/campaigns" element={<CampaignsPage />} />
-                <Route path="/workflows" element={<WorkflowsPage />} />
+                <Route path="/workflows" element={<ComingSoonWrapper title="Workflows" description="Automated workflows are currently in beta and will be available soon."><WorkflowsPage /></ComingSoonWrapper>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/domains" element={<DomainManagerPage />} />
                 <Route path="/send" element={<SendConsolePage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
                 <Route path="/utm" element={<UTMManagerPage />} />
                 <Route path="/admin/prospect-lists" element={<AdminProspectListsPage />} />
-                <Route path="/ai-campaigns" element={<AICampaignBuilderPage />} />
-                <Route path="/assistant" element={<AIAssistantPage />} />
+                <Route path="/ai-campaigns" element={<ComingSoonWrapper title="AI Campaign Builder" description="Our new AI Campaign Builder is currently in beta and will be available soon."><AICampaignBuilderPage /></ComingSoonWrapper>} />
+                <Route path="/assistant" element={<ComingSoonWrapper title="AI Assistant" description="Your personal AI email assistant is currently in beta and will be available soon."><AIAssistantPage /></ComingSoonWrapper>} />
               </Route>
 
               {/* Full-screen template editor (no sidebar) */}

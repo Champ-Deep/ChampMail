@@ -7,10 +7,14 @@ import {
   MessageSquare,
   Loader2,
   Sparkles,
+  BarChart3,
+  Mail,
 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { InboxAssistant } from '../components/assistant/InboxAssistant';
 import { c1Api, type ChatMessage, type ConversationSummary } from '../api/c1';
 import { toast } from 'sonner';
+import { clsx } from 'clsx';
 
 const SUGGESTED_PROMPTS = [
   'Show my campaign performance this week',
@@ -20,7 +24,10 @@ const SUGGESTED_PROMPTS = [
   'Help me plan a new campaign targeting SaaS companies',
 ];
 
+type AssistantMode = 'data' | 'inbox';
+
 export function AIAssistantPage() {
+  const [mode, setMode] = useState<AssistantMode>('data');
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -31,10 +38,12 @@ export function AIAssistantPage() {
 
   // Load conversations on mount
   useEffect(() => {
-    c1Api.listConversations()
-      .then(setConversations)
-      .catch(() => {}); // Silently fail if C1 not configured
-  }, []);
+    if (mode === 'data') {
+      c1Api.listConversations()
+        .then(setConversations)
+        .catch(() => {}); // Silently fail if C1 not configured
+    }
+  }, [mode]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -139,146 +148,182 @@ export function AIAssistantPage() {
   }, [input, messages, isStreaming, activeConversationId]);
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex">
-      {/* Conversation Sidebar */}
-      <div className="w-64 border-r border-slate-200 bg-slate-50 flex flex-col flex-shrink-0">
-        <div className="p-3 border-b border-slate-200">
-          <Button
-            size="sm"
-            className="w-full"
-            onClick={startNewConversation}
-          >
-            <Plus className="h-4 w-4 mr-1.5" />
-            New Chat
-          </Button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {conversations.map((conv) => (
-            <div
-              key={conv.id}
-              className={`flex items-center gap-2 px-3 py-2.5 cursor-pointer hover:bg-slate-100 transition-colors group ${
-                activeConversationId === conv.id ? 'bg-brand-purple/5 border-r-2 border-brand-purple' : ''
-              }`}
-              onClick={() => loadConversation(conv.id)}
-            >
-              <MessageSquare className="h-4 w-4 text-slate-400 flex-shrink-0" />
-              <span className="text-sm text-slate-700 truncate flex-1">{conv.title}</span>
-              <button
-                onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
-                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-
-          {conversations.length === 0 && (
-            <p className="text-xs text-slate-400 text-center mt-8 px-4">
-              No conversations yet. Start a new chat!
-            </p>
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      {/* Tab Switcher */}
+      <div className="h-12 border-b border-slate-200 bg-white flex items-center px-6 gap-8">
+        <button
+          onClick={() => setMode('data')}
+          className={clsx(
+            'flex items-center gap-2 h-full border-b-2 transition-colors text-sm font-medium',
+            mode === 'data' ? 'border-brand-purple text-brand-purple' : 'border-transparent text-slate-500 hover:text-slate-700'
           )}
-        </div>
+        >
+          <BarChart3 className="h-4 w-4" />
+          Data Assistant
+        </button>
+        <button
+          onClick={() => setMode('inbox')}
+          className={clsx(
+            'flex items-center gap-2 h-full border-b-2 transition-colors text-sm font-medium',
+            mode === 'inbox' ? 'border-brand-purple text-brand-purple' : 'border-transparent text-slate-500 hover:text-slate-700'
+          )}
+        >
+          <Mail className="h-4 w-4" />
+          Inbox Assistant
+        </button>
       </div>
 
-      {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
-        <div className="h-14 border-b border-slate-200 flex items-center px-6 flex-shrink-0">
-          <Bot className="h-5 w-5 text-brand-purple mr-2" />
-          <h1 className="text-lg font-semibold text-slate-900">AI Assistant</h1>
-          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-brand-purple/10 text-brand-purple">Powered by Thesys C1</span>
-        </div>
-
-        {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.length === 0 && !isStreaming && (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-purple/10 to-brand-lavender/10 flex items-center justify-center mb-4">
-                <Sparkles className="h-8 w-8 text-brand-purple" />
+      <div className="flex-1 flex overflow-hidden">
+        {mode === 'data' ? (
+          <>
+            {/* Conversation Sidebar */}
+            <div className="w-64 border-r border-slate-200 bg-slate-50 flex flex-col flex-shrink-0">
+              <div className="p-3 border-b border-slate-200">
+                <Button
+                  size="sm"
+                  className="w-full"
+                  onClick={startNewConversation}
+                >
+                  <Plus className="h-4 w-4 mr-1.5" />
+                  New Chat
+                </Button>
               </div>
-              <h2 className="text-xl font-semibold text-slate-900 mb-2">ChampMail AI Assistant</h2>
-              <p className="text-sm text-slate-500 mb-6 max-w-md">
-                Ask me about your campaigns, analytics, prospects, or anything related to your email outreach.
-              </p>
-              <div className="flex flex-wrap gap-2 justify-center max-w-lg">
-                {SUGGESTED_PROMPTS.map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => handleSend(prompt)}
-                    className="text-xs px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-brand-purple/10 hover:text-brand-purple transition-colors"
+
+              <div className="flex-1 overflow-y-auto">
+                {conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    className={clsx(
+                      'flex items-center gap-2 px-3 py-2.5 cursor-pointer hover:bg-slate-100 transition-colors group',
+                      activeConversationId === conv.id ? 'bg-brand-purple/5 border-r-2 border-brand-purple' : ''
+                    )}
+                    onClick={() => loadConversation(conv.id)}
                   >
-                    {prompt}
-                  </button>
+                    <MessageSquare className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                    <span className="text-sm text-slate-700 truncate flex-1">{conv.title}</span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteConversation(conv.id); }}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 transition-all"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 ))}
-              </div>
-            </div>
-          )}
 
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[75%] rounded-2xl px-4 py-3 ${
-                  msg.role === 'user'
-                    ? 'bg-brand-purple text-white'
-                    : 'bg-slate-100 text-slate-900'
-                }`}
-              >
-                <div className="prose prose-sm max-w-none whitespace-pre-wrap" style={msg.role === 'user' ? { color: 'white' } : {}}>
-                  {msg.content}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* Streaming response */}
-          {isStreaming && (
-            <div className="flex justify-start">
-              <div className="max-w-[75%] rounded-2xl px-4 py-3 bg-slate-100 text-slate-900">
-                {streamingContent ? (
-                  <div className="prose prose-sm max-w-none whitespace-pre-wrap">
-                    {streamingContent}
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-slate-400">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Thinking...</span>
-                  </div>
+                {conversations.length === 0 && (
+                  <p className="text-xs text-slate-400 text-center mt-8 px-4">
+                    No conversations yet. Start a new chat!
+                  </p>
                 )}
               </div>
             </div>
-          )}
 
-          <div ref={messagesEndRef} />
-        </div>
+            {/* Chat Area */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {/* Header */}
+              <div className="h-14 border-b border-slate-200 flex items-center px-6 flex-shrink-0">
+                <Bot className="h-5 w-5 text-brand-purple mr-2" />
+                <h1 className="text-lg font-semibold text-slate-900">Data Assistant</h1>
+                <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-brand-purple/10 text-brand-purple">Powered by Thesys C1</span>
+              </div>
 
-        {/* Input */}
-        <div className="border-t border-slate-200 p-4 flex-shrink-0">
-          <div className="flex items-center gap-3 max-w-3xl mx-auto">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              placeholder="Ask about your campaigns, analytics, prospects..."
-              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-purple/70 focus:ring-2 focus:ring-brand-purple/10 transition-all"
-              disabled={isStreaming}
-            />
-            <Button
-              onClick={() => handleSend()}
-              disabled={isStreaming || !input.trim()}
-              className="rounded-xl"
-            >
-              {isStreaming ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {messages.length === 0 && !isStreaming && (
+                  <div className="flex flex-col items-center justify-center h-full text-center">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-purple/10 to-brand-lavender/10 flex items-center justify-center mb-4">
+                      <Sparkles className="h-8 w-8 text-brand-purple" />
+                    </div>
+                    <h2 className="text-xl font-semibold text-slate-900 mb-2">ChampMail Data Assistant</h2>
+                    <p className="text-sm text-slate-500 mb-6 max-w-md">
+                      Ask me about your campaigns, analytics, prospects, or anything related to your email outreach.
+                    </p>
+                    <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+                      {SUGGESTED_PROMPTS.map((prompt) => (
+                        <button
+                          key={prompt}
+                          onClick={() => handleSend(prompt)}
+                          className="text-xs px-3 py-1.5 rounded-full bg-slate-100 text-slate-600 hover:bg-brand-purple/10 hover:text-brand-purple transition-colors"
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {messages.map((msg, i) => (
+                  <div
+                    key={i}
+                    className={clsx('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}
+                  >
+                    <div
+                      className={clsx(
+                        'max-w-[75%] rounded-2xl px-4 py-3',
+                        msg.role === 'user' ? 'bg-brand-purple text-white' : 'bg-slate-100 text-slate-900'
+                      )}
+                    >
+                      <div className="prose prose-sm max-w-none whitespace-pre-wrap" style={msg.role === 'user' ? { color: 'white' } : {}}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Streaming response */}
+                {isStreaming && (
+                  <div className="flex justify-start">
+                    <div className="max-w-[75%] rounded-2xl px-4 py-3 bg-slate-100 text-slate-900">
+                      {streamingContent ? (
+                        <div className="prose prose-sm max-w-none whitespace-pre-wrap">
+                          {streamingContent}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 text-slate-400">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Thinking...</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input */}
+              <div className="border-t border-slate-200 p-4 flex-shrink-0">
+                <div className="flex items-center gap-3 max-w-3xl mx-auto">
+                  <input
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                    placeholder="Ask about your campaigns, analytics, prospects..."
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 text-sm outline-none focus:border-brand-purple/70 focus:ring-2 focus:ring-brand-purple/10 transition-all"
+                    disabled={isStreaming}
+                  />
+                  <Button
+                    onClick={() => handleSend()}
+                    disabled={isStreaming || !input.trim()}
+                    className="rounded-xl"
+                  >
+                    {isStreaming ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Send className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-4xl mx-auto">
+              <InboxAssistant />
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

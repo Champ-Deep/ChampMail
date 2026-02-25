@@ -3,12 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   User,
-  Mail,
   Server,
-  Shield,
-  Bell,
   Save,
-  Key,
   Users,
   UserPlus,
   Crown,
@@ -35,10 +31,7 @@ const tabs = [
   { id: 'profile', label: 'Profile', icon: User },
   { id: 'team', label: 'Team', icon: Users },
   { id: 'accounts', label: 'Email Accounts', icon: MailPlus },
-  { id: 'email', label: 'Email Settings', icon: Mail },
   { id: 'smtp', label: 'SMTP / IMAP', icon: Server },
-  { id: 'security', label: 'Security', icon: Shield },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
 ];
 
 // ============================================================================
@@ -1353,13 +1346,6 @@ export function SettingsPage() {
     }
   }, [user]);
 
-  // Stub save for other tabs (security, email, notifications)
-  const [isSaving, setIsSaving] = useState(false);
-  const handleSave = async () => {
-    setIsSaving(true);
-    setTimeout(() => setIsSaving(false), 1000);
-  };
-
   const profileMutation = useMutation({
     mutationFn: (data: ProfileUpdate) => authApi.updateProfile(data),
     onSuccess: () => {
@@ -1469,137 +1455,8 @@ export function SettingsPage() {
               <EmailAccountsSettings />
             )}
 
-            {activeTab === 'email' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Email Settings</CardTitle>
-                </CardHeader>
-
-                <div className="space-y-6">
-                  <Input
-                    label="From Name"
-                    defaultValue="ChampMail"
-                    helperText="Name recipients will see in their inbox"
-                  />
-
-                  <Input
-                    label="From Email"
-                    type="email"
-                    defaultValue="noreply@yourdomain.com"
-                    helperText="Must be verified in your mail server"
-                  />
-
-                  <Input
-                    label="Reply-To Email"
-                    type="email"
-                    defaultValue="replies@yourdomain.com"
-                    helperText="Where replies will be sent"
-                  />
-
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                      Email Signature
-                    </label>
-                    <textarea
-                      className="w-full h-24 px-3 py-2 rounded-lg border border-slate-300 text-sm resize-none focus:border-brand-purple focus:ring-1 focus:ring-brand-purple"
-                      placeholder="Your email signature..."
-                    />
-                  </div>
-
-                  <div className="pt-4 border-t flex justify-end">
-                    <Button onClick={handleSave} isLoading={isSaving}>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Changes
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            )}
-
             {activeTab === 'smtp' && (
               <SmtpImapSettings />
-            )}
-
-            {activeTab === 'security' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Security Settings</CardTitle>
-                </CardHeader>
-
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="font-medium text-slate-900 mb-3">Change Password</h4>
-                    <div className="space-y-4">
-                      <Input
-                        label="Current Password"
-                        type="password"
-                      />
-                      <Input
-                        label="New Password"
-                        type="password"
-                      />
-                      <Input
-                        label="Confirm New Password"
-                        type="password"
-                      />
-                    </div>
-                  </div>
-
-                  <hr />
-
-                  <div>
-                    <h4 className="font-medium text-slate-900 mb-3">API Keys</h4>
-                    <p className="text-sm text-slate-500 mb-4">
-                      Manage API keys for external integrations
-                    </p>
-                    <Button variant="outline" leftIcon={<Key className="h-4 w-4" />}>
-                      Generate New API Key
-                    </Button>
-                  </div>
-
-                  <div className="pt-4 border-t flex justify-end">
-                    <Button onClick={handleSave} isLoading={isSaving}>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Changes
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            )}
-
-            {activeTab === 'notifications' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Notification Preferences</CardTitle>
-                </CardHeader>
-
-                <div className="space-y-4">
-                  {[
-                    { id: 'replies', label: 'Email Replies', description: 'Get notified when prospects reply' },
-                    { id: 'bounces', label: 'Bounces', description: 'Alert when emails bounce' },
-                    { id: 'sequence', label: 'Sequence Complete', description: 'When a prospect completes a sequence' },
-                    { id: 'daily', label: 'Daily Summary', description: 'Daily digest of campaign performance' },
-                  ].map((item) => (
-                    <div key={item.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
-                      <div>
-                        <p className="font-medium text-slate-900">{item.label}</p>
-                        <p className="text-sm text-slate-500">{item.description}</p>
-                      </div>
-                      <label className="relative inline-flex items-center cursor-pointer">
-                        <input type="checkbox" className="sr-only peer" defaultChecked />
-                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-brand-purple/30 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-purple"></div>
-                      </label>
-                    </div>
-                  ))}
-
-                  <div className="pt-4 flex justify-end">
-                    <Button onClick={handleSave} isLoading={isSaving}>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Preferences
-                    </Button>
-                  </div>
-                </div>
-              </Card>
             )}
           </div>
         </div>

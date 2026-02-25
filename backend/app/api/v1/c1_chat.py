@@ -1,4 +1,7 @@
 """
+DEPRECATED: API endpoints associated with experimental/legacy AI features. 
+Slated for removal/refactor in Phase 5 simplification.
+
 Thesys C1 Generative UI chat endpoints.
 Provides streaming SSE and sync chat, plus conversation management.
 """

@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import {
   Plus,
   Search,
-  Upload,
   Download,
   MoreVertical,
   Building,
@@ -24,7 +23,6 @@ export function ProspectsPage() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProspects, setSelectedProspects] = useState<string[]>([]);
-  const [showImportModal, setShowImportModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newProspect, setNewProspect] = useState<ProspectCreate>({ email: '' });
 
@@ -154,21 +152,16 @@ export function ProspectsPage() {
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
-              leftIcon={<Upload className="h-4 w-4" />}
-              onClick={() => setShowImportModal(true)}
-            >
-              Import
-            </Button>
-            <Button
-              variant="outline"
               leftIcon={<Download className="h-4 w-4" />}
-              onClick={() => toast.info('Export coming soon')}
+              disabled
+              title="Export functionality coming soon"
             >
               Export
             </Button>
             <Button
               leftIcon={<Plus className="h-4 w-4" />}
               onClick={() => setShowAddModal(true)}
+              data-tour="add-prospect-btn"
             >
               Add Prospect
             </Button>
@@ -198,7 +191,8 @@ export function ProspectsPage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => toast.info('Add to sequence coming soon')}
+                disabled
+                title="Bulk sequence assignment coming soon"
               >
                 Add to Sequence
               </Button>
@@ -218,7 +212,7 @@ export function ProspectsPage() {
 
         {/* Prospects Table */}
         <Card padding="none">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" data-tour="prospect-table">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200 bg-slate-50">
@@ -481,50 +475,6 @@ export function ProspectsPage() {
                 ) : null}
                 Add Prospect
               </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <Card className="w-full max-w-lg">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Import Prospects</h2>
-              <button
-                onClick={() => setShowImportModal(false)}
-                className="p-1 hover:bg-slate-100 rounded"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center">
-              <Upload className="h-10 w-10 text-slate-400 mx-auto mb-3" />
-              <p className="text-slate-600 mb-2">
-                Drag and drop your CSV file here
-              </p>
-              <p className="text-sm text-slate-500 mb-4">or</p>
-              <Button variant="outline" onClick={() => toast.info('CSV import coming soon')}>
-                Browse Files
-              </Button>
-            </div>
-
-            <div className="mt-4 p-3 bg-slate-50 rounded-lg">
-              <p className="text-sm text-slate-600">
-                <strong>Required columns:</strong> email
-              </p>
-              <p className="text-sm text-slate-500 mt-1">
-                Optional: first_name, last_name, title, company_name, industry
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <Button variant="outline" onClick={() => setShowImportModal(false)}>
-                Cancel
-              </Button>
-              <Button disabled>Upload & Import</Button>
             </div>
           </Card>
         </div>
