@@ -48,12 +48,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health/ping || exit 1
 
 # Run migrations then start the application
-# If upgrade fails (tables exist but alembic_version is empty/stale),
-# stamp head to sync the version tracker, then start the server regardless.
-CMD sh -c "\
-  echo '=== Running Alembic migrations ===' && \
-  (alembic upgrade head && echo '=== Migrations OK ===') || \
-  (echo '!!! Upgrade failed, attempting stamp head ===' && alembic stamp head && echo '=== Stamped OK ===') || \
-  echo '!!! Migrations failed entirely, starting server anyway !!!'; \
-  echo '=== Starting server on port ${PORT} ===' && \
-  uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"
+# Uses migrate.py script to handle migration drift gracefully
+CMD sh -c "python scripts/migrate.py; uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"
