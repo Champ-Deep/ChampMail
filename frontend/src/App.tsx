@@ -16,6 +16,7 @@ import {
   TemplateEditorPage,
   ProspectsPage,
   SequencesPage,
+  SequenceBuilderPage,
   CampaignsPage,
   WorkflowsPage,
   SettingsPage,
@@ -27,6 +28,7 @@ import {
   AICampaignBuilderPage,
   UTMManagerPage,
   AIAssistantPage,
+  KnowledgeGraphPage,
 } from './pages';
 
 const queryClient = new QueryClient({
@@ -110,6 +112,7 @@ function App() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/prospects" element={<ProspectsPage />} />
                 <Route path="/sequences" element={<SequencesPage />} />
+              <Route path="/sequences/new" element={<SequenceBuilderPage />} />
                 <Route path="/templates" element={<TemplatesPage />} />
                 <Route path="/campaigns" element={<CampaignsPage />} />
                 <Route path="/workflows" element={<ComingSoonWrapper title="Workflows" description="Automated workflows are currently in beta and will be available soon."><WorkflowsPage /></ComingSoonWrapper>} />
@@ -121,6 +124,7 @@ function App() {
                 <Route path="/admin/prospect-lists" element={<AdminProspectListsPage />} />
                 <Route path="/ai-campaigns" element={<ComingSoonWrapper title="AI Campaign Builder" description="Our new AI Campaign Builder is currently in beta and will be available soon."><AICampaignBuilderPage /></ComingSoonWrapper>} />
                 <Route path="/assistant" element={<ComingSoonWrapper title="AI Assistant" description="Your personal AI email assistant is currently in beta and will be available soon."><AIAssistantPage /></ComingSoonWrapper>} />
+                <Route path="/graph" element={<KnowledgeGraphPage />} />
               </Route>
 
               {/* Full-screen template editor (no sidebar) */}

@@ -18,7 +18,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Header } from '../components/layout';
-import { Card, CardHeader, CardTitle, Badge } from '../components/ui';
+import { Card, CardHeader, CardTitle, Badge, Button, EmptyState } from '../components/ui';
 import { analyticsApi } from '../api/analytics';
 import { clsx } from 'clsx';
 import { format, parseISO } from 'date-fns';
@@ -124,7 +124,13 @@ export function DashboardPage() {
         )}
 
         {/* Main content */}
-        {!overviewLoading && !overviewError && overview && (
+        {!overviewLoading && !overviewError && overview && overview.emails_sent_this_month === 0 && overview.recent_campaigns.length === 0 ? (
+          <EmptyState
+            icon={Zap}
+            title="Welcome to ChampMail"
+            description="You haven't sent any emails yet. Navigate to Campaigns to create your first sequence and start sending!"
+          />
+        ) : !overviewLoading && !overviewError && overview && (
           <>
             {/* Stats Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -39,7 +39,9 @@ class Settings(BaseSettings):
     redis_port: int = 6380
     redis_password: str = ""
     redis_db: int = 0
-    redis_url_override: str = ""  # Railway: set REDIS_URL_OVERRIDE to override host/port
+    redis_url_override: str = (
+        ""  # Railway: set REDIS_URL_OVERRIDE to override host/port
+    )
 
     # PostgreSQL (User Management)
     postgres_host: str = "localhost"
@@ -102,6 +104,9 @@ class Settings(BaseSettings):
     openrouter_rate_limit: int = 10
     openrouter_timeout: int = 120
 
+    # Graph LLM (for natural language graph queries)
+    graph_llm_model: str = "google/gemini-2.0-flash-001"
+
     # Thesys C1 (Generative UI)
     thesys_api_key: str = ""
     thesys_base_url: str = "https://api.thesys.dev/v1/embed"
@@ -153,12 +158,16 @@ class Settings(BaseSettings):
             errors.append("JWT_SECRET_KEY must be at least 32 characters long")
 
         # Check database password (skip if DATABASE_URL is provided)
-        if not self.database_url and (not self.postgres_password or self.postgres_password == "champmail_dev"):
+        if not self.database_url and (
+            not self.postgres_password or self.postgres_password == "champmail_dev"
+        ):
             errors.append("POSTGRES_PASSWORD must be set to a secure value")
 
         # Check webhook secret
         if not self.webhook_secret:
-            errors.append("WEBHOOK_SECRET must be set for webhook signature verification")
+            errors.append(
+                "WEBHOOK_SECRET must be set for webhook signature verification"
+            )
 
         # Debug must be off
         if self.debug:
@@ -170,8 +179,8 @@ class Settings(BaseSettings):
 
         if errors:
             raise ValueError(
-                "Configuration validation failed:\n" +
-                "\n".join(f"  - {error}" for error in errors)
+                "Configuration validation failed:\n"
+                + "\n".join(f"  - {error}" for error in errors)
             )
 
 

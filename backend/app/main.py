@@ -15,14 +15,28 @@ logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.db.falkordb import init_graph_db, close_graph_db
+from app.db.falkordb import init_graph_db, close_graph_db, FALKORDB_AVAILABLE
 from app.db.postgres import init_db, close_db, get_db
 from app.db.redis import redis_client
 from app.services.user_service import user_service
 from app.middleware.rate_limit import setup_rate_limiting
 
 # Import routers
-from app.api.v1 import auth, prospects, sequences, webhooks, graph, templates, campaigns, email_settings, email_accounts, teams, workflows, email_webhooks, health
+from app.api.v1 import (
+    auth,
+    prospects,
+    sequences,
+    webhooks,
+    graph,
+    templates,
+    campaigns,
+    email_settings,
+    email_accounts,
+    teams,
+    workflows,
+    email_webhooks,
+    health,
+)
 from app.api.v1 import send, domains, tracking, analytics_api, utm, c1_chat
 from app.api.v1.admin import router as admin_router
 
@@ -61,10 +75,13 @@ async def lifespan(app: FastAPI):
         logger.error("Auth will NOT work without database!")
 
     # Initialize FalkorDB
-    if init_graph_db():
-        logger.info("FalkorDB connected")
+    if FALKORDB_AVAILABLE:
+        if init_graph_db():
+            logger.info("FalkorDB connected")
+        else:
+            logger.warning("FalkorDB unavailable - graph features disabled")
     else:
-        logger.warning("FalkorDB unavailable - graph features disabled")
+        logger.warning("FalkorDB package not installed - graph features disabled")
 
     # Check OpenRouter API key
     if settings.openrouter_api_key:
@@ -125,12 +142,14 @@ app = FastAPI(
 # In development, allow localhost variants
 allowed_origins = [settings.frontend_url]
 if settings.environment == "development":
-    allowed_origins.extend([
-        "http://localhost:3000",
-        "http://localhost:5173",  # Vite default
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ])
+    allowed_origins.extend(
+        [
+            "http://localhost:3000",
+            "http://localhost:5173",  # Vite default
+            "http://127.0.0.1:3000",
+            "http://127.0.0.1:5173",
+        ]
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -167,16 +186,24 @@ app.include_router(sequences.router, prefix=settings.api_v1_prefix)
 app.include_router(templates.router, prefix=settings.api_v1_prefix)
 app.include_router(campaigns.router, prefix=settings.api_v1_prefix)
 app.include_router(email_settings.router, prefix=settings.api_v1_prefix)
-app.include_router(email_accounts.router, prefix=f"{settings.api_v1_prefix}/email-accounts", tags=["Email Accounts"])
+app.include_router(
+    email_accounts.router,
+    prefix=f"{settings.api_v1_prefix}/email-accounts",
+    tags=["Email Accounts"],
+)
 app.include_router(teams.router, prefix=settings.api_v1_prefix)
 app.include_router(webhooks.router, prefix=settings.api_v1_prefix)
 app.include_router(workflows.router, prefix=settings.api_v1_prefix)
-app.include_router(email_webhooks.router, prefix=settings.api_v1_prefix, tags=["Email Webhooks"])
+app.include_router(
+    email_webhooks.router, prefix=settings.api_v1_prefix, tags=["Email Webhooks"]
+)
 app.include_router(graph.router, prefix=settings.api_v1_prefix)
 app.include_router(send.router, prefix=settings.api_v1_prefix, tags=["Send"])
 app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains"])
 app.include_router(tracking.router, prefix=settings.api_v1_prefix, tags=["Tracking"])
-app.include_router(analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"])
+app.include_router(
+    analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"]
+)
 app.include_router(utm.router, prefix=settings.api_v1_prefix, tags=["UTM"])
 app.include_router(c1_chat.router, prefix=settings.api_v1_prefix, tags=["C1 Chat"])
 app.include_router(admin_router, prefix=settings.api_v1_prefix)

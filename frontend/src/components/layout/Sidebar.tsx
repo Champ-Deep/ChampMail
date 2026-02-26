@@ -14,6 +14,7 @@ import {
   Sparkles,
   Upload,
   Link2,
+  Network,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { clsx } from 'clsx';
@@ -24,6 +25,7 @@ const mainNavigation = [
   { name: 'Campaigns', href: '/campaigns', icon: Mail, tourId: 'nav-campaigns' },
   { name: 'Sequences', href: '/sequences', icon: Zap, tourId: 'nav-sequences' },
   { name: 'Templates', href: '/templates', icon: FileText, tourId: 'nav-templates' },
+  { name: 'Knowledge Graph', href: '/graph', icon: Network, tourId: 'nav-graph' },
   { name: 'Analytics', href: '/analytics', icon: BarChart3, tourId: 'nav-analytics' },
 ];
 

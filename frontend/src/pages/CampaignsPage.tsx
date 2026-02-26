@@ -12,7 +12,7 @@ import {
   BarChart3,
 } from 'lucide-react';
 import { Header } from '../components/layout';
-import { Card, Button, Badge } from '../components/ui';
+import { Card, Button, Badge, EmptyState } from '../components/ui';
 import { campaignsApi, type Campaign, type CampaignStatus } from '../api/campaigns';
 import { CreateCampaignModal } from '../components/campaigns/CreateCampaignModal';
 import { clsx } from 'clsx';
@@ -330,22 +330,21 @@ export function CampaignsPage() {
 
             {/* Empty State */}
             {filteredCampaigns.length === 0 && (
-              <div className="py-12 text-center">
-                <Mail className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-slate-900 mb-1">
-                  No campaigns found
-                </h3>
-                <p className="text-slate-500 mb-4">
-                  {searchQuery || statusFilter !== 'all'
+              <EmptyState
+                icon={Mail}
+                title="No campaigns found"
+                description={
+                  searchQuery || statusFilter !== 'all'
                     ? 'Try adjusting your search or filters'
-                    : 'Create your first campaign to get started'}
-                </p>
+                    : 'Create your first campaign to get started'
+                }
+              >
                 {!searchQuery && statusFilter === 'all' && canCreate && (
                   <Button leftIcon={<Plus className="h-4 w-4" />} onClick={() => setShowCreateModal(true)}>
                     New Campaign
                   </Button>
                 )}
-              </div>
+              </EmptyState>
             )}
           </div>
         )}

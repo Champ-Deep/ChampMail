@@ -9,7 +9,13 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional, Dict, List
 
-from falkordb import FalkorDB
+try:
+    from falkordb import FalkorDB
+
+    FALKORDB_AVAILABLE = True
+except ImportError:
+    FALKORDB_AVAILABLE = False
+    FalkorDB = None
 
 from app.core.config import settings
 
@@ -20,17 +26,24 @@ class GraphDatabase:
     """FalkorDB graph database client."""
 
     def __init__(self):
-        self._client: Optional[FalkorDB] = None
+        self._client: Optional[Any] = None
         self._graph = None
 
     def connect(self) -> None:
         """Establish connection to FalkorDB."""
+        if not FALKORDB_AVAILABLE:
+            logger.warning("FalkorDB package not available")
+            return
         self._client = FalkorDB(
             host=settings.falkordb_host,
             port=settings.falkordb_port,
             password=settings.falkordb_password or None,
         )
         self._graph = self._client.select_graph(settings.falkordb_database)
+
+    def is_available(self) -> bool:
+        """Check if FalkorDB is available."""
+        return FALKORDB_AVAILABLE and self._client is not None
 
     def disconnect(self) -> None:
         """Close FalkorDB connection."""
@@ -41,6 +54,10 @@ class GraphDatabase:
     @property
     def graph(self):
         """Get the graph instance."""
+        if not FALKORDB_AVAILABLE:
+            raise RuntimeError(
+                "FalkorDB is not available. Install falkordb package to enable graph features."
+            )
         if self._graph is None:
             self.connect()
         return self._graph
@@ -56,6 +73,9 @@ class GraphDatabase:
         Returns:
             List of result dictionaries
         """
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            logger.warning("FalkorDB not available, returning empty results")
+            return []
         result = self.graph.query(cypher, params or {})
         return self._parse_result(result)
 
@@ -65,7 +85,7 @@ class GraphDatabase:
             return []
 
         # Get column headers
-        headers = result.header if hasattr(result, 'header') else []
+        headers = result.header if hasattr(result, "header") else []
 
         # Convert each row to dict
         rows = []
@@ -75,17 +95,21 @@ class GraphDatabase:
                 for i, header in enumerate(headers):
                     value = row[i] if i < len(row) else None
                     # Handle Node objects
-                    if hasattr(value, 'properties'):
+                    if hasattr(value, "properties"):
                         row_dict[header] = {
-                            'id': value.id if hasattr(value, 'id') else None,
-                            'labels': list(value.labels) if hasattr(value, 'labels') else [],
-                            'properties': dict(value.properties) if hasattr(value, 'properties') else {},
+                            "id": value.id if hasattr(value, "id") else None,
+                            "labels": list(value.labels)
+                            if hasattr(value, "labels")
+                            else [],
+                            "properties": dict(value.properties)
+                            if hasattr(value, "properties")
+                            else {},
                         }
                     else:
                         row_dict[header] = value
                 rows.append(row_dict)
             else:
-                rows.append({'result': row})
+                rows.append({"result": row})
 
         return rows
 
@@ -105,15 +129,19 @@ class GraphDatabase:
         Returns:
             Created prospect data
         """
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            logger.warning("FalkorDB not available, skipping create_prospect")
+            return {"email": email, "created": False}
+
         # Build properties dynamically
         props = {
-            'email': email.lower(),
-            'first_name': first_name,
-            'last_name': last_name,
-            'title': title,
-            'phone': phone,
-            'linkedin_url': linkedin_url,
-            'created_at': 'datetime()',
+            "email": email.lower(),
+            "first_name": first_name,
+            "last_name": last_name,
+            "title": title,
+            "phone": phone,
+            "linkedin_url": linkedin_url,
+            "created_at": "datetime()",
         }
         props.update(extra_fields)
 
@@ -121,10 +149,10 @@ class GraphDatabase:
         props = {k: v for k, v in props.items() if v}
 
         # Build Cypher query
-        prop_string = ', '.join(f'{k}: ${k}' for k in props.keys() if k != 'created_at')
-        if 'created_at' in props:
-            prop_string += ', created_at: datetime()'
-            del props['created_at']
+        prop_string = ", ".join(f"{k}: ${k}" for k in props.keys() if k != "created_at")
+        if "created_at" in props:
+            prop_string += ", created_at: datetime()"
+            del props["created_at"]
 
         query = f"""
             CREATE (p:Prospect {{{prop_string}}})
@@ -141,7 +169,7 @@ class GraphDatabase:
             OPTIONAL MATCH (p)-[r:WORKS_AT]->(c:Company)
             RETURN p, r, c
         """
-        result = self.query(query, {'email': email.lower()})
+        result = self.query(query, {"email": email.lower()})
         return result[0] if result else None
 
     def get_prospect_by_id(self, prospect_id: int) -> dict | None:
@@ -152,7 +180,7 @@ class GraphDatabase:
             OPTIONAL MATCH (p)-[r:WORKS_AT]->(c:Company)
             RETURN p, r, c
         """
-        result = self.query(query, {'id': prospect_id})
+        result = self.query(query, {"id": prospect_id})
         return result[0] if result else None
 
     def create_company(
@@ -164,19 +192,22 @@ class GraphDatabase:
         **extra_fields,
     ) -> dict:
         """Create a Company node in the graph."""
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            logger.warning("FalkorDB not available, skipping create_company")
+            return {"domain": domain, "created": False}
         props = {
-            'name': name,
-            'domain': domain.lower(),
-            'industry': industry,
-            'employee_count': employee_count,
+            "name": name,
+            "domain": domain.lower(),
+            "industry": industry,
+            "employee_count": employee_count,
         }
         props.update(extra_fields)
         props = {k: v for k, v in props.items() if v}
 
-        prop_string = ', '.join(f'{k}: ${k}' for k in props.keys())
+        prop_string = ", ".join(f"{k}: ${k}" for k in props.keys())
         query = f"""
             MERGE (c:Company {{domain: $domain}})
-            ON CREATE SET {', '.join(f'c.{k} = ${k}' for k in props.keys())}
+            ON CREATE SET {", ".join(f"c.{k} = ${k}" for k in props.keys())}
             RETURN c
         """
 
@@ -191,6 +222,10 @@ class GraphDatabase:
         is_current: bool = True,
     ) -> dict:
         """Create WORKS_AT relationship between Prospect and Company."""
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            logger.warning("FalkorDB not available, skipping link_prospect_to_company")
+            return {"linked": False}
+
         query = """
             MATCH (p:Prospect {email: $email})
             MATCH (c:Company {domain: $domain})
@@ -198,12 +233,15 @@ class GraphDatabase:
             SET r.title = $title, r.is_current = $is_current
             RETURN p, r, c
         """
-        result = self.query(query, {
-            'email': prospect_email.lower(),
-            'domain': company_domain.lower(),
-            'title': title,
-            'is_current': is_current,
-        })
+        result = self.query(
+            query,
+            {
+                "email": prospect_email.lower(),
+                "domain": company_domain.lower(),
+                "title": title,
+                "is_current": is_current,
+            },
+        )
         return result[0] if result else {}
 
     def search_prospects(
@@ -215,17 +253,17 @@ class GraphDatabase:
     ) -> list[dict]:
         """Search prospects with optional filters."""
         conditions = []
-        params = {'limit': limit, 'skip': skip}
+        params = {"limit": limit, "skip": skip}
 
         if query_text:
             conditions.append(
                 "(p.first_name CONTAINS $query OR p.last_name CONTAINS $query OR p.email CONTAINS $query)"
             )
-            params['query'] = query_text.lower()
+            params["query"] = query_text.lower()
 
         if industry:
             conditions.append("c.industry = $industry")
-            params['industry'] = industry
+            params["industry"] = industry
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -248,6 +286,10 @@ class GraphDatabase:
         steps_count: int = 0,
     ) -> dict:
         """Create an email Sequence node."""
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            logger.warning("FalkorDB not available, skipping create_sequence")
+            return {"name": name, "created": False}
+
         query = """
             CREATE (s:Sequence {
                 name: $name,
@@ -258,11 +300,14 @@ class GraphDatabase:
             })
             RETURN s
         """
-        result = self.query(query, {
-            'name': name,
-            'owner_id': owner_id,
-            'steps_count': steps_count,
-        })
+        result = self.query(
+            query,
+            {
+                "name": name,
+                "owner_id": owner_id,
+                "steps_count": steps_count,
+            },
+        )
         return result[0] if result else {}
 
     def enroll_prospect_in_sequence(
@@ -281,10 +326,13 @@ class GraphDatabase:
                 r.current_step = 1
             RETURN p, r, s
         """
-        result = self.query(query, {
-            'email': prospect_email.lower(),
-            'sequence_id': sequence_id,
-        })
+        result = self.query(
+            query,
+            {
+                "email": prospect_email.lower(),
+                "sequence_id": sequence_id,
+            },
+        )
         return result[0] if result else {}
 
     def record_email_sent(
@@ -308,13 +356,16 @@ class GraphDatabase:
             CREATE (p)-[:RECEIVED]->(e)
             RETURN e
         """
-        result = self.query(query, {
-            'email': prospect_email.lower(),
-            'subject': subject,
-            'body_hash': body_hash,
-            'step_number': step_number,
-            'sequence_id': sequence_id,
-        })
+        result = self.query(
+            query,
+            {
+                "email": prospect_email.lower(),
+                "subject": subject,
+                "body_hash": body_hash,
+                "step_number": step_number,
+                "sequence_id": sequence_id,
+            },
+        )
         return result[0] if result else {}
 
 
@@ -339,6 +390,9 @@ def init_graph_db() -> bool:
     Returns:
         True if connection succeeded, False otherwise.
     """
+    if not FALKORDB_AVAILABLE:
+        logger.warning("FalkorDB package not installed - graph features disabled")
+        return False
     try:
         graph_db.connect()
         return True

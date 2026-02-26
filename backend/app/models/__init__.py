@@ -10,6 +10,7 @@ from app.models.domain import Domain, DNSCheckLog
 from app.models.campaign import Campaign, CampaignProspect, Prospect
 from app.models.sequence import Sequence, SequenceStep, SequenceEnrollment, SequenceStepExecution
 from app.models.send_log import SendLog, DailyStats, BounceLog, APIKey
+from app.models.utm import UTMPreset, CampaignUTMConfig, LinkClick
 
 __all__ = [
     "User",
@@ -34,4 +35,7 @@ __all__ = [
     "DailyStats",
     "BounceLog",
     "APIKey",
+    "UTMPreset",
+    "CampaignUTMConfig",
+    "LinkClick",
 ]

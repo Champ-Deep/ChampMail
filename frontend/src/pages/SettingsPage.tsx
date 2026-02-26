@@ -744,9 +744,10 @@ function EmailAccountsSettings() {
                       size="sm"
                       onClick={() => testSmtpMutation.mutate(account.id)}
                       disabled={testSmtpMutation.isPending}
+                      isLoading={testSmtpMutation.isPending}
                       className="text-xs"
                     >
-                      {testSmtpMutation.isPending ? 'Testing...' : 'Test'}
+                      Test
                     </Button>
                   </div>
                   <div className="flex items-center gap-2">
@@ -767,9 +768,10 @@ function EmailAccountsSettings() {
                       size="sm"
                       onClick={() => testImapMutation.mutate(account.id)}
                       disabled={testImapMutation.isPending}
+                      isLoading={testImapMutation.isPending}
                       className="text-xs"
                     >
-                      {testImapMutation.isPending ? 'Testing...' : 'Test'}
+                      Test
                     </Button>
                   </div>
                 </div>
@@ -1185,7 +1187,7 @@ function SmtpImapSettings() {
               isLoading={testSmtpMutation.isPending}
               disabled={!smtpHost || !smtpUsername}
             >
-              {testSmtpMutation.isPending ? 'Testing...' : 'Test SMTP Connection'}
+              Test SMTP Connection
             </Button>
             {settings?.smtp_verified_at && (
               <p className="text-xs text-slate-500 mt-2">
@@ -1279,7 +1281,7 @@ function SmtpImapSettings() {
               isLoading={testImapMutation.isPending}
               disabled={!imapHost || !imapUsername}
             >
-              {testImapMutation.isPending ? 'Testing...' : 'Test IMAP Connection'}
+              Test IMAP Connection
             </Button>
             {settings?.imap_verified_at && (
               <p className="text-xs text-slate-500 mt-2">
