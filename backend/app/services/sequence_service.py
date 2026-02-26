@@ -246,7 +246,7 @@ class SequenceService:
         )
 
         result = await session.execute(
-            select(SequenceStepExecution).where(SequenceExecution.id == execution_id)
+            select(SequenceStepExecution).where(SequenceStepExecution.id == execution_id)
         )
         execution = result.scalar_one_or_none()
 

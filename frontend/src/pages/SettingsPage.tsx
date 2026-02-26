@@ -949,30 +949,22 @@ function EmailAccountsSettings() {
 function SmtpImapSettings() {
   const queryClient = useQueryClient();
 
-  // Ethereal email defaults for testing
-  const ETHEREAL_DEFAULTS = {
-    host: 'smtp.ethereal.email',
-    imapHost: 'imap.ethereal.email',
-    username: 'trent.davis25@ethereal.email',
-    password: 'HNJ7R9H9bf231XvnSQ',
-  };
-
-  // Form state - prepopulated with Ethereal defaults
-  const [smtpHost, setSmtpHost] = useState(ETHEREAL_DEFAULTS.host);
+  // Form state - starts empty, populated from saved settings via useEffect below
+  const [smtpHost, setSmtpHost] = useState('');
   const [smtpPort, setSmtpPort] = useState('587');
-  const [smtpUsername, setSmtpUsername] = useState(ETHEREAL_DEFAULTS.username);
-  const [smtpPassword, setSmtpPassword] = useState(ETHEREAL_DEFAULTS.password);
+  const [smtpUsername, setSmtpUsername] = useState('');
+  const [smtpPassword, setSmtpPassword] = useState('');
   const [smtpUseTls, setSmtpUseTls] = useState(true);
 
-  const [imapHost, setImapHost] = useState(ETHEREAL_DEFAULTS.imapHost);
+  const [imapHost, setImapHost] = useState('');
   const [imapPort, setImapPort] = useState('993');
-  const [imapUsername, setImapUsername] = useState(ETHEREAL_DEFAULTS.username);
-  const [imapPassword, setImapPassword] = useState(ETHEREAL_DEFAULTS.password);
+  const [imapUsername, setImapUsername] = useState('');
+  const [imapPassword, setImapPassword] = useState('');
   const [imapUseSsl, setImapUseSsl] = useState(true);
   const [imapMailbox, setImapMailbox] = useState('INBOX');
 
-  const [fromEmail, setFromEmail] = useState(ETHEREAL_DEFAULTS.username);
-  const [fromName, setFromName] = useState('Trent Davis');
+  const [fromEmail, setFromEmail] = useState('');
+  const [fromName, setFromName] = useState('');
   const [replyToEmail, setReplyToEmail] = useState('');
 
   // Fetch current settings
@@ -1193,14 +1185,7 @@ function SmtpImapSettings() {
               isLoading={testSmtpMutation.isPending}
               disabled={!smtpHost || !smtpUsername}
             >
-              {testSmtpMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                'Test SMTP Connection'
-              )}
+              {testSmtpMutation.isPending ? 'Testing...' : 'Test SMTP Connection'}
             </Button>
             {settings?.smtp_verified_at && (
               <p className="text-xs text-slate-500 mt-2">
@@ -1294,14 +1279,7 @@ function SmtpImapSettings() {
               isLoading={testImapMutation.isPending}
               disabled={!imapHost || !imapUsername}
             >
-              {testImapMutation.isPending ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                'Test IMAP Connection'
-              )}
+              {testImapMutation.isPending ? 'Testing...' : 'Test IMAP Connection'}
             </Button>
             {settings?.imap_verified_at && (
               <p className="text-xs text-slate-500 mt-2">
