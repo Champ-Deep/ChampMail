@@ -18,7 +18,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { Header } from '../components/layout';
-import { Card, CardHeader, CardTitle, Badge, Button, EmptyState } from '../components/ui';
+import { Card, CardHeader, CardTitle, Badge, EmptyState } from '../components/ui';
 import { analyticsApi } from '../api/analytics';
 import { clsx } from 'clsx';
 import { format, parseISO } from 'date-fns';
@@ -60,31 +60,31 @@ export function DashboardPage() {
 
   const statsCards = overview
     ? [
-        {
-          label: 'Emails Sent Today',
-          value: formatNumber(overview.emails_sent_today),
-          icon: Mail,
-          color: 'green' as const,
-        },
-        {
-          label: 'Sent This Week',
-          value: formatNumber(overview.emails_sent_this_week),
-          icon: Zap,
-          color: 'purple' as const,
-        },
-        {
-          label: 'Sent This Month',
-          value: formatNumber(overview.emails_sent_this_month),
-          icon: TrendingUp,
-          color: 'blue' as const,
-        },
-        {
-          label: 'Open Rate',
-          value: `${overview.open_rate.toFixed(1)}%`,
-          icon: BarChart3,
-          color: 'orange' as const,
-        },
-      ]
+      {
+        label: 'Emails Sent Today',
+        value: formatNumber(overview.emails_sent_today),
+        icon: Mail,
+        color: 'green' as const,
+      },
+      {
+        label: 'Sent This Week',
+        value: formatNumber(overview.emails_sent_this_week),
+        icon: Zap,
+        color: 'purple' as const,
+      },
+      {
+        label: 'Sent This Month',
+        value: formatNumber(overview.emails_sent_this_month),
+        icon: TrendingUp,
+        color: 'blue' as const,
+      },
+      {
+        label: 'Open Rate',
+        value: `${overview.open_rate.toFixed(1)}%`,
+        icon: BarChart3,
+        color: 'orange' as const,
+      },
+    ]
     : [];
 
   const colorClasses: Record<string, { text: string; iconBg: string }> = {

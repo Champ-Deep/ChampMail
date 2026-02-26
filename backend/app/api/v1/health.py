@@ -13,6 +13,12 @@ from app.db.redis import redis_client
 router = APIRouter(prefix="/health", tags=["Health"])
 
 
+@router.get("/ping")
+async def ping():
+    """Minimal health check for load balancers — always returns 200."""
+    return {"status": "ok"}
+
+
 @router.get("")
 async def health_check():
     """
