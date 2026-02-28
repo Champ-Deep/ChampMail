@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from datetime import datetime
+import os
+
 from app.services.mail_engine_client import mail_engine_client
 from app.services.cloudflare_client import cloudflare_client
 from app.services.namecheap_client import namecheap_client
@@ -87,7 +89,7 @@ class PurchaseDomainResponse(BaseModel):
 
 
 @router.get("/domains", response_model=List[DomainResponse])
-async def list_domains(current_user = Depends(get_current_user)):
+async def list_domains(current_user=Depends(get_current_user)):
     try:
         domains = await mail_engine_client.list_domains()
         return domains or []
@@ -98,7 +100,7 @@ async def list_domains(current_user = Depends(get_current_user)):
 @router.post("/domains", response_model=dict)
 async def create_domain(
     request: CreateDomainRequest,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         result = await mail_engine_client.create_domain(
@@ -107,13 +109,15 @@ async def create_domain(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create domain: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to create domain: {str(e)}"
+        )
 
 
 @router.get("/domains/{domain_id}", response_model=DomainResponse)
 async def get_domain(
     domain_id: str,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         domains = await mail_engine_client.list_domains()
@@ -130,7 +134,7 @@ async def get_domain(
 @router.delete("/domains/{domain_id}")
 async def delete_domain(
     domain_id: str,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         from app.db.postgres import async_session
@@ -141,13 +145,15 @@ async def delete_domain(
 
         return {"message": "Domain deleted successfully"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete domain: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete domain: {str(e)}"
+        )
 
 
 @router.post("/domains/{domain_id}/verify", response_model=dict)
 async def verify_domain(
     domain_id: str,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         result = await mail_engine_client.verify_domain(domain_id)
@@ -160,13 +166,15 @@ async def verify_domain(
             "all_verified": result.all_verified,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to verify domain: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to verify domain: {str(e)}"
+        )
 
 
 @router.get("/domains/{domain_id}/dns-records", response_model=DNSRecordsResponse)
 async def get_dns_records(
     domain_id: str,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         records = await mail_engine_client.get_dns_records(domain_id)
@@ -184,13 +192,15 @@ async def get_dns_records(
             records=[DNSRecord(**r) for r in records],
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get DNS records: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get DNS records: {str(e)}"
+        )
 
 
 @router.get("/domains/{domain_id}/health", response_model=DomainHealthResponse)
 async def get_domain_health(
     domain_id: str,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         health = await mail_engine_client.get_domain_health(domain_id)
@@ -215,7 +225,7 @@ async def get_domain_health(
 @router.post("/domains/search", response_model=DomainSearchResponse)
 async def search_domains(
     request: DomainSearchRequest,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         results = await namecheap_client.search_domains(
@@ -235,13 +245,15 @@ async def search_domains(
             ],
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to search domains: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to search domains: {str(e)}"
+        )
 
 
 @router.post("/domains/purchase", response_model=PurchaseDomainResponse)
 async def purchase_domain(
     request: PurchaseDomainRequest,
-    current_user = Depends(get_current_user),
+    current_user=Depends(get_current_user),
 ):
     try:
         result = await namecheap_client.purchase_domain(
@@ -258,4 +270,57 @@ async def purchase_domain(
             error=result.error,
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to purchase domain: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to purchase domain: {str(e)}"
+        )
+
+
+@router.post("/domains/{domain_id}/auto-setup")
+async def auto_setup_domain_dns(
+    domain_id: str,
+    current_user=Depends(get_current_user),
+):
+    """Auto-configure DNS records using Cloudflare."""
+    try:
+        from app.db.postgres import async_session
+        from app.services.domain_service import domain_service
+
+        async with async_session() as session:
+            domain = await domain_service.get_by_id(session, domain_id)
+            if not domain:
+                raise HTTPException(status_code=404, detail="Domain not found")
+
+            if not domain.get("cloudflare_zone_id"):
+                raise HTTPException(
+                    status_code=400, detail="Domain is not on Cloudflare"
+                )
+
+            dkim_selector = domain.get("dkim_selector", "champmail")
+            dkim_keys = domain_service.generate_dkim_key_pair(dkim_selector)
+
+            result = await cloudflare_client.setup_email_dns(
+                zone_id=domain["cloudflare_zone_id"],
+                server_ip=os.getenv("MAIL_SERVER_IP", "10.0.0.1"),
+                dkim_public_key=dkim_keys["public_key"],
+                domain=domain["domain_name"],
+            )
+
+            if result.success:
+                await session.execute(
+                    f"UPDATE domains SET dkim_public_key = '{dkim_keys['public_key']}', "
+                    f"dkim_private_key = '{dkim_keys['private_key'].replace("'", "''")}' "
+                    f"WHERE id = '{domain_id}'"
+                )
+                await session.commit()
+
+            return {
+                "success": result.success,
+                "records_created": len(result.records),
+                "error": result.error,
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to auto-setup DNS: {str(e)}"
+        )

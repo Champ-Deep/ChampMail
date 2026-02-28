@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { X } from 'lucide-react';
+import { X, Mail, Globe } from 'lucide-react';
 import { Button, Input, Textarea } from '../ui';
 import { campaignsApi } from '../../api/campaigns';
 import { templatesApi } from '../../api/templates';
+import { domainsApi, Domain } from '../../api/domains';
 
 interface CreateCampaignModalProps {
   isOpen: boolean;
@@ -20,6 +21,8 @@ export function CreateCampaignModal({ isOpen, onClose }: CreateCampaignModalProp
   const [fromAddress, setFromAddress] = useState('');
   const [dailyLimit, setDailyLimit] = useState('100');
   const [templateId, setTemplateId] = useState('');
+  const [sendMode, setSendMode] = useState<'user_smtp' | 'server'>('user_smtp');
+  const [selectedDomainId, setSelectedDomainId] = useState('');
 
   // Fetch templates for dropdown
   const { data: templateData } = useQuery({
@@ -27,6 +30,15 @@ export function CreateCampaignModal({ isOpen, onClose }: CreateCampaignModalProp
     queryFn: () => templatesApi.list(100, 0),
     enabled: isOpen,
   });
+
+  // Fetch verified domains for domain picker
+  const { data: domainsData } = useQuery({
+    queryKey: ['domains'],
+    queryFn: () => domainsApi.list(),
+    enabled: isOpen,
+  });
+
+  const verifiedDomains = domainsData?.filter((d: Domain) => d.status === 'verified') || [];
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -37,6 +49,8 @@ export function CreateCampaignModal({ isOpen, onClose }: CreateCampaignModalProp
         from_address: fromAddress || undefined,
         daily_limit: parseInt(dailyLimit) || 100,
         template_id: templateId || undefined,
+        send_mode: sendMode,
+        domain_id: sendMode === 'server' ? selectedDomainId || undefined : undefined,
       }),
     onSuccess: () => {
       toast.success('Campaign created successfully');
@@ -55,6 +69,8 @@ export function CreateCampaignModal({ isOpen, onClose }: CreateCampaignModalProp
     setFromAddress('');
     setDailyLimit('100');
     setTemplateId('');
+    setSendMode('user_smtp');
+    setSelectedDomainId('');
     onClose();
   };
 
@@ -137,6 +153,71 @@ export function CreateCampaignModal({ isOpen, onClose }: CreateCampaignModalProp
             placeholder="100"
             helperText="Maximum emails to send per day"
           />
+
+          {/* Send Mode Selection */}
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              Sending Method
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setSendMode('user_smtp')}
+                className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                  sendMode === 'user_smtp'
+                    ? 'border-brand-purple bg-brand-purple/5'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <Mail className={`h-5 w-5 ${sendMode === 'user_smtp' ? 'text-brand-purple' : 'text-slate-400'}`} />
+                <div className="text-left">
+                  <div className="font-medium text-sm">My Email</div>
+                  <div className="text-xs text-slate-500">Use your SMTP credentials</div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSendMode('server')}
+                className={`flex items-center gap-2 p-3 rounded-lg border-2 transition-all ${
+                  sendMode === 'server'
+                    ? 'border-brand-purple bg-brand-purple/5'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <Globe className={`h-5 w-5 ${sendMode === 'server' ? 'text-brand-purple' : 'text-slate-400'}`} />
+                <div className="text-left">
+                  <div className="font-medium text-sm">Verified Domain</div>
+                  <div className="text-xs text-slate-500">Send from your domain</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Domain Picker - shown when server mode is selected */}
+          {sendMode === 'server' && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Sending Domain
+              </label>
+              <select
+                value={selectedDomainId}
+                onChange={(e) => setSelectedDomainId(e.target.value)}
+                className="w-full h-10 px-3 rounded-lg border border-slate-300 text-sm bg-white focus:border-brand-purple focus:ring-1 focus:ring-brand-purple outline-none"
+              >
+                <option value="">Select a verified domain</option>
+                {verifiedDomains.map((domain: Domain) => (
+                  <option key={domain.id} value={domain.id}>
+                    {domain.domain_name} (health: {Math.round(domain.health_score)}%)
+                  </option>
+                ))}
+              </select>
+              {verifiedDomains.length === 0 && (
+                <p className="text-xs text-amber-600 mt-1">
+                  No verified domains available. Add a domain in Domain Settings first.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer */}

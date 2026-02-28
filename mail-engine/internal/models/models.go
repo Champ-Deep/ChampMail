@@ -16,6 +16,13 @@ type SendEmailRequest struct {
 	TrackOpens  bool              `json:"track_opens"`
 	TrackClicks bool              `json:"track_clicks"`
 	ScheduledAt *time.Time        `json:"scheduled_at"`
+
+	SendMode   string `json:"send_mode"`
+	SMTPHost   string `json:"smtp_host"`
+	SMTPPort   int    `json:"smtp_port"`
+	SMTPUser   string `json:"smtp_username"`
+	SMTPPass   string `json:"smtp_password"`
+	SMTPUseTLS bool   `json:"smtp_use_tls"`
 }
 
 type Attachment struct {

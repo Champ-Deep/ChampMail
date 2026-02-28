@@ -30,6 +30,19 @@ type Config struct {
 	DKIMDomain         string
 	DKIMPrivateKeyPath string
 
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUsername   string
+	SMTPPassword   string
+	SMTPUseTLS     bool
+	PostfixEnabled bool
+
+	SMTPPoolSize     int
+	SMTPPoolMaxIdle  int
+	SMTPDialTimeout  time.Duration
+	SMTPWriteTimeout time.Duration
+	SMTPReadTimeout  time.Duration
+
 	DailySendLimit      int
 	RateLimitPerSecond  int
 	BounceCheckInterval time.Duration
@@ -61,6 +74,19 @@ func Load() (*Config, error) {
 		DKIMSelector:       getEnv("DKIM_SELECTOR", "champmail"),
 		DKIMDomain:         getEnv("DKIM_DOMAIN", "champmail.com"),
 		DKIMPrivateKeyPath: getEnv("DKIM_PRIVATE_KEY_PATH", "/etc/champmail/dkim/private.pem"),
+
+		SMTPHost:       getEnv("SMTP_HOST", "localhost"),
+		SMTPPort:       getEnvAsInt("SMTP_PORT", 25),
+		SMTPUsername:   getEnv("SMTP_USERNAME", ""),
+		SMTPPassword:   getEnv("SMTP_PASSWORD", ""),
+		SMTPUseTLS:     getEnvAsBool("SMTP_USE_TLS", true),
+		PostfixEnabled: getEnvAsBool("POSTFIX_ENABLED", false),
+
+		SMTPPoolSize:     getEnvAsInt("SMTP_POOL_SIZE", 10),
+		SMTPPoolMaxIdle:  getEnvAsInt("SMTP_POOL_MAX_IDLE", 5),
+		SMTPDialTimeout:  getEnvAsDuration("SMTP_DIAL_TIMEOUT", 10*time.Second),
+		SMTPWriteTimeout: getEnvAsDuration("SMTP_WRITE_TIMEOUT", 10*time.Second),
+		SMTPReadTimeout:  getEnvAsDuration("SMTP_READ_TIMEOUT", 30*time.Second),
 
 		DailySendLimit:      getEnvAsInt("DAILY_SEND_LIMIT", 1000),
 		RateLimitPerSecond:  getEnvAsInt("RATE_LIMIT_PER_SECOND", 10),

@@ -3,6 +3,7 @@ import time
 import hmac
 import hashlib
 import httpx
+import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 
@@ -13,6 +14,8 @@ class DomainResult:
     available: bool
     price: float
     currency: str
+    registration_price: float = 0.0
+    renewal_price: float = 0.0
 
 
 @dataclass
@@ -32,13 +35,26 @@ class PurchaseResult:
     error: Optional[str] = None
 
 
+@dataclass
+class RegistrantInfo:
+    organization: str = "ChampMail"
+    first_name: str = "Champ"
+    last_name: str = "Mail"
+    email: str = "admin@champmail.com"
+    phone: str = "+1.5555555555"
+    city: str = "San Francisco"
+    country: str = "US"
+    postal_code: str = "94105"
+
+
 class NamecheapClient:
-    def __init__(self):
+    def __init__(self, registrant: Optional[RegistrantInfo] = None):
         self.api_key = os.getenv("NAMECHEAP_API_KEY", "")
         self.api_user = os.getenv("NAMECHEAP_API_USER", "")
         self.ip = os.getenv("NAMECHEAP_IP", "")
         self.base_url = "https://api.namecheap.com/xml.response"
         self.client = httpx.AsyncClient(timeout=30.0)
+        self.registrant = registrant or RegistrantInfo()
 
     def _sign(self, command: str) -> str:
         if not self.api_key:
@@ -68,6 +84,7 @@ class NamecheapClient:
         response.raise_for_status()
 
         import xml.etree.ElementTree as ET
+
         root = ET.fromstring(response.content)
 
         if root.find(".//Error") is not None:
@@ -82,14 +99,20 @@ class NamecheapClient:
         if "domains.available" in command:
             result["domains"] = []
             for domain_check in root.findall(".//DomainCheck"):
-                result["domains"].append({
-                    "domain": domain_check.get("Domain"),
-                    "available": domain_check.get("Available") == "true",
-                })
+                result["domains"].append(
+                    {
+                        "domain": domain_check.get("Domain"),
+                        "available": domain_check.get("Available") == "true",
+                    }
+                )
 
         elif "domains.create" in command:
             result["success"] = True
-            result["domain"] = root.find(".//Domain").text if root.find(".//Domain") is not None else ""
+            result["domain"] = (
+                root.find(".//Domain").text
+                if root.find(".//Domain") is not None
+                else ""
+            )
 
         return result
 
@@ -117,15 +140,50 @@ class NamecheapClient:
 
         results = []
         for domain, available in availability.items():
-            price = 10.00 if available else 0
-            results.append(DomainResult(
-                domain=domain,
-                available=available,
-                price=price,
-                currency="USD",
-            ))
+            price = 10.00
+            if available:
+                try:
+                    pricing = await self.get_domain_pricing(domain)
+                    price = pricing.get("registration_price", 10.00)
+                except Exception:
+                    pass
+
+            results.append(
+                DomainResult(
+                    domain=domain,
+                    available=available,
+                    price=price,
+                    currency="USD",
+                )
+            )
 
         return results[:max_results]
+
+    async def get_domain_pricing(self, domain: str) -> Dict[str, float]:
+        """Get actual pricing for a domain from Namecheap API."""
+        command = "namecheap.users.getPricing"
+        params = {
+            "ProductType": "DOMAIN",
+            "ProductCategory": "DOMAIN",
+            "DomainName": domain,
+        }
+
+        try:
+            result = await self._request(command, params)
+            pricing_info = result.get("pricing", {})
+
+            registration_price = float(pricing_info.get("registration_price", 10.00))
+            renewal_price = float(pricing_info.get("renewal_price", registration_price))
+
+            return {
+                "registration_price": registration_price,
+                "renewal_price": renewal_price,
+            }
+        except Exception as e:
+            return {
+                "registration_price": 10.00,
+                "renewal_price": 10.00,
+            }
 
     async def purchase_domain(
         self, domain: str, years: int = 1, nameservers: List[str] = None
@@ -135,14 +193,14 @@ class NamecheapClient:
             params = {
                 "DomainName": domain,
                 "Years": str(years),
-                "RegistrantOrganizationName": "ChampMail",
-                "RegistrantFirstName": "Champ",
-                "RegistrantLastName": "Mail",
-                "RegistrantEmail": "admin@champmail.com",
-                "RegistrantPhone": "+1.5555555555",
-                "RegistrantCity": "San Francisco",
-                "RegistrantCountry": "US",
-                "RegistrantPostalCode": "94105",
+                "RegistrantOrganizationName": self.registrant.organization,
+                "RegistrantFirstName": self.registrant.first_name,
+                "RegistrantLastName": self.registrant.last_name,
+                "RegistrantEmail": self.registrant.email,
+                "RegistrantPhone": self.registrant.phone,
+                "RegistrantCity": self.registrant.city,
+                "RegistrantCountry": self.registrant.country,
+                "RegistrantPostalCode": self.registrant.postal_code,
             }
 
             if nameservers:

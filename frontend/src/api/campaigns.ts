@@ -41,6 +41,8 @@ export interface CampaignCreate {
   daily_limit?: number;
   template_id?: string;
   sequence_id?: string;
+  send_mode?: 'user_smtp' | 'server';
+  domain_id?: string;
 }
 
 export interface CampaignStats {

@@ -8,6 +8,10 @@ from sqlalchemy import select, update, func
 from sqlalchemy.orm import selectinload
 from uuid import uuid4
 from datetime import datetime
+import base64
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.backends import default_backend
 
 from app.models import Domain, DNSCheckLog, Team
 from app.services.cloudflare_client import cloudflare_client
@@ -16,17 +20,52 @@ from app.services.cloudflare_client import cloudflare_client
 class DomainService:
     """Service for managing sending domains."""
 
-    async def get_by_id(self, session: AsyncSession, domain_id: str) -> Optional[Dict[str, Any]]:
-        """Get domain by ID."""
-        result = await session.execute(
-            select(Domain).where(Domain.id == domain_id)
+    def generate_dkim_key_pair(self, selector: str = "champmail") -> Dict[str, str]:
+        """Generate RSA 2048-bit DKIM key pair.
+
+        Returns:
+            Dict with 'private_key' (PEM format) and 'public_key' (DNS TXT record format)
+        """
+        private_key = rsa.generate_private_key(
+            public_exponent=65537, key_size=2048, backend=default_backend()
         )
+
+        private_pem = private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+
+        public_key = private_key.public_key()
+        public_numbers = public_key.n
+
+        public_key_b64 = base64.b64encode(
+            public_numbers.to_bytes(
+                (public_numbers.bit_length() + 7) // 8, byteorder="big"
+            )
+        ).decode("ascii")
+
+        dns_record = f"v=DKIM1; k=rsa; p={public_key_b64}"
+
+        return {
+            "private_key": private_pem.decode("utf-8"),
+            "public_key": dns_record,
+            "selector": selector,
+        }
+
+    async def get_by_id(
+        self, session: AsyncSession, domain_id: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get domain by ID."""
+        result = await session.execute(select(Domain).where(Domain.id == domain_id))
         domain = result.scalar_one_or_none()
         if domain:
             return self._domain_to_dict(domain)
         return None
 
-    async def get_by_name(self, session: AsyncSession, domain_name: str) -> Optional[Dict[str, Any]]:
+    async def get_by_name(
+        self, session: AsyncSession, domain_name: str
+    ) -> Optional[Dict[str, Any]]:
         """Get domain by name."""
         result = await session.execute(
             select(Domain).where(Domain.domain_name == domain_name)
@@ -60,14 +99,18 @@ class DomainService:
         domains = result.scalars().all()
         return [self._domain_to_dict(d) for d in domains]
 
-    async def get_domains_with_warmup(self, session: AsyncSession) -> List[Dict[str, Any]]:
+    async def get_domains_with_warmup(
+        self, session: AsyncSession
+    ) -> List[Dict[str, Any]]:
         """Get domains that need warmup sends."""
         result = await session.execute(
-            select(Domain).where(
+            select(Domain)
+            .where(
                 Domain.warmup_enabled == True,
                 Domain.warmup_day < 30,
-                Domain.status == "verified"
-            ).order_by(Domain.warmup_day)
+                Domain.status == "verified",
+            )
+            .order_by(Domain.warmup_day)
         )
         domains = result.scalars().all()
         return [self._domain_to_dict(d) for d in domains]
@@ -102,7 +145,9 @@ class DomainService:
 
         return self._domain_to_dict(domain)
 
-    async def update_status(self, session: AsyncSession, domain_id: str, status: str) -> bool:
+    async def update_status(
+        self, session: AsyncSession, domain_id: str, status: str
+    ) -> bool:
         """Update domain verification status."""
         await session.execute(
             update(Domain).where(Domain.id == domain_id).values(status=status)
@@ -121,7 +166,9 @@ class DomainService:
     ) -> bool:
         """Update DNS verification status."""
         await session.execute(
-            update(Domain).where(Domain.id == domain_id).values(
+            update(Domain)
+            .where(Domain.id == domain_id)
+            .values(
                 mx_verified=mx_verified,
                 spf_verified=spf_verified,
                 dkim_verified=dkim_verified,
@@ -132,10 +179,14 @@ class DomainService:
         await session.commit()
         return True
 
-    async def update_health_score(self, session: AsyncSession, domain_id: str, score: float) -> bool:
+    async def update_health_score(
+        self, session: AsyncSession, domain_id: str, score: float
+    ) -> bool:
         """Update domain health score."""
         await session.execute(
-            update(Domain).where(Domain.id == domain_id).values(
+            update(Domain)
+            .where(Domain.id == domain_id)
+            .values(
                 health_score=score,
                 last_health_check=datetime.utcnow(),
                 updated_at=datetime.utcnow(),
@@ -147,7 +198,9 @@ class DomainService:
     async def increment_sent_count(self, session: AsyncSession, domain_id: str) -> bool:
         """Increment sent count for a domain."""
         await session.execute(
-            update(Domain).where(Domain.id == domain_id).values(
+            update(Domain)
+            .where(Domain.id == domain_id)
+            .values(
                 sent_today=Domain.sent_today + 1,
                 updated_at=datetime.utcnow(),
             )
@@ -158,7 +211,9 @@ class DomainService:
     async def increment_warmup_day(self, session: AsyncSession, domain_id: str) -> bool:
         """Increment warmup day for a domain."""
         await session.execute(
-            update(Domain).where(Domain.id == domain_id).values(
+            update(Domain)
+            .where(Domain.id == domain_id)
+            .values(
                 warmup_day=Domain.warmup_day + 1,
                 sent_today=0,
                 updated_at=datetime.utcnow(),
@@ -170,7 +225,9 @@ class DomainService:
     async def update_bounce_count(self, session: AsyncSession, domain_id: str) -> bool:
         """Update bounce count and recalculate health score."""
         await session.execute(
-            update(Domain).where(Domain.id == domain_id).values(
+            update(Domain)
+            .where(Domain.id == domain_id)
+            .values(
                 bounce_rate=Domain.bounce_rate + 0.01,
                 updated_at=datetime.utcnow(),
             )
@@ -178,12 +235,13 @@ class DomainService:
         await session.commit()
         return True
 
-    async def recalculate_reputation(self, session: AsyncSession, domain_id: str) -> float:
+    async def recalculate_reputation(
+        self, session: AsyncSession, domain_id: str
+    ) -> float:
         """Recalculate domain reputation based on recent activity."""
         result = await session.execute(
             select(func.count(Domain.id)).where(
-                Domain.id == domain_id,
-                Domain.sent_today > 0
+                Domain.id == domain_id, Domain.sent_today > 0
             )
         )
         count = result.scalar()
@@ -202,14 +260,14 @@ class DomainService:
 
     async def check_warmup_status(self, session: AsyncSession, domain_id: str) -> bool:
         """Check if domain has completed warmup."""
-        result = await session.execute(
-            select(Domain).where(Domain.id == domain_id)
-        )
+        result = await session.execute(select(Domain).where(Domain.id == domain_id))
         domain = result.scalar_one_or_none()
 
         if domain and domain.warmup_day >= 30 and domain.warmup_enabled:
             await session.execute(
-                update(Domain).where(Domain.id == domain_id).values(
+                update(Domain)
+                .where(Domain.id == domain_id)
+                .values(
                     warmup_enabled=False,
                     updated_at=datetime.utcnow(),
                 )
@@ -221,9 +279,7 @@ class DomainService:
 
     async def delete(self, session: AsyncSession, domain_id: str) -> bool:
         """Delete a domain."""
-        result = await session.execute(
-            select(Domain).where(Domain.id == domain_id)
-        )
+        result = await session.execute(select(Domain).where(Domain.id == domain_id))
         domain = result.scalar_one_or_none()
 
         if domain:

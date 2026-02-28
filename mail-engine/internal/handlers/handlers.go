@@ -14,6 +14,7 @@ import (
 	"github.com/champmail/mail-engine/internal/config"
 	"github.com/champmail/mail-engine/internal/db"
 	"github.com/champmail/mail-engine/internal/models"
+	"github.com/champmail/mail-engine/internal/smtp"
 	"github.com/gin-gonic/gin"
 )
 
@@ -51,10 +52,23 @@ type SendHandler struct {
 	redis       *db.RedisClient
 	rateLimiter *db.RateLimiter
 	cfg         *config.Config
+	sender      *smtp.Sender
 }
 
 func NewSendHandler(db *db.PostgresDB, redis *db.RedisClient, rateLimiter *db.RateLimiter, cfg *config.Config) *SendHandler {
-	return &SendHandler{db: db, redis: redis, rateLimiter: rateLimiter, cfg: cfg}
+	smtpConfig := &smtp.SMTPConfig{
+		Host:           cfg.SMTPHost,
+		Port:           cfg.SMTPPort,
+		Username:       cfg.SMTPUsername,
+		Password:       cfg.SMTPPassword,
+		UseTLS:         cfg.SMTPUseTLS,
+		PostfixEnabled: cfg.PostfixEnabled,
+		DialTimeout:    cfg.SMTPDialTimeout,
+		WriteTimeout:   cfg.SMTPWriteTimeout,
+		ReadTimeout:    cfg.SMTPReadTimeout,
+	}
+
+	return &SendHandler{db: db, redis: redis, rateLimiter: rateLimiter, cfg: cfg, sender: smtp.NewSender(smtpConfig)}
 }
 
 func (h *SendHandler) SendEmail(c *gin.Context) {
@@ -265,15 +279,80 @@ func (h *SendHandler) processSend(sendLog db.SendLog, req models.SendEmailReques
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	updateQuery := `
-		UPDATE send_logs SET status = $1, sent_at = NOW() WHERE id = $2
-	`
-	h.db.ExecContext(ctx, updateQuery, "sent", sendLog.ID)
+	domain, err := h.getDomain(ctx, sendLog.DomainID)
+	if err != nil {
+		h.markFailed(ctx, sendLog.ID, "domain not found")
+		return
+	}
 
+	htmlBody := req.HTMLBody
+	if req.TrackClicks || req.TrackOpens {
+		trackingBaseURL := "https://track.champmail.com"
+		htmlBody = smtp.InjectTracking(htmlBody, sendLog.MessageID, trackingBaseURL, domain.DomainName, req.TrackOpens, req.TrackClicks)
+	}
+
+	var dkimSigner smtp.DKIMSignerInterface
+	if domain.DKIMPrivateKey != "" {
+		dkimSigner, err = smtp.NewDKIMSigner(domain.DKIMPrivateKey, domain.DomainName, domain.DKIMSelector)
+		if err != nil {
+			log.Printf("Failed to create DKIM signer: %v", err)
+		}
+	}
+
+	sendOpts := smtp.SendOptions{
+		To:          sendLog.Recipient,
+		From:        sendLog.FromAddress,
+		FromName:    req.FromName,
+		Subject:     sendLog.Subject,
+		HTMLBody:    htmlBody,
+		TextBody:    req.TextBody,
+		ReplyTo:     req.ReplyTo,
+		MessageID:   sendLog.MessageID,
+		Domain:      domain,
+		DKIMSigner:  dkimSigner,
+		TrackOpens:  req.TrackOpens,
+		TrackClicks: req.TrackClicks,
+	}
+
+	if req.SendMode == "user_smtp" && req.SMTPHost != "" {
+		sendOpts.SMTPHost = req.SMTPHost
+		sendOpts.SMTPPort = req.SMTPPort
+		sendOpts.SMTPUser = req.SMTPUser
+		sendOpts.SMTPPass = req.SMTPPass
+		sendOpts.SMTPUseTLS = req.SMTPUseTLS
+	}
+
+	err = h.sender.Send(ctx, sendOpts)
+	if err != nil {
+		h.markFailed(ctx, sendLog.ID, err.Error())
+		log.Printf("Failed to send email to %s: %v", sendLog.Recipient, err)
+		return
+	}
+
+	h.markSent(ctx, sendLog.ID)
 	stats := db.NewDomainStats(h.redis)
 	stats.IncrementSent(ctx, sendLog.DomainID)
-
 	log.Printf("Email sent to %s (message_id: %s)", sendLog.Recipient, sendLog.MessageID)
+}
+
+func (h *SendHandler) markSent(ctx context.Context, messageID string) {
+	h.db.ExecContext(ctx, "UPDATE send_logs SET status = 'sent', sent_at = NOW() WHERE id = $1", messageID)
+}
+
+func (h *SendHandler) markFailed(ctx context.Context, messageID, errorMsg string) {
+	h.db.ExecContext(ctx, "UPDATE send_logs SET status = 'failed', error_message = $1 WHERE id = $2", errorMsg, messageID)
+}
+
+func (h *SendHandler) getDomain(ctx context.Context, domainID string) (*db.Domain, error) {
+	var d db.Domain
+	err := h.db.QueryRowContext(ctx, `
+		SELECT id, domain_name, status, dkim_selector, dkim_private_key, dkim_public_key, daily_send_limit, sent_today
+		FROM domains WHERE id = $1
+	`, domainID).Scan(&d.ID, &d.DomainName, &d.Status, &d.DKIMSelector, &d.DKIMPrivateKey, &d.DKIMPublicKey, &d.DailySendLimit, &d.SentToday)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
 }
 
 func (h *SendHandler) getSendLog(ctx context.Context, messageID string) (*db.SendLog, error) {
@@ -691,12 +770,10 @@ func generateUUID() string {
 }
 
 func generateDKIMKeyPair(selector, domain string) (*models.DKIMKeyPair, error) {
-	privateKeyPEM := `-----BEGIN RSA PRIVATE KEY-----
-MIIEpAIBAAKCAQEAxqZsGqD7GCe7e6VwK1cE1sLqJG/cLb3M6W3yY6xMrbKcM4c
-... (simplified for demo)
------END RSA PRIVATE KEY-----`
-
-	publicKeyDNS := fmt.Sprintf("v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxqZsGqD7GCe7e6VwK1cE1sLqJG/cLb3M6W3yY6xMrbKcM4c8v8a2b4c5d6e7f8g9h0i1j2k3l4m5n6o7p8q9r0s1t2u3v4w5x6y7z8A9B0C1D2E3F4G5H6I7J8K9L0M1N2O3P4Q5R6S7T8U9V0W1X2Y3Z4")
+	privateKeyPEM, publicKeyDNS, err := smtp.GenerateKeyPair(selector, domain)
+	if err != nil {
+		return nil, err
+	}
 
 	return &models.DKIMKeyPair{
 		Domain:     domain,

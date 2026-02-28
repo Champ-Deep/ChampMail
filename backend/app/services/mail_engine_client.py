@@ -77,9 +77,7 @@ class MailEngineClient:
         if self.api_key:
             headers["X-API-Key"] = self.api_key
 
-        response = await self.client.request(
-            method, url, json=data, headers=headers
-        )
+        response = await self.client.request(method, url, json=data, headers=headers)
         response.raise_for_status()
         return response.json()
 
@@ -98,6 +96,12 @@ class MailEngineClient:
         domain_id: str = "",
         track_opens: bool = True,
         track_clicks: bool = True,
+        send_mode: str = "server",
+        smtp_host: str = "",
+        smtp_port: int = 587,
+        smtp_username: str = "",
+        smtp_password: str = "",
+        smtp_use_tls: bool = True,
     ) -> SendResult:
         data = {
             "to": recipient,
@@ -110,7 +114,15 @@ class MailEngineClient:
             "domain_id": domain_id,
             "track_opens": track_opens,
             "track_clicks": track_clicks,
+            "send_mode": send_mode,
         }
+
+        if send_mode == "user_smtp" and smtp_host:
+            data["smtp_host"] = smtp_host
+            data["smtp_port"] = smtp_port
+            data["smtp_username"] = smtp_username
+            data["smtp_password"] = smtp_password
+            data["smtp_use_tls"] = smtp_use_tls
 
         result = await self._request("POST", "/send", data)
 
@@ -181,7 +193,9 @@ class MailEngineClient:
     async def generate_dkim_keys(
         self, domain: str, selector: str = "champmail"
     ) -> DKIMKeys:
-        result = await self._request("POST", "/domains/dkim/generate", {"domain": domain, "selector": selector})
+        result = await self._request(
+            "POST", "/domains/dkim/generate", {"domain": domain, "selector": selector}
+        )
 
         return DKIMKeys(
             domain=result["domain"],
@@ -199,8 +213,12 @@ class MailEngineClient:
     async def list_domains(self) -> List[Dict[str, Any]]:
         return await self._request("GET", "/domains")
 
-    async def create_domain(self, domain_name: str, selector: str = "champmail") -> Dict[str, Any]:
-        return await self._request("POST", "/domains", {"domain_name": domain_name, "selector": selector})
+    async def create_domain(
+        self, domain_name: str, selector: str = "champmail"
+    ) -> Dict[str, Any]:
+        return await self._request(
+            "POST", "/domains", {"domain_name": domain_name, "selector": selector}
+        )
 
     async def get_bounces(self, limit: int = 100) -> List[BounceRecord]:
         return await self._request("GET", f"/bounces?limit={limit}")

@@ -2,7 +2,7 @@
 Analytics service for tracking and aggregating email metrics.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from datetime import datetime, timedelta
@@ -23,9 +23,9 @@ class AnalyticsService:
         result = await session.execute(
             select(
                 func.count(SendLog.id).label("total_sent"),
-                func.sum(func.cast(SendLog.status == "opened", func.count())).label("total_opened"),
-                func.sum(func.cast(SendLog.status == "clicked", func.count())).label("total_clicked"),
-                func.sum(func.cast(SendLog.status == "bounced", func.count())).label("total_bounced"),
+                func.count(SendLog.first_open_at).label("total_opened"),
+                func.count(SendLog.first_click_at).label("total_clicked"),
+                func.count(SendLog.bounced_at).label("total_bounced"),
             ).where(SendLog.campaign_id == campaign_id)
         )
 
@@ -41,9 +41,15 @@ class AnalyticsService:
             "total_opened": total_opened,
             "total_clicked": total_clicked,
             "total_bounced": total_bounced,
-            "open_rate": round(total_opened / total_sent * 100, 2) if total_sent > 0 else 0,
-            "click_rate": round(total_clicked / total_sent * 100, 2) if total_sent > 0 else 0,
-            "bounce_rate": round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0,
+            "open_rate": round(total_opened / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "click_rate": round(total_clicked / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "bounce_rate": round(total_bounced / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
         }
 
     async def get_domain_stats(
@@ -55,9 +61,9 @@ class AnalyticsService:
         result = await session.execute(
             select(
                 func.count(SendLog.id).label("total_sent"),
-                func.sum(func.cast(SendLog.status == "opened", func.count())).label("total_opened"),
-                func.sum(func.cast(SendLog.status == "clicked", func.count())).label("total_clicked"),
-                func.sum(func.cast(SendLog.status == "bounced", func.count())).label("total_bounced"),
+                func.count(SendLog.first_open_at).label("total_opened"),
+                func.count(SendLog.first_click_at).label("total_clicked"),
+                func.count(SendLog.bounced_at).label("total_bounced"),
             ).where(SendLog.domain_id == domain_id)
         )
 
@@ -73,9 +79,15 @@ class AnalyticsService:
             "total_opened": total_opened,
             "total_clicked": total_clicked,
             "total_bounced": total_bounced,
-            "open_rate": round(total_opened / total_sent * 100, 2) if total_sent > 0 else 0,
-            "click_rate": round(total_clicked / total_sent * 100, 2) if total_sent > 0 else 0,
-            "bounce_rate": round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0,
+            "open_rate": round(total_opened / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "click_rate": round(total_clicked / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "bounce_rate": round(total_bounced / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
         }
 
     async def get_team_stats(
@@ -94,10 +106,10 @@ class AnalyticsService:
         result = await session.execute(
             select(
                 func.count(SendLog.id).label("total_sent"),
-                func.sum(func.cast(SendLog.status == "opened", func.count())).label("total_opened"),
-                func.sum(func.cast(SendLog.status == "clicked", func.count())).label("total_clicked"),
-                func.sum(func.cast(SendLog.status == "bounced", func.count())).label("total_bounced"),
-                func.sum(func.cast(SendLog.status == "replied", func.count())).label("total_replied"),
+                func.count(SendLog.first_open_at).label("total_opened"),
+                func.count(SendLog.first_click_at).label("total_clicked"),
+                func.count(SendLog.bounced_at).label("total_bounced"),
+                func.count(SendLog.replied_at).label("total_replied"),
             ).where(
                 and_(
                     SendLog.team_id == team_id,
@@ -125,10 +137,18 @@ class AnalyticsService:
             "total_clicked": total_clicked,
             "total_bounced": total_bounced,
             "total_replied": total_replied,
-            "open_rate": round(total_opened / total_sent * 100, 2) if total_sent > 0 else 0,
-            "click_rate": round(total_clicked / total_sent * 100, 2) if total_sent > 0 else 0,
-            "bounce_rate": round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0,
-            "reply_rate": round(total_replied / total_sent * 100, 2) if total_sent > 0 else 0,
+            "open_rate": round(total_opened / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "click_rate": round(total_clicked / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "bounce_rate": round(total_bounced / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
+            "reply_rate": round(total_replied / total_sent * 100, 2)
+            if total_sent > 0
+            else 0,
         }
 
     async def get_daily_stats(
@@ -154,7 +174,9 @@ class AnalyticsService:
 
         return [
             {
-                "date": stat.date.isoformat() if hasattr(stat.date, 'isoformat') else str(stat.date),
+                "date": stat.date.isoformat()
+                if hasattr(stat.date, "isoformat")
+                else str(stat.date),
                 "total_sent": stat.total_sent,
                 "total_opened": stat.total_opened,
                 "total_clicked": stat.total_clicked,
@@ -183,9 +205,9 @@ class AnalyticsService:
             result = await session.execute(
                 select(
                     func.count(SendLog.id).label("total_sent"),
-                    func.sum(func.cast(SendLog.status == "opened", func.count())).label("total_opened"),
-                    func.sum(func.cast(SendLog.status == "clicked", func.count())).label("total_clicked"),
-                    func.sum(func.cast(SendLog.status == "bounced", func.count())).label("total_bounced"),
+                    func.count(SendLog.first_open_at).label("total_opened"),
+                    func.count(SendLog.first_click_at).label("total_clicked"),
+                    func.count(SendLog.bounced_at).label("total_bounced"),
                 ).where(
                     and_(
                         SendLog.domain_id == domain_id,
@@ -201,9 +223,15 @@ class AnalyticsService:
             total_clicked = row.total_clicked or 0
             total_bounced = row.total_bounced or 0
 
-            open_rate = round(total_opened / total_sent * 100, 2) if total_sent > 0 else 0
-            click_rate = round(total_clicked / total_sent * 100, 2) if total_sent > 0 else 0
-            bounce_rate = round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0
+            open_rate = (
+                round(total_opened / total_sent * 100, 2) if total_sent > 0 else 0
+            )
+            click_rate = (
+                round(total_clicked / total_sent * 100, 2) if total_sent > 0 else 0
+            )
+            bounce_rate = (
+                round(total_bounced / total_sent * 100, 2) if total_sent > 0 else 0
+            )
 
             existing = await session.execute(
                 select(DailyStats).where(
@@ -225,7 +253,6 @@ class AnalyticsService:
                 existing_stat.bounce_rate = bounce_rate
             else:
                 daily_stat = DailyStats(
-                    id=domain_id,
                     domain_id=domain_id,
                     date=target_date,
                     total_sent=total_sent,

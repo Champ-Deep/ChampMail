@@ -4,8 +4,13 @@ from kombu import Queue
 import os
 
 _redis_url = os.getenv("REDIS_URL", "")
-celery_broker_url = os.getenv("CELERY_BROKER_URL", f"{_redis_url}/0" if _redis_url else "redis://localhost:6379/0")
-celery_result_backend = os.getenv("CELERY_RESULT_BACKEND", f"{_redis_url}/1" if _redis_url else "redis://localhost:6379/1")
+celery_broker_url = os.getenv(
+    "CELERY_BROKER_URL", f"{_redis_url}/0" if _redis_url else "redis://localhost:6379/0"
+)
+celery_result_backend = os.getenv(
+    "CELERY_RESULT_BACKEND",
+    f"{_redis_url}/1" if _redis_url else "redis://localhost:6379/1",
+)
 
 celery_app = Celery(
     "champmail",
@@ -19,6 +24,7 @@ celery_app = Celery(
         "app.tasks.bounces",
         "app.tasks.analytics",
         "app.tasks.campaign_tasks",
+        "app.tasks.send_execution_task",
     ],
 )
 
@@ -39,6 +45,11 @@ celery_app.conf.update(
         Queue("domain", routing_key="domain"),
     ],
     beat_schedule={
+        "execute-due-sends": {
+            "task": "execute_due_sends",
+            "schedule": 30.0,
+            "options": {"queue": "default"},
+        },
         "execute-sequence-steps": {
             "task": "app.tasks.sequences.execute_pending_steps",
             "schedule": crontab(minute="*/5"),

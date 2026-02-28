@@ -34,18 +34,22 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
 class CampaignCreate(BaseModel):
     """Request to create a new campaign."""
+
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     prospect_list_id: Optional[str] = Field(None, description="ID of the prospect list")
     from_name: Optional[str] = Field(None, max_length=255)
     from_address: Optional[str] = Field(None, max_length=255)
     daily_limit: int = Field(default=100, ge=1, le=10000)
-    template_id: Optional[str] = Field(None, description="ID of the email template to use")
+    template_id: Optional[str] = Field(
+        None, description="ID of the email template to use"
+    )
     sequence_id: Optional[str] = Field(None, description="Optional sequence to link to")
 
 
 class CampaignUpdate(BaseModel):
     """Request to update a campaign."""
+
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=2000)
     from_name: Optional[str] = Field(None, max_length=255)
@@ -55,6 +59,7 @@ class CampaignUpdate(BaseModel):
 
 class CampaignResponse(BaseModel):
     """Campaign response."""
+
     id: str
     name: str
     description: Optional[str] = None
@@ -79,6 +84,7 @@ class CampaignResponse(BaseModel):
 
 class CampaignListResponse(BaseModel):
     """List of campaigns response."""
+
     campaigns: list[CampaignResponse]
     total: int
     limit: int
@@ -87,11 +93,19 @@ class CampaignListResponse(BaseModel):
 
 class AddRecipientsRequest(BaseModel):
     """Request to add recipients to a campaign."""
+
     prospect_ids: list[str] = Field(..., min_length=1)
+
+
+class SendTestRequest(BaseModel):
+    """Request to send a test email."""
+
+    email: str = Field(..., min_length=1)
 
 
 class CampaignStatsResponse(BaseModel):
     """Campaign statistics response."""
+
     sent: int
     delivered: int
     opened: int
@@ -105,6 +119,7 @@ class CampaignStatsResponse(BaseModel):
 
 class RecipientResponse(BaseModel):
     """Campaign recipient response."""
+
     prospect_id: str
     email: str
     first_name: str = ""
@@ -131,7 +146,9 @@ def campaign_to_response(campaign: Campaign) -> CampaignResponse:
         owner_id=str(campaign.created_by) if campaign.created_by else "",
         from_name=campaign.from_name,
         from_address=campaign.from_address,
-        prospect_list_id=str(campaign.prospect_list_id) if campaign.prospect_list_id else None,
+        prospect_list_id=str(campaign.prospect_list_id)
+        if campaign.prospect_list_id
+        else None,
         daily_limit=campaign.daily_limit or 100,
         total_prospects=campaign.total_prospects or 0,
         sent_count=campaign.sent_count or 0,
@@ -140,8 +157,12 @@ def campaign_to_response(campaign: Campaign) -> CampaignResponse:
         replied_count=campaign.replied_count or 0,
         bounced_count=campaign.bounced_count or 0,
         unsubscribed_count=campaign.unsubscribed_count or 0,
-        activated_at=campaign.activated_at.isoformat() if campaign.activated_at else None,
-        completed_at=campaign.completed_at.isoformat() if campaign.completed_at else None,
+        activated_at=campaign.activated_at.isoformat()
+        if campaign.activated_at
+        else None,
+        completed_at=campaign.completed_at.isoformat()
+        if campaign.completed_at
+        else None,
         created_at=campaign.created_at.isoformat() if campaign.created_at else None,
         updated_at=campaign.updated_at.isoformat() if campaign.updated_at else None,
     )
@@ -279,7 +300,9 @@ async def add_recipients(
             detail="Can only add recipients to draft or paused campaigns",
         )
 
-    added = await campaign_service.add_recipients(session, campaign_id, request.prospect_ids)
+    added = await campaign_service.add_recipients(
+        session, campaign_id, request.prospect_ids
+    )
     return {"added": added, "total_requested": len(request.prospect_ids)}
 
 
@@ -296,7 +319,9 @@ async def get_recipients(
 
     Filter by status: enrolled, active, completed, paused, bounced, unsubscribed
     """
-    recipients = await campaign_service.get_recipients(session, campaign_id, status=status, limit=limit)
+    recipients = await campaign_service.get_recipients(
+        session, campaign_id, status=status, limit=limit
+    )
     return [
         RecipientResponse(
             prospect_id=r["prospect_id"],
@@ -314,20 +339,8 @@ async def get_recipients(
 
 
 async def _send_campaign_background(campaign_id: str):
-    """Background task to send campaign emails."""
-    async with get_db() as session:
-        recipients = await campaign_service.get_recipients(session, campaign_id, status="enrolled")
-
-        for recipient in recipients:
-            try:
-                logger.info("Processing recipient %s for campaign %s", recipient["email"], campaign_id)
-            except Exception as e:
-                logger.error("Error processing %s: %s", recipient["email"], e)
-
-        # Check if all recipients have been processed
-        remaining = await campaign_service.get_recipients(session, campaign_id, status="enrolled", limit=1)
-        if not remaining:
-            await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.COMPLETED)
+    """Background task to send campaign emails - replaced by send_execution_task."""
+    pass
 
 
 @router.post("/{campaign_id}/send")
@@ -340,8 +353,11 @@ async def send_campaign(
     """
     Start sending the campaign.
 
-    Emails will be sent in the background. Check /campaigns/{id}/stats for progress.
+    Emails will be scheduled and sent in the background via Celery Beat.
+    Check /campaigns/{id}/stats for progress.
     """
+    from app.services.campaign_send_service import campaign_send_service
+
     campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -355,10 +371,62 @@ async def send_campaign(
     if campaign.status == CampaignStatus.COMPLETED.value:
         raise HTTPException(status_code=400, detail="Campaign is already completed")
 
-    await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.RUNNING)
-    background_tasks.add_task(_send_campaign_background, campaign_id)
+    try:
+        result = await campaign_send_service.prepare_and_schedule(
+            session=session,
+            campaign_id=campaign_id,
+            user_id=user.user_id,
+        )
 
-    return {"message": "Campaign sending started", "campaign_id": campaign_id}
+        await campaign_service.update_campaign_status(
+            session, campaign_id, CampaignStatus.SCHEDULED
+        )
+
+        return {
+            "message": "Campaign scheduling started",
+            "campaign_id": campaign_id,
+            "total_scheduled": result.get("total_scheduled", 0),
+            "first_send": result.get("first_send"),
+            "last_send": result.get("last_send"),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to schedule campaign: {e}")
+        raise HTTPException(status_code=500, detail="Failed to schedule campaign")
+
+
+@router.post("/{campaign_id}/test-send")
+async def test_send_campaign(
+    campaign_id: str,
+    request: SendTestRequest,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """
+    Send a test email to preview the campaign template.
+    """
+    from app.services.campaign_send_service import campaign_send_service
+
+    campaign = await campaign_service.get_campaign(session, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    if str(campaign.created_by) != user.user_id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        result = await campaign_send_service.send_test(
+            session=session,
+            campaign_id=campaign_id,
+            to_email=request.email,
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Test send failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send test email")
 
 
 @router.post("/{campaign_id}/pause")
@@ -382,7 +450,9 @@ async def pause_campaign(
     if campaign.status != CampaignStatus.RUNNING.value:
         raise HTTPException(status_code=400, detail="Campaign is not running")
 
-    await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.PAUSED)
+    await campaign_service.update_campaign_status(
+        session, campaign_id, CampaignStatus.PAUSED
+    )
     return {"message": "Campaign paused", "campaign_id": campaign_id}
 
 
@@ -404,7 +474,9 @@ async def resume_campaign(
     if campaign.status != CampaignStatus.PAUSED.value:
         raise HTTPException(status_code=400, detail="Campaign is not paused")
 
-    await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.RUNNING)
+    await campaign_service.update_campaign_status(
+        session, campaign_id, CampaignStatus.RUNNING
+    )
     background_tasks.add_task(_send_campaign_background, campaign_id)
 
     return {"message": "Campaign resumed", "campaign_id": campaign_id}
@@ -417,6 +489,7 @@ async def resume_campaign(
 
 class PipelineStatusResponse(BaseModel):
     """Current status of the AI pipeline for a campaign."""
+
     status: str
     current_step: Optional[str] = None
     step_index: Optional[int] = None
@@ -431,6 +504,7 @@ class PipelineStatusResponse(BaseModel):
 
 class ScheduleResponse(BaseModel):
     """Campaign schedule summary."""
+
     total_scheduled: int
     first_send: Optional[str] = None
     last_send: Optional[str] = None
@@ -438,6 +512,7 @@ class ScheduleResponse(BaseModel):
 
 class TrackingStatsResponse(BaseModel):
     """Detailed tracking stats for a campaign."""
+
     campaign_id: str
     campaign_name: str = ""
     campaign_status: str = ""
@@ -497,8 +572,12 @@ async def get_pipeline_step_result(
     generate_pitches, personalize_emails, generate_html
     """
     valid_steps = [
-        "extract_essence", "research_prospects", "segment_prospects",
-        "generate_pitches", "personalize_emails", "generate_html",
+        "extract_essence",
+        "research_prospects",
+        "segment_prospects",
+        "generate_pitches",
+        "personalize_emails",
+        "generate_html",
     ]
     if step_name not in valid_steps:
         raise HTTPException(
@@ -559,7 +638,9 @@ async def get_campaign_schedule(
     """Get the current send schedule for a campaign."""
     stats = await send_scheduler.get_campaign_schedule_stats(campaign_id)
     if not stats:
-        raise HTTPException(status_code=404, detail="No schedule found for this campaign")
+        raise HTTPException(
+            status_code=404, detail="No schedule found for this campaign"
+        )
 
     return stats
 

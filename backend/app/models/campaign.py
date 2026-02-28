@@ -8,7 +8,17 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, Float, JSON
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Float,
+    JSON,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -49,6 +59,10 @@ class Campaign(Base):
     # Domain rotation
     domain_ids = Column(JSON, default=list)
 
+    # Sending configuration
+    send_mode = Column(String(20), default="user_smtp")  # "server" or "user_smtp"
+    domain_id = Column(UUID(as_uuid=True), ForeignKey("domains.id"), nullable=True)
+
     # Scheduling
     start_date = Column(DateTime, nullable=True)
     end_date = Column(DateTime, nullable=True)
@@ -81,7 +95,9 @@ class Campaign(Base):
     team = relationship("Team", back_populates="campaigns")
     sequence = relationship("Sequence", back_populates="campaign", uselist=False)
     prospect_enrollments = relationship("CampaignProspect", back_populates="campaign")
-    utm_config = relationship("CampaignUTMConfig", back_populates="campaign", uselist=False, lazy="selectin")
+    utm_config = relationship(
+        "CampaignUTMConfig", back_populates="campaign", uselist=False, lazy="selectin"
+    )
 
 
 class CampaignProspect(Base):
@@ -93,7 +109,9 @@ class CampaignProspect(Base):
     campaign_id = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=False)
     prospect_id = Column(UUID(as_uuid=True), ForeignKey("prospects.id"), nullable=False)
 
-    status = Column(String(50), default="enrolled")  # enrolled, active, completed, paused, bounced, unsubscribed
+    status = Column(
+        String(50), default="enrolled"
+    )  # enrolled, active, completed, paused, bounced, unsubscribed
     current_step = Column(Integer, default=0)
 
     # Metrics
@@ -147,7 +165,9 @@ class Prospect(Base):
     personalized_body = Column(Text, nullable=True)
 
     # Status
-    status = Column(String(50), default="active")  # active, bounced, unsubscribed, do_not_contact
+    status = Column(
+        String(50), default="active"
+    )  # active, bounced, unsubscribed, do_not_contact
 
     # Source
     source = Column(String(100), nullable=True)
