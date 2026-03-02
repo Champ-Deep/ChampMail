@@ -44,8 +44,8 @@ ENV PORT=8000
 EXPOSE ${PORT}
 
 # Health check (uses PORT for flexibility)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health/ping || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health/live || exit 1
 
 # Run migrations then start the application
 # Uses migrate.py script to handle migration drift gracefully

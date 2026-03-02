@@ -44,7 +44,13 @@ from app.api.v1.admin import router as admin_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup/shutdown."""
+    import asyncio
+    import time
+
+    startup_start = time.time()
+
     # Startup
+    logger.info("=== LIFESPAN START ===")
     logger.info("Starting %s v%s", settings.app_name, settings.app_version)
     logger.info("Environment: %s", settings.environment)
     logger.info("FalkorDB: %s:%s", settings.falkordb_host, settings.falkordb_port)
@@ -58,39 +64,54 @@ async def lifespan(app: FastAPI):
         logger.error("Production settings validation failed: %s", e)
         logger.error("Server starting anyway — fix env vars to resolve")
 
-    # Initialize PostgreSQL
+    # Initialize PostgreSQL with timeout so lifespan doesn't block healthcheck
     try:
-        await init_db()
-        logger.info("PostgreSQL connected and tables created")
+        await asyncio.wait_for(init_db(), timeout=15.0)
+        logger.info("PostgreSQL connected and tables created (%.1fs)", time.time() - startup_start)
 
         # Create default admin user (development only)
         if settings.environment == "development":
             async with get_db() as session:
                 await user_service.ensure_default_admin(session)
+    except asyncio.TimeoutError:
+        logger.error("PostgreSQL init TIMED OUT after 15s — auth will NOT work!")
     except Exception as e:
         logger.error("PostgreSQL initialization failed: %s", e)
         logger.error("Auth will NOT work without database!")
 
-    # Initialize FalkorDB
+    # Initialize FalkorDB with timeout (sync call, run in executor)
     if FALKORDB_AVAILABLE:
-        if init_graph_db():
-            logger.info("FalkorDB connected")
-        else:
-            logger.warning("FalkorDB unavailable - graph features disabled")
+        try:
+            loop = asyncio.get_event_loop()
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, init_graph_db),
+                timeout=5.0,
+            )
+            if result:
+                logger.info("FalkorDB connected (%.1fs)", time.time() - startup_start)
+            else:
+                logger.warning("FalkorDB unavailable — graph features disabled")
+        except asyncio.TimeoutError:
+            logger.error("FalkorDB init TIMED OUT after 5s — graph features disabled")
+        except Exception as e:
+            logger.warning("FalkorDB init failed: %s — graph features disabled", e)
     else:
-        logger.warning("FalkorDB package not installed - graph features disabled")
+        logger.warning("FalkorDB package not installed — graph features disabled")
 
     # Check OpenRouter API key
     if settings.openrouter_api_key:
-        logger.info("OpenRouter API key configured - AI features enabled")
+        logger.info("OpenRouter API key configured — AI features enabled")
     else:
-        logger.warning("OPENROUTER_API_KEY not set - AI features will fail")
+        logger.warning("OPENROUTER_API_KEY not set — AI features will fail")
 
     # Check Thesys C1 API key
     if settings.thesys_api_key:
-        logger.info("Thesys C1 API key configured - Generative UI enabled")
+        logger.info("Thesys C1 API key configured — Generative UI enabled")
     else:
-        logger.info("THESYS_API_KEY not set - AI Assistant will be disabled")
+        logger.info("THESYS_API_KEY not set — AI Assistant will be disabled")
+
+    elapsed = time.time() - startup_start
+    logger.info("=== LIFESPAN READY in %.1fs — now serving requests ===", elapsed)
 
     yield
 

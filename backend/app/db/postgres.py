@@ -25,13 +25,18 @@ class Base(DeclarativeBase):
     pass
 
 
-# Create async engine
+# Create async engine with connection timeout.
+# asyncpg default is 60s which is too long for Railway healthchecks.
 engine = create_async_engine(
     settings.postgres_url,
     echo=settings.debug,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
+    connect_args={
+        "timeout": 10,
+        "command_timeout": 10,
+    },
 )
 
 # Create session factory
