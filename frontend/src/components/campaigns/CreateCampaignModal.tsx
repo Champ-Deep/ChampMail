@@ -5,7 +5,7 @@ import { X, Mail, Globe } from 'lucide-react';
 import { Button, Input, Textarea } from '../ui';
 import { campaignsApi } from '../../api/campaigns';
 import { templatesApi } from '../../api/templates';
-import { domainsApi, Domain } from '../../api/domains';
+import { domainsApi, type Domain } from '../../api/domains';
 
 interface CreateCampaignModalProps {
   isOpen: boolean;
