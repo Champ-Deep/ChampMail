@@ -306,10 +306,10 @@ async def auto_setup_domain_dns(
             )
 
             if result.success:
+                from sqlalchemy import text
                 await session.execute(
-                    f"UPDATE domains SET dkim_public_key = '{dkim_keys['public_key']}', "
-                    f"dkim_private_key = '{dkim_keys['private_key'].replace("'", "''")}' "
-                    f"WHERE id = '{domain_id}'"
+                    text("UPDATE domains SET dkim_public_key = :pub, dkim_private_key = :priv WHERE id = :did"),
+                    {"pub": dkim_keys["public_key"], "priv": dkim_keys["private_key"], "did": str(domain_id)},
                 )
                 await session.commit()
 

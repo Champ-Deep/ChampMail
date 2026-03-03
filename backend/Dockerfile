@@ -31,6 +31,9 @@ ARG RAILWAY_GIT_COMMIT_SHA
 # Copy application code
 COPY . .
 
+# Lint: fail build if any .py file has syntax errors (catches 3.12-only features on 3.11)
+RUN python -m compileall -q app/ scripts/
+
 # Create uploads directory for CSV files
 RUN mkdir -p /app/uploads/prospect_lists
 
@@ -48,5 +51,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health/live || exit 1
 
 # Run migrations then start the application
-# Uses migrate.py script to handle migration drift gracefully
-CMD sh -c "python scripts/migrate.py; uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"
+# Uses migrate.py for migration drift, start.py for visible import errors
+CMD sh -c "python scripts/migrate.py && python scripts/start.py"

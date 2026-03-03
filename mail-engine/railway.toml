@@ -3,10 +3,10 @@
 # Deploy from the same repo, set Root Directory to "mail-engine"
 
 [build]
-builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+builder = "NIXPACKS"
 
 [deploy]
+startCommand = "./mail-engine"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
 restartPolicyType = "ON_FAILURE"
