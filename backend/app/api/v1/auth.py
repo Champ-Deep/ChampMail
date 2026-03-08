@@ -123,15 +123,15 @@ async def login(
     )
 
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register", response_model=Token)
 async def register(
     request: RegisterRequest,
     session: AsyncSession = Depends(get_db_session),
 ):
     """
-    Register a new user.
+    Register a new user and return JWT token.
 
-    Creates a new user account in the database.
+    Creates a new user account and auto-authenticates them.
     """
     # Check if email already exists
     if await user_service.email_exists(session, request.email):
@@ -149,14 +149,21 @@ async def register(
     )
     await session.commit()
 
-    return UserResponse(
-        user_id=str(user.id),
-        email=user.email,
-        full_name=user.full_name,
-        job_title=getattr(user, 'job_title', None),
-        role=user.role,
-        is_verified=user.is_verified,
-        onboarding_progress=user.onboarding_progress,
+    # Generate JWT token (same pattern as login)
+    access_token = create_access_token(
+        data={
+            "user_id": str(user.id),
+            "email": user.email,
+            "role": user.role,
+            "team_id": str(user.team_id) if user.team_id else None,
+        },
+        expires_delta=timedelta(minutes=settings.jwt_access_token_expire_minutes),
+    )
+
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=settings.jwt_access_token_expire_minutes * 60,
     )
 
 
