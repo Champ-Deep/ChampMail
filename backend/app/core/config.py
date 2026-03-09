@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     debug: bool = True
     environment: str = "development"
 
+    # Test Mode (bypasses DNS verification for testing with Ethereal mail)
+    # IMPORTANT: Set to False after testing is complete
+    test_mode: bool = False
+
     # API
     api_v1_prefix: str = "/api/v1"
 

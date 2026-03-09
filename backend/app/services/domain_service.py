@@ -9,12 +9,16 @@ from sqlalchemy.orm import selectinload
 from uuid import uuid4
 from datetime import datetime
 import base64
+import logging
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.backends import default_backend
 
 from app.models import Domain, DNSCheckLog, Team
 from app.services.cloudflare_client import cloudflare_client
+from app.utils.test_mode import is_test_mode_enabled
+
+logger = logging.getLogger(__name__)
 
 
 class DomainService:
@@ -91,12 +95,24 @@ class DomainService:
         self, session: AsyncSession, team_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get all verified domains available for sending."""
+        # Test mode: return all domains regardless of verification status
+        if is_test_mode_enabled():
+            query = select(Domain)
+            if team_id:
+                query = query.where(Domain.team_id == team_id)
+            result = await session.execute(query)
+            domains = result.scalars().all()
+            logger.info("TEST MODE: Returning %d domains (verification bypassed)", len(domains))
+            return [self._domain_to_dict(d) for d in domains]
+
+        # Production: only verified domains
         query = select(Domain).where(Domain.status == "verified")
         if team_id:
             query = query.where(Domain.team_id == team_id)
 
         result = await session.execute(query)
         domains = result.scalars().all()
+        logger.info("Returning %d verified domains", len(domains))
         return [self._domain_to_dict(d) for d in domains]
 
     async def get_domains_with_warmup(

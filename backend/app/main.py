@@ -20,6 +20,7 @@ from app.db.postgres import init_db, close_db, get_db
 from app.db.redis import redis_client
 from app.services.user_service import user_service
 from app.middleware.rate_limit import setup_rate_limiting
+from app.utils.test_mode import is_test_mode_enabled
 
 # Import routers
 from app.api.v1 import (
@@ -55,6 +56,14 @@ async def lifespan(app: FastAPI):
     logger.info("Environment: %s", settings.environment)
     logger.info("FalkorDB: %s:%s", settings.falkordb_host, settings.falkordb_port)
     logger.info("PostgreSQL: %s:%s", settings.postgres_host, settings.postgres_port)
+
+    # Test mode warning
+    if is_test_mode_enabled():
+        logger.warning("=" * 70)
+        logger.warning("⚠️  TEST MODE ENABLED - DNS VERIFICATION BYPASSED")
+        logger.warning("This mode is for development testing only!")
+        logger.warning("REMEMBER TO SET TEST_MODE=false AFTER TESTING IS COMPLETE")
+        logger.warning("=" * 70)
 
     # Validate production settings (warn but don't crash — let healthcheck pass)
     try:

@@ -24,6 +24,7 @@ from app.services.mail_engine_client import mail_engine_client
 from app.services.email_service import email_service
 from app.services.email_validation import email_validator
 from app.db.redis import redis_client
+from app.utils.test_mode import is_test_mode_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,13 @@ class CampaignSendService:
         send_mode = campaign.send_mode or "user_smtp"
         domain_id = str(campaign.domain_id) if campaign.domain_id else ""
 
+        # Test mode warning
+        if is_test_mode_enabled():
+            logger.warning("⚠️  TEST MODE: Sending email with DNS verification bypassed")
+
+        logger.info("Sending email to %s for campaign %s (send_mode: %s)",
+                   email_data["prospect_email"], campaign_id, send_mode)
+
         try:
             if send_mode == "server" and domain_id:
                 result = await mail_engine_client.send_email(
@@ -299,18 +307,19 @@ class CampaignSendService:
             )
 
             logger.info(
-                "Sent email for campaign %s to prospect %s",
+                "✓ Email sent successfully to %s for campaign %s (message_id: %s)",
+                email_data["prospect_email"],
                 campaign_id,
-                prospect_id,
+                result.message_id,
             )
 
             return {"status": "sent", "message_id": result.message_id}
 
         except Exception as e:
             logger.error(
-                "Failed to send email for campaign %s to prospect %s: %s",
+                "✗ Failed to send email to %s for campaign %s: %s",
+                email_data["prospect_email"],
                 campaign_id,
-                prospect_id,
                 str(e),
             )
             await self._record_failure(

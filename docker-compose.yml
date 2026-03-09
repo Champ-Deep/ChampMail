@@ -121,6 +121,7 @@ services:
     environment:
       DEBUG: ${DEBUG:-true}
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      TEST_MODE: ${TEST_MODE:-false}
 
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -182,8 +183,26 @@ services:
     command: celery -A app.celery_app worker --loglevel=info --concurrency=4
     restart: unless-stopped
     environment:
+      DEBUG: ${DEBUG:-true}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      TEST_MODE: ${TEST_MODE:-false}
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: 6379
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
+
+      MAIL_ENGINE_URL: http://mail-engine:8025
     depends_on:
       redis:
         condition: service_healthy
@@ -206,6 +225,19 @@ services:
     command: celery -A app.celery_app beat --loglevel=info
     restart: unless-stopped
     environment:
+      DEBUG: ${DEBUG:-true}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      TEST_MODE: ${TEST_MODE:-false}
+
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
     depends_on:

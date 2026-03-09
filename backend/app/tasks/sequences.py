@@ -3,6 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session
 from datetime import datetime, timedelta
 import asyncio
+import logging
+from app.utils.test_mode import is_test_mode_enabled
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task(bind=True, queue="sequences")
@@ -15,9 +19,20 @@ def execute_pending_steps(self):
         async with async_session() as session:
             pending_steps = await sequence_service.get_pending_steps(session)
 
+            logger.info("Processing %d pending sequence steps", len(pending_steps))
+
             for step in pending_steps:
                 try:
+                    # Test mode warning
+                    if is_test_mode_enabled():
+                        logger.warning("⚠️  TEST MODE: Sending email with DNS verification bypassed")
+
                     domain_id = await domain_rotator.select_domain(step.get("team_id"))
+
+                    logger.info("Sending email to %s (sequence: %s, step: %d)",
+                               step.get("prospect_email"),
+                               step.get("sequence_id"),
+                               step.get("step_order"))
 
                     result = await mail_engine_client.send_email(
                         recipient=step.get("prospect_email"),
@@ -29,6 +44,10 @@ def execute_pending_steps(self):
                         track_clicks=True,
                     )
 
+                    logger.info("✓ Email sent successfully to %s (message_id: %s)",
+                               step.get("prospect_email"),
+                               result.message_id)
+
                     await sequence_service.mark_step_sent(session, step.get("id"), result.message_id)
 
                     await sequence_service.schedule_next_step(
@@ -39,6 +58,9 @@ def execute_pending_steps(self):
                     )
 
                 except Exception as e:
+                    logger.error("✗ Failed to send email to %s: %s",
+                                step.get("prospect_email"),
+                                str(e))
                     await sequence_service.mark_step_failed(session, step.get("id"), str(e))
 
     asyncio.run(_execute())
