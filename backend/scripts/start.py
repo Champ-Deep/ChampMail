@@ -6,22 +6,20 @@ Problem: When uvicorn imports app.main via CLI (uvicorn app.main:app),
 any exception during module import is swallowed — no traceback, no logs.
 This wrapper imports app.main in a try/except block so failures are visible
 in Railway deployment logs.
+
+NOTE: Uses print(flush=True) instead of logging — Railway deploy logs
+only reliably capture stdout, not stderr from Python's logging module.
 """
 
-import logging
 import os
 import sys
 
-logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True)
-logger = logging.getLogger("startup")
-
-logger.info("=== Importing app.main ===")
+print("=== Importing app.main ===", flush=True)
 try:
     from app.main import app  # noqa: F401
-    logger.info("=== Import OK ===")
+    print("=== Import OK ===", flush=True)
 except Exception as e:
-    logger.error("=== IMPORT FAILED ===")
-    logger.error("%s: %s", type(e).__name__, e)
+    print(f"=== IMPORT FAILED: {type(e).__name__}: {e} ===", flush=True)
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -29,5 +27,5 @@ except Exception as e:
 import uvicorn
 
 port = int(os.environ.get("PORT", "8000"))
-logger.info("=== Starting uvicorn on port %d ===", port)
+print(f"=== Starting uvicorn on 0.0.0.0:{port} ===", flush=True)
 uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

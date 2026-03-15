@@ -289,11 +289,23 @@ class CampaignSendService:
                         html_body=html_body,
                     )
 
+                # email_service returns a dict; check for failure and extract message_id
+                if isinstance(result, dict):
+                    if not result.get("success"):
+                        raise RuntimeError(result.get("error", "Email send failed"))
+                    message_id = result.get("message_id", "")
+                else:
+                    message_id = result.message_id
+
+            # For mail_engine (SendResult object), use attribute access
+            if not isinstance(result, dict):
+                message_id = result.message_id
+
             await self._record_send(
                 campaign_id=campaign_id,
                 prospect_id=prospect_id,
                 campaign_prospect_id=email_data["campaign_prospect_id"],
-                message_id=result.message_id,
+                message_id=message_id,
                 recipient_email=email_data["prospect_email"],
                 from_address=from_address,
                 subject=email_data["subject"],
@@ -310,10 +322,10 @@ class CampaignSendService:
                 "✓ Email sent successfully to %s for campaign %s (message_id: %s)",
                 email_data["prospect_email"],
                 campaign_id,
-                result.message_id,
+                message_id,
             )
 
-            return {"status": "sent", "message_id": result.message_id}
+            return {"status": "sent", "message_id": message_id}
 
         except Exception as e:
             logger.error(
@@ -399,9 +411,17 @@ class CampaignSendService:
                     html_body=resolved_html,
                 )
 
+            # Handle dict return from email_service vs SendResult from mail_engine
+            if isinstance(result, dict):
+                if not result.get("success"):
+                    raise RuntimeError(result.get("error", "Email send failed"))
+                message_id = result.get("message_id", "")
+            else:
+                message_id = result.message_id
+
             return {
                 "status": "sent",
-                "message_id": result.message_id,
+                "message_id": message_id,
                 "to": to_email,
             }
         except Exception as e:

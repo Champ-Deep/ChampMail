@@ -1,7 +1,7 @@
 import os
 import logging
 from typing import Optional
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker
 from app.services.domain_service import domain_service
 from app.utils.test_mode import is_test_mode_enabled, get_test_mode_domain_id
 
@@ -14,7 +14,7 @@ class DomainRotator:
 
     async def select_domain(self, team_id: Optional[str] = None) -> str:
         async def _select():
-            async with async_session() as session:
+            async with async_session_maker() as session:
                 domains = await domain_service.get_verified_domains(session, team_id)
 
                 if not domains:
@@ -48,7 +48,7 @@ class DomainRotator:
 
     async def get_optimal_domain(self, prospect_count: int, team_id: Optional[str] = None) -> str:
         async def _get():
-            async with async_session() as session:
+            async with async_session_maker() as session:
                 domains = await domain_service.get_verified_domains(session, team_id)
 
                 candidates = []

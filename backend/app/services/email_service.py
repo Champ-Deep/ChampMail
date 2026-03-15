@@ -17,7 +17,7 @@ from email.header import decode_header
 import ssl
 from datetime import datetime
 from typing import Optional, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -143,11 +143,15 @@ class EmailService:
             server.login(smtp_username, password)
             server.sendmail(sender_email, to_email, msg.as_string())
             server.quit()
-            logger.info("Email sent successfully to %s", to_email)
+
+            # Extract or generate message ID
+            message_id = msg.get("Message-ID", "") or f"<{uuid4().hex}@champmail.local>"
+            logger.info("Email sent successfully to %s (message_id: %s)", to_email, message_id)
 
             return {
                 "success": True,
                 "message": f"Email sent to {to_email}",
+                "message_id": message_id,
                 "details": {
                     "to": to_email,
                     "from": sender_email,

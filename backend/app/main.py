@@ -50,46 +50,45 @@ async def lifespan(app: FastAPI):
 
     startup_start = time.time()
 
-    # Startup
-    logger.info("=== LIFESPAN START ===")
-    logger.info("Starting %s v%s", settings.app_name, settings.app_version)
-    logger.info("Environment: %s", settings.environment)
-    logger.info("FalkorDB: %s:%s", settings.falkordb_host, settings.falkordb_port)
-    logger.info("PostgreSQL: %s:%s", settings.postgres_host, settings.postgres_port)
+    # Startup — use print(flush=True) for Railway deploy log visibility
+    print("=== LIFESPAN START ===", flush=True)
+    print(f"Starting {settings.app_name} v{settings.app_version}", flush=True)
+    print(f"Environment: {settings.environment}", flush=True)
+    print(f"PostgreSQL: {settings.postgres_host}:{settings.postgres_port}", flush=True)
 
     # Test mode warning
     if is_test_mode_enabled():
-        logger.warning("=" * 70)
-        logger.warning("⚠️  TEST MODE ENABLED - DNS VERIFICATION BYPASSED")
-        logger.warning("This mode is for development testing only!")
-        logger.warning("REMEMBER TO SET TEST_MODE=false AFTER TESTING IS COMPLETE")
-        logger.warning("=" * 70)
+        print("=" * 70, flush=True)
+        print("⚠️  TEST MODE ENABLED - DNS VERIFICATION BYPASSED", flush=True)
+        print("REMEMBER TO SET TEST_MODE=false AFTER TESTING IS COMPLETE", flush=True)
+        print("=" * 70, flush=True)
 
     # Validate production settings (warn but don't crash — let healthcheck pass)
     try:
         settings.validate_production_settings()
-        logger.info("Production settings validated successfully")
+        print("=== Production settings validated ===", flush=True)
     except ValueError as e:
-        logger.error("Production settings validation failed: %s", e)
-        logger.error("Server starting anyway — fix env vars to resolve")
+        print(f"!!! Production settings validation failed: {e}", flush=True)
+        print("!!! Server starting anyway — fix env vars to resolve", flush=True)
 
     # Initialize PostgreSQL with timeout so lifespan doesn't block healthcheck
+    print("=== Connecting to PostgreSQL... ===", flush=True)
     try:
         await asyncio.wait_for(init_db(), timeout=15.0)
-        logger.info("PostgreSQL connected and tables created (%.1fs)", time.time() - startup_start)
+        print(f"=== PostgreSQL connected ({time.time() - startup_start:.1f}s) ===", flush=True)
 
         # Create default admin user (development only)
         if settings.environment == "development":
             async with get_db() as session:
                 await user_service.ensure_default_admin(session)
     except asyncio.TimeoutError:
-        logger.error("PostgreSQL init TIMED OUT after 15s — auth will NOT work!")
+        print("!!! PostgreSQL init TIMED OUT after 15s — auth will NOT work!", flush=True)
     except Exception as e:
-        logger.error("PostgreSQL initialization failed: %s", e)
-        logger.error("Auth will NOT work without database!")
+        print(f"!!! PostgreSQL initialization failed: {e}", flush=True)
 
     # Initialize FalkorDB with timeout (sync call, run in executor)
     if FALKORDB_AVAILABLE:
+        print("=== Connecting to FalkorDB... ===", flush=True)
         try:
             loop = asyncio.get_event_loop()
             result = await asyncio.wait_for(
@@ -97,30 +96,24 @@ async def lifespan(app: FastAPI):
                 timeout=5.0,
             )
             if result:
-                logger.info("FalkorDB connected (%.1fs)", time.time() - startup_start)
+                print(f"=== FalkorDB connected ({time.time() - startup_start:.1f}s) ===", flush=True)
             else:
-                logger.warning("FalkorDB unavailable — graph features disabled")
+                print("!!! FalkorDB unavailable — graph features disabled", flush=True)
         except asyncio.TimeoutError:
-            logger.error("FalkorDB init TIMED OUT after 5s — graph features disabled")
+            print("!!! FalkorDB init TIMED OUT after 5s — graph features disabled", flush=True)
         except Exception as e:
-            logger.warning("FalkorDB init failed: %s — graph features disabled", e)
+            print(f"!!! FalkorDB init failed: {e} — graph features disabled", flush=True)
     else:
-        logger.warning("FalkorDB package not installed — graph features disabled")
+        print("!!! FalkorDB package not installed — graph features disabled", flush=True)
 
     # Check OpenRouter API key
     if settings.openrouter_api_key:
-        logger.info("OpenRouter API key configured — AI features enabled")
+        print("=== OpenRouter API key configured ===", flush=True)
     else:
-        logger.warning("OPENROUTER_API_KEY not set — AI features will fail")
-
-    # Check Thesys C1 API key
-    if settings.thesys_api_key:
-        logger.info("Thesys C1 API key configured — Generative UI enabled")
-    else:
-        logger.info("THESYS_API_KEY not set — AI Assistant will be disabled")
+        print("!!! OPENROUTER_API_KEY not set — AI features will fail", flush=True)
 
     elapsed = time.time() - startup_start
-    logger.info("=== LIFESPAN READY in %.1fs — now serving requests ===", elapsed)
+    print(f"=== LIFESPAN READY in {elapsed:.1f}s — now serving requests ===", flush=True)
 
     yield
 
