@@ -17,6 +17,7 @@ crash with "cannot be called from a running event loop".
 """
 
 import asyncio
+import os
 import time
 
 import asyncpg
@@ -139,6 +140,20 @@ def main():
 
     elapsed = time.time() - start
     print(f"=== migrate.py completed in {elapsed:.1f}s ===", flush=True)
+
+    # CRITICAL: alembic/env.py imports app.db.postgres.Base, which triggers
+    # module-level async engine creation. Dispose it so Python cleanup doesn't hang.
+    try:
+        from app.db.postgres import engine
+        asyncio.run(engine.dispose())
+        print("=== Engine disposed ===", flush=True)
+    except Exception as e:
+        print(f"!!! Engine dispose failed (non-fatal): {e}", flush=True)
+
+    # Hard backstop: os._exit() bypasses atexit handlers and finalizers entirely.
+    # Guarantees the process terminates so start.py can run.
+    print("=== migrate.py exiting ===", flush=True)
+    os._exit(0)
 
 
 if __name__ == "__main__":

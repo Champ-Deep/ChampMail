@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 
 # Run migrations then start the application
 # Uses migrate.py for migration drift, start.py for visible import errors
-CMD sh -c "python scripts/migrate.py && python scripts/start.py"
+CMD sh -c "python scripts/migrate.py; python scripts/start.py"
