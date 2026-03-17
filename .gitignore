@@ -3,34 +3,68 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
-.env
 .venv
 env/
 build/
 dist/
+*.egg-info/
 
 # JavaScript/TypeScript
 node_modules/
 .next/
 out/
 .vercel
-dist/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Databases
+# Databases (local Docker volumes)
 postgres-data/
 falkordb-data/
 redis-data/
 
-# Secrets
+# Environment & Secrets
 .env
+.env.*
+!.env.example
 *.pem
 *.key
+*.token
+.*_token
 
 # IDEs
 .vscode/
 .idea/
+
+# AI Tools & Agents
 .claude/
+.gemini/
+.superpowers/
+.cursor/
+.aider*
+.windsurf/
+AGENTS.md
+CLAUDE.md
+
+# Logs & Build Artifacts
+*.log
+
+# Merge Conflict Artifacts
+*.resolved
+*.orig
+
+# Binary Documents
+*.docx
+*.xlsx
+
+# Linter & Tool Caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Uploads (runtime data)
+uploads/
+
+# Auxiliary (n8n workflows, not part of core pipeline)
+Email Automation/
