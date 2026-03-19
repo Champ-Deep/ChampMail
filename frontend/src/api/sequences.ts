@@ -62,8 +62,8 @@ export interface EnrollProspectsRequest {
 
 export const sequencesApi = {
   async list(status?: SequenceStatus): Promise<Sequence[]> {
-    const response = await api.get<Sequence[]>('/sequences', { params: { status } });
-    return response.data;
+    const response = await api.get<{ items: Sequence[]; total: number }>('/sequences', { params: { status } });
+    return response.data.items ?? [];
   },
 
   async get(id: string): Promise<Sequence> {

@@ -58,8 +58,8 @@ export interface ProspectTimeline {
 
 export const prospectsApi = {
   async list(params?: ProspectListParams): Promise<Prospect[]> {
-    const response = await api.get<Prospect[]>('/prospects', { params });
-    return response.data;
+    const response = await api.get<{ items: Prospect[]; total: number }>('/prospects', { params });
+    return response.data.items ?? [];
   },
 
   async get(email: string): Promise<Prospect> {

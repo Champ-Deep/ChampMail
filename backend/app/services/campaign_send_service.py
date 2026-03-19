@@ -3,13 +3,20 @@ Campaign Send Service.
 
 Orchestrates the full campaign send pipeline. Takes a campaign and makes emails flow.
 Connects: template resolution, scheduling, tracking injection, UTM injection, email delivery.
+
+Hardened with:
+- Exponential backoff retry for transient SMTP failures
+- Real-time progress tracking via Redis
+- Batch executor with throttling and pause support
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import smtplib
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -27,6 +34,27 @@ from app.db.redis import redis_client
 from app.utils.test_mode import is_test_mode_enabled
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Retry configuration
+# ---------------------------------------------------------------------------
+
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 2  # seconds — doubles each retry: 2, 4, 8
+
+# SMTP errors that are transient and worth retrying
+TRANSIENT_SMTP_CODES = {421, 450, 451, 452}
+
+def _is_transient_error(exc: Exception) -> bool:
+    """Determine if an SMTP error is transient (worth retrying)."""
+    if isinstance(exc, smtplib.SMTPServerDisconnected):
+        return True
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return exc.smtp_code in TRANSIENT_SMTP_CODES
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
+        return True
+    err_msg = str(exc).lower()
+    return any(kw in err_msg for kw in ("timeout", "connection reset", "temporary", "try again"))
 
 
 class CampaignSendService:
@@ -140,14 +168,165 @@ class CampaignSendService:
             "last_send": scheduled[-1]["send_at"] if scheduled else None,
         }
 
+    # ------------------------------------------------------------------
+    # Progress tracking helpers
+    # ------------------------------------------------------------------
+
+    async def _update_progress(
+        self,
+        campaign_id: str,
+        *,
+        status: str = "sending",
+        sent: int = 0,
+        failed: int = 0,
+        skipped: int = 0,
+        total: int = 0,
+        current_email: str = "",
+    ) -> None:
+        """Write real-time progress to Redis so the UI can poll it."""
+        await redis_client.set_json(
+            f"campaign:{campaign_id}:progress",
+            {
+                "status": status,
+                "sent": sent,
+                "failed": failed,
+                "skipped": skipped,
+                "total": total,
+                "current_email": current_email,
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+            ex=86400 * 7,
+        )
+
+    async def get_progress(self, campaign_id: str) -> Optional[Dict[str, Any]]:
+        """Read campaign send progress from Redis."""
+        return await redis_client.get_json(f"campaign:{campaign_id}:progress")
+
+    # ------------------------------------------------------------------
+    # Batch executor
+    # ------------------------------------------------------------------
+
+    async def execute_campaign_batch(
+        self,
+        campaign_id: str,
+        throttle_seconds: float = 2.0,
+    ) -> Dict[str, Any]:
+        """Execute all scheduled sends for a campaign with throttling.
+
+        Iterates through every enrolled prospect, sends with retry,
+        respects pause requests via Redis, and tracks progress in
+        real time.
+
+        Args:
+            campaign_id: Campaign UUID string.
+            throttle_seconds: Minimum delay between sends (default 2s).
+
+        Returns:
+            Summary dict with sent / failed / skipped counts.
+        """
+        from app.db.postgres import async_session_maker
+
+        async with async_session_maker() as session:
+            campaign = await self._get_campaign(session, campaign_id)
+            if not campaign:
+                raise ValueError(f"Campaign {campaign_id} not found")
+
+            recipients = await self._get_enrolled_recipients(session, campaign_id)
+
+        total = len(recipients)
+        sent = 0
+        failed = 0
+        skipped = 0
+
+        await self._update_progress(
+            campaign_id, status="sending", total=total,
+        )
+
+        for idx, (cp, prospect) in enumerate(recipients):
+            # Check for pause / cancel request
+            ctrl = await redis_client.get_json(f"campaign:{campaign_id}:control")
+            if ctrl and ctrl.get("action") in ("pause", "cancel"):
+                logger.info(
+                    "Campaign %s %s requested after %d/%d sends",
+                    campaign_id, ctrl["action"], idx, total,
+                )
+                await self._update_progress(
+                    campaign_id,
+                    status=ctrl["action"] + "d",  # "paused" or "cancelled"
+                    sent=sent, failed=failed, skipped=skipped, total=total,
+                )
+                break
+
+            prospect_id = str(prospect.id)
+
+            try:
+                result = await self.execute_single_send(campaign_id, prospect_id)
+                if result.get("status") == "sent":
+                    sent += 1
+                else:
+                    skipped += 1
+            except Exception:
+                failed += 1
+
+            await self._update_progress(
+                campaign_id,
+                status="sending",
+                sent=sent,
+                failed=failed,
+                skipped=skipped,
+                total=total,
+                current_email=prospect.email or "",
+            )
+
+            # Throttle — don't slam the SMTP server
+            if idx < total - 1:
+                await asyncio.sleep(throttle_seconds)
+
+        final_status = "completed" if failed == 0 else "completed_with_errors"
+        await self._update_progress(
+            campaign_id,
+            status=final_status,
+            sent=sent, failed=failed, skipped=skipped, total=total,
+        )
+
+        # Update campaign model status
+        async with async_session_maker() as session:
+            await session.execute(
+                update(Campaign)
+                .where(Campaign.id == UUID(campaign_id))
+                .values(
+                    status="completed" if failed == 0 else "failed",
+                    completed_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow(),
+                )
+            )
+            await session.commit()
+
+        logger.info(
+            "Campaign %s batch complete: %d sent, %d failed, %d skipped / %d total",
+            campaign_id, sent, failed, skipped, total,
+        )
+
+        return {
+            "campaign_id": campaign_id,
+            "status": final_status,
+            "sent": sent,
+            "failed": failed,
+            "skipped": skipped,
+            "total": total,
+        }
+
+    # ------------------------------------------------------------------
+    # Single send (with retry)
+    # ------------------------------------------------------------------
+
     async def execute_single_send(
         self,
         campaign_id: str,
         prospect_id: str,
     ) -> Dict[str, Any]:
-        """Send one email from a scheduled campaign.
+        """Send one email from a scheduled campaign, with retry on transient errors.
 
-        Called by Celery Beat when a scheduled send is due.
         1. Load cached resolved HTML from Redis
         2. Inject UTM params (if campaign has UTM config)
         3. Generate tracking URLs
@@ -229,7 +408,7 @@ class CampaignSendService:
 <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; text-align: center;">
     <p>You're receiving this because you signed up for our mailing list.</p>
     <p>
-        <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a> 
+        <a href="{unsubscribe_url}" style="color: #6b7280; text-decoration: underline;">Unsubscribe</a>
         from this list
     </p>
     <p style="margin-top: 10px;">
@@ -252,44 +431,27 @@ class CampaignSendService:
         send_mode = campaign.send_mode or "user_smtp"
         domain_id = str(campaign.domain_id) if campaign.domain_id else ""
 
-        # Test mode warning
         if is_test_mode_enabled():
-            logger.warning("⚠️  TEST MODE: Sending email with DNS verification bypassed")
+            logger.warning("TEST MODE: Sending email with DNS verification bypassed")
 
         logger.info("Sending email to %s for campaign %s (send_mode: %s)",
                    email_data["prospect_email"], campaign_id, send_mode)
 
-        try:
-            if send_mode == "server" and domain_id:
-                result = await mail_engine_client.send_email(
-                    recipient=email_data["prospect_email"],
-                    recipient_name=email_data.get("first_name", ""),
-                    subject=email_data["subject"],
+        # --- Retry loop for transient SMTP failures ---
+        last_exc: Optional[Exception] = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                result = await self._do_send(
+                    campaign=campaign,
+                    email_data=email_data,
                     html_body=html_body,
                     from_address=from_address,
-                    reply_to=campaign.reply_to or "",
+                    from_name=from_name,
+                    user_id=user_id,
+                    send_mode=send_mode,
                     domain_id=domain_id,
-                    track_opens=True,
-                    track_clicks=True,
-                    send_mode="server",
                 )
-            else:
-                from app.db.postgres import async_session_maker
 
-                async with async_session_maker() as email_session:
-                    result = await email_service.send_email(
-                        session=email_session,
-                        user_id=user_id,
-                        to_email=email_data["prospect_email"],
-                        subject=email_data["subject"],
-                        body=html_body,
-                        from_email=from_address,
-                        from_name=from_name,
-                        reply_to=campaign.reply_to or "",
-                        html_body=html_body,
-                    )
-
-                # email_service returns a dict; check for failure and extract message_id
                 if isinstance(result, dict):
                     if not result.get("success"):
                         raise RuntimeError(result.get("error", "Email send failed"))
@@ -297,52 +459,102 @@ class CampaignSendService:
                 else:
                     message_id = result.message_id
 
-            # For mail_engine (SendResult object), use attribute access
-            if not isinstance(result, dict):
-                message_id = result.message_id
+                await self._record_send(
+                    campaign_id=campaign_id,
+                    prospect_id=prospect_id,
+                    campaign_prospect_id=email_data["campaign_prospect_id"],
+                    message_id=message_id,
+                    recipient_email=email_data["prospect_email"],
+                    from_address=from_address,
+                    subject=email_data["subject"],
+                    team_id=campaign.team_id,
+                )
 
-            await self._record_send(
-                campaign_id=campaign_id,
-                prospect_id=prospect_id,
-                campaign_prospect_id=email_data["campaign_prospect_id"],
-                message_id=message_id,
-                recipient_email=email_data["prospect_email"],
-                from_address=from_address,
+                await redis_client.set_json(
+                    f"campaign:{campaign_id}:status",
+                    {"status": "sending"},
+                    ex=86400 * 7,
+                )
+
+                logger.info(
+                    "Email sent to %s for campaign %s (message_id: %s, attempt %d)",
+                    email_data["prospect_email"], campaign_id, message_id, attempt + 1,
+                )
+                return {"status": "sent", "message_id": message_id}
+
+            except Exception as e:
+                last_exc = e
+                if attempt < MAX_RETRIES and _is_transient_error(e):
+                    delay = RETRY_BASE_DELAY * (2 ** attempt)
+                    logger.warning(
+                        "Transient error sending to %s (attempt %d/%d), retrying in %ds: %s",
+                        email_data["prospect_email"], attempt + 1, MAX_RETRIES + 1, delay, e,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                # Permanent failure or retries exhausted
+                break
+
+        # All retries failed
+        logger.error(
+            "Failed to send email to %s for campaign %s after %d attempts: %s",
+            email_data["prospect_email"], campaign_id, MAX_RETRIES + 1, last_exc,
+        )
+        await self._record_failure(
+            campaign_id=campaign_id,
+            prospect_id=prospect_id,
+            error=str(last_exc),
+            recipient_email=email_data.get("prospect_email", ""),
+            subject=email_data.get("subject", ""),
+            team_id=campaign.team_id,
+        )
+        raise last_exc  # type: ignore[misc]
+
+    # ------------------------------------------------------------------
+    # Internal: actual SMTP send (no retry logic — that lives above)
+    # ------------------------------------------------------------------
+
+    async def _do_send(
+        self,
+        *,
+        campaign: Campaign,
+        email_data: Dict[str, Any],
+        html_body: str,
+        from_address: str,
+        from_name: str,
+        user_id: str,
+        send_mode: str,
+        domain_id: str,
+    ) -> Any:
+        """Dispatch to mail-engine or user SMTP. Returns result object."""
+        if send_mode == "server" and domain_id:
+            return await mail_engine_client.send_email(
+                recipient=email_data["prospect_email"],
+                recipient_name=email_data.get("first_name", ""),
                 subject=email_data["subject"],
-                team_id=campaign.team_id,
+                html_body=html_body,
+                from_address=from_address,
+                reply_to=campaign.reply_to or "",
+                domain_id=domain_id,
+                track_opens=True,
+                track_clicks=True,
+                send_mode="server",
             )
 
-            await redis_client.set_json(
-                f"campaign:{campaign_id}:status",
-                {"status": "sending"},
-                ex=86400 * 7,
-            )
+        from app.db.postgres import async_session_maker
 
-            logger.info(
-                "✓ Email sent successfully to %s for campaign %s (message_id: %s)",
-                email_data["prospect_email"],
-                campaign_id,
-                message_id,
+        async with async_session_maker() as email_session:
+            return await email_service.send_email(
+                session=email_session,
+                user_id=user_id,
+                to_email=email_data["prospect_email"],
+                subject=email_data["subject"],
+                body=html_body,
+                from_email=from_address,
+                from_name=from_name,
+                reply_to=campaign.reply_to or "",
+                html_body=html_body,
             )
-
-            return {"status": "sent", "message_id": message_id}
-
-        except Exception as e:
-            logger.error(
-                "✗ Failed to send email to %s for campaign %s: %s",
-                email_data["prospect_email"],
-                campaign_id,
-                str(e),
-            )
-            await self._record_failure(
-                campaign_id=campaign_id,
-                prospect_id=prospect_id,
-                error=str(e),
-                recipient_email=email_data.get("prospect_email", ""),
-                subject=email_data.get("subject", ""),
-                team_id=campaign.team_id,
-            )
-            raise
 
     async def send_test(
         self,

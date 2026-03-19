@@ -338,9 +338,35 @@ async def get_recipients(
     ]
 
 
-async def _send_campaign_background(campaign_id: str):
-    """Background task to send campaign emails - replaced by send_execution_task."""
-    pass
+async def _execute_campaign_background(campaign_id: str):
+    """Background task — prepare, schedule, then batch-send all emails."""
+    from app.services.campaign_send_service import campaign_send_service
+    from app.db.postgres import async_session_maker
+
+    try:
+        # Step 1: prepare + schedule
+        async with async_session_maker() as session:
+            await campaign_send_service.prepare_and_schedule(
+                session=session,
+                campaign_id=campaign_id,
+                user_id="",  # already authed before dispatch
+            )
+            await campaign_service.update_campaign_status(
+                session, campaign_id, CampaignStatus.RUNNING
+            )
+
+        # Step 2: batch-execute with throttling + retry
+        await campaign_send_service.execute_campaign_batch(campaign_id)
+
+    except Exception as e:
+        logger.error("Background campaign execution failed for %s: %s", campaign_id, e)
+        try:
+            async with async_session_maker() as session:
+                await campaign_service.update_campaign_status(
+                    session, campaign_id, CampaignStatus.FAILED
+                )
+        except Exception:
+            pass
 
 
 @router.post("/{campaign_id}/send")
@@ -353,8 +379,9 @@ async def send_campaign(
     """
     Start sending the campaign.
 
-    Emails will be scheduled and sent in the background via Celery Beat.
-    Check /campaigns/{id}/stats for progress.
+    Prepares emails, schedules them with smart timing, then executes
+    in the background with retry and throttling.
+    Poll GET /campaigns/{id}/progress for real-time status.
     """
     from app.services.campaign_send_service import campaign_send_service
 
@@ -382,8 +409,11 @@ async def send_campaign(
             session, campaign_id, CampaignStatus.SCHEDULED
         )
 
+        # Kick off batch execution in background
+        background_tasks.add_task(_execute_campaign_background, campaign_id)
+
         return {
-            "message": "Campaign scheduling started",
+            "message": "Campaign send started",
             "campaign_id": campaign_id,
             "total_scheduled": result.get("total_scheduled", 0),
             "first_send": result.get("first_send"),
@@ -429,6 +459,25 @@ async def test_send_campaign(
         raise HTTPException(status_code=500, detail="Failed to send test email")
 
 
+@router.get("/{campaign_id}/progress")
+async def get_campaign_progress(
+    campaign_id: str,
+    user: TokenData = Depends(require_auth),
+):
+    """
+    Poll real-time send progress for a campaign.
+
+    Returns sent / failed / skipped / total counts plus current email being sent.
+    Frontend should poll this every 2-3 seconds while a campaign is sending.
+    """
+    from app.services.campaign_send_service import campaign_send_service
+
+    progress = await campaign_send_service.get_progress(campaign_id)
+    if not progress:
+        return {"status": "not_started", "sent": 0, "failed": 0, "skipped": 0, "total": 0}
+    return progress
+
+
 @router.post("/{campaign_id}/pause")
 async def pause_campaign(
     campaign_id: str,
@@ -438,8 +487,10 @@ async def pause_campaign(
     """
     Pause a running campaign.
 
-    Emails that haven't been sent yet will be held.
+    Signals the batch executor to stop after the current send completes.
     """
+    from app.db.redis import redis_client
+
     campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -447,8 +498,15 @@ async def pause_campaign(
     if str(campaign.created_by) != user.user_id and user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if campaign.status != CampaignStatus.RUNNING.value:
+    if campaign.status not in (CampaignStatus.RUNNING.value, CampaignStatus.SCHEDULED.value):
         raise HTTPException(status_code=400, detail="Campaign is not running")
+
+    # Signal the batch executor to stop
+    await redis_client.set_json(
+        f"campaign:{campaign_id}:control",
+        {"action": "pause"},
+        ex=86400,
+    )
 
     await campaign_service.update_campaign_status(
         session, campaign_id, CampaignStatus.PAUSED
@@ -463,7 +521,9 @@ async def resume_campaign(
     user: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Resume a paused campaign."""
+    """Resume a paused campaign. Re-launches the batch executor."""
+    from app.db.redis import redis_client
+
     campaign = await campaign_service.get_campaign(session, campaign_id)
     if not campaign:
         raise HTTPException(status_code=404, detail="Campaign not found")
@@ -474,10 +534,13 @@ async def resume_campaign(
     if campaign.status != CampaignStatus.PAUSED.value:
         raise HTTPException(status_code=400, detail="Campaign is not paused")
 
+    # Clear the pause signal
+    await redis_client.delete(f"campaign:{campaign_id}:control")
+
     await campaign_service.update_campaign_status(
         session, campaign_id, CampaignStatus.RUNNING
     )
-    background_tasks.add_task(_send_campaign_background, campaign_id)
+    background_tasks.add_task(_execute_campaign_background, campaign_id)
 
     return {"message": "Campaign resumed", "campaign_id": campaign_id}
 

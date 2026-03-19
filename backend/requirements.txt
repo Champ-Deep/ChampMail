@@ -53,8 +53,8 @@ slowapi>=0.1.0
 # Async file I/O
 aiofiles>=23.0.0
 
-# CSV processing
-pandas>=2.0.0
+# CSV / Excel processing
+openpyxl>=3.1.0
 
 # Timezone detection
 pytz>=2024.1
