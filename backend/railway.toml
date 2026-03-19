@@ -6,7 +6,7 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-startCommand = "python scripts/migrate.py; python scripts/start.py"
+startCommand = "python scripts/start.py"
 healthcheckPath = "/health/live"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

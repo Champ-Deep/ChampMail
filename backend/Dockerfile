@@ -50,6 +50,5 @@ EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health/live || exit 1
 
-# Run migrations then start the application
-# Uses migrate.py for migration drift, start.py for visible import errors
-CMD sh -c "python scripts/migrate.py; python scripts/start.py"
+# Single entry point: start.py runs migrations as subprocess, then starts uvicorn
+CMD ["python", "scripts/start.py"]

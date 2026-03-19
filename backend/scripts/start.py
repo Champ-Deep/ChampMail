@@ -1,19 +1,35 @@
 #!/usr/bin/env python3
 """
-Startup wrapper that catches silent import crashes.
+Single entry point for ChampMail backend on Railway.
 
-Problem: When uvicorn imports app.main via CLI (uvicorn app.main:app),
-any exception during module import is swallowed — no traceback, no logs.
-This wrapper imports app.main in a try/except block so failures are visible
-in Railway deployment logs.
+Runs migrations as a subprocess (isolated, with timeout), then imports
+and starts the FastAPI app via uvicorn — all in one process.
 
-NOTE: Uses print(flush=True) instead of logging — Railway deploy logs
-only reliably capture stdout, not stderr from Python's logging module.
+Previous approach chained two processes via shell (migrate.py; start.py)
+but Railway's container runtime didn't reliably launch the second process.
+This single-process approach eliminates that failure mode entirely.
 """
 
 import os
+import subprocess
 import sys
 
+print("=== ChampMail Backend Starting ===", flush=True)
+
+# Step 1: Run migrations as subprocess (isolated — avoids module-level side effects)
+print("=== Running migrations ===", flush=True)
+try:
+    result = subprocess.run(
+        [sys.executable, "scripts/migrate.py"],
+        timeout=60,
+    )
+    print(f"=== Migrations finished (exit code {result.returncode}) ===", flush=True)
+except subprocess.TimeoutExpired:
+    print("!!! Migrations timed out after 60s — starting server anyway", flush=True)
+except Exception as e:
+    print(f"!!! Migration error: {e} — starting server anyway", flush=True)
+
+# Step 2: Import the FastAPI app
 print("=== Importing app.main ===", flush=True)
 try:
     from app.main import app  # noqa: F401
@@ -24,6 +40,7 @@ except Exception as e:
     traceback.print_exc()
     sys.exit(1)
 
+# Step 3: Start uvicorn
 import uvicorn
 
 port = int(os.environ.get("PORT", "8000"))
