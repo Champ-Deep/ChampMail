@@ -136,10 +136,7 @@ class UserService:
         return user is not None
 
     async def ensure_default_admin(self, session: AsyncSession) -> None:
-        """Ensure a default admin user exists. Only runs in development."""
-        if settings.environment != "development":
-            return
-
+        """Ensure a default admin user exists on first startup."""
         admin_email = "admin@champions.dev"
         existing = await self.get_by_email(session, admin_email)
 

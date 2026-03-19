@@ -77,10 +77,9 @@ async def lifespan(app: FastAPI):
         await asyncio.wait_for(init_db(), timeout=15.0)
         print(f"=== PostgreSQL connected ({time.time() - startup_start:.1f}s) ===", flush=True)
 
-        # Create default admin user (development only)
-        if settings.environment == "development":
-            async with get_db() as session:
-                await user_service.ensure_default_admin(session)
+        # Create default admin user on first startup (idempotent)
+        async with get_db() as session:
+            await user_service.ensure_default_admin(session)
     except asyncio.TimeoutError:
         print("!!! PostgreSQL init TIMED OUT after 15s — auth will NOT work!", flush=True)
     except Exception as e:
