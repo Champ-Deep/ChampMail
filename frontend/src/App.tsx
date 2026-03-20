@@ -18,6 +18,7 @@ import {
   SequencesPage,
   SequenceBuilderPage,
   CampaignsPage,
+  CampaignDetailPage,
   WorkflowsPage,
   SettingsPage,
   JoinTeamPage,
@@ -115,6 +116,7 @@ function App() {
               <Route path="/sequences/new" element={<SequenceBuilderPage />} />
                 <Route path="/templates" element={<TemplatesPage />} />
                 <Route path="/campaigns" element={<CampaignsPage />} />
+                <Route path="/campaigns/:id" element={<CampaignDetailPage />} />
                 <Route path="/workflows" element={<ComingSoonWrapper title="Workflows" description="Automated workflows are currently in beta and will be available soon."><WorkflowsPage /></ComingSoonWrapper>} />
                 <Route path="/settings" element={<SettingsPage />} />
                 <Route path="/domains" element={<DomainManagerPage />} />

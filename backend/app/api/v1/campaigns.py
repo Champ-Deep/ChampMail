@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -372,7 +372,6 @@ async def _execute_campaign_background(campaign_id: str):
 @router.post("/{campaign_id}/send")
 async def send_campaign(
     campaign_id: str,
-    background_tasks: BackgroundTasks,
     user: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db_session),
 ):
@@ -409,8 +408,9 @@ async def send_campaign(
             session, campaign_id, CampaignStatus.SCHEDULED
         )
 
-        # Kick off batch execution in background
-        background_tasks.add_task(_execute_campaign_background, campaign_id)
+        # Dispatch to Celery worker for reliable execution
+        from app.tasks.campaign_tasks import execute_campaign_send_task
+        execute_campaign_send_task.delay(campaign_id)
 
         return {
             "message": "Campaign send started",
@@ -514,14 +514,40 @@ async def pause_campaign(
     return {"message": "Campaign paused", "campaign_id": campaign_id}
 
 
+async def _resume_campaign_background(campaign_id: str):
+    """Background task — resume batch-send from where it left off."""
+    from app.services.campaign_send_service import campaign_send_service
+    from app.db.postgres import async_session_maker
+    from app.db.redis import redis_client
+
+    try:
+        # Read last processed index
+        last = await redis_client.get_json(f"campaign:{campaign_id}:last_index")
+        start_index = (last.get("index", 0) if last else 0)
+
+        logger.info("Resuming campaign %s from index %d", campaign_id, start_index)
+
+        await campaign_send_service.execute_campaign_batch(
+            campaign_id, start_index=start_index
+        )
+    except Exception as e:
+        logger.error("Resume failed for campaign %s: %s", campaign_id, e)
+        try:
+            async with async_session_maker() as session:
+                await campaign_service.update_campaign_status(
+                    session, campaign_id, CampaignStatus.FAILED
+                )
+        except Exception:
+            pass
+
+
 @router.post("/{campaign_id}/resume")
 async def resume_campaign(
     campaign_id: str,
-    background_tasks: BackgroundTasks,
     user: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db_session),
 ):
-    """Resume a paused campaign. Re-launches the batch executor."""
+    """Resume a paused campaign from where it left off."""
     from app.db.redis import redis_client
 
     campaign = await campaign_service.get_campaign(session, campaign_id)
@@ -540,7 +566,12 @@ async def resume_campaign(
     await campaign_service.update_campaign_status(
         session, campaign_id, CampaignStatus.RUNNING
     )
-    background_tasks.add_task(_execute_campaign_background, campaign_id)
+    # Dispatch resume via Celery — reads last_index inside the task
+    from app.tasks.campaign_tasks import execute_campaign_send_task
+    from app.db.redis import redis_client as _redis
+    last = await _redis.get_json(f"campaign:{campaign_id}:last_index")
+    resume_index = last.get("index", 0) if last else 0
+    execute_campaign_send_task.delay(campaign_id, start_index=resume_index)
 
     return {"message": "Campaign resumed", "campaign_id": campaign_id}
 

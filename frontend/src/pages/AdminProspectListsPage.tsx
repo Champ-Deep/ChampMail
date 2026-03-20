@@ -16,15 +16,18 @@ import {
   ChevronDown,
   X,
   Users,
+  ArrowLeft,
 } from 'lucide-react';
 import { Header } from '../components/layout';
 import { Card, Button, Badge, FileUploadZone } from '../components/ui';
+import { ColumnMapper } from '../components/prospects/ColumnMapper';
 import { clsx } from 'clsx';
 import { useAuthStore } from '../store/authStore';
 import {
   adminApi,
   type ProspectListItem,
   type ProspectListStatus,
+  type UploadPreviewResponse,
 } from '../api/admin';
 
 // ============================================================
@@ -89,6 +92,22 @@ export function AdminProspectListsPage() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [expandedListId, setExpandedListId] = useState<string | null>(null);
 
+  // Two-step upload state
+  const [uploadStep, setUploadStep] = useState<'upload' | 'map'>('upload');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [previewData, setPreviewData] = useState<UploadPreviewResponse | null>(null);
+  const [columnMapping, setColumnMapping] = useState<Record<string, string>>({});
+  const [listName, setListName] = useState('');
+
+  const resetUploadModal = () => {
+    setShowUploadModal(false);
+    setUploadStep('upload');
+    setUploadFile(null);
+    setPreviewData(null);
+    setColumnMapping({});
+    setListName('');
+  };
+
   // Check role-based access
   const allowedRoles = ['admin', 'data_team', 'superadmin'];
   const userRole = user?.role || '';
@@ -118,12 +137,49 @@ export function AdminProspectListsPage() {
   // Mutations
   // ----------------------------------------------------------
 
+  // Step 1: preview — reads headers + sample rows from the file
+  const previewMutation = useMutation({
+    mutationFn: (file: File) => adminApi.uploadPreview(file),
+    onSuccess: (data, file) => {
+      setPreviewData(data);
+      setUploadFile(file);
+      setColumnMapping(data.auto_mapping);
+      setListName(file.name.replace(/\.(csv|xlsx)$/i, ''));
+      setUploadStep('map');
+    },
+    onError: (err: Error) => {
+      toast.error(`Preview failed: ${err.message}`);
+    },
+  });
+
+  // Step 2: confirm — validates with user-provided mapping, persists
+  const confirmMutation = useMutation({
+    mutationFn: () => {
+      if (!uploadFile) throw new Error('No file selected');
+      return adminApi.uploadConfirm(uploadFile, columnMapping, listName || undefined);
+    },
+    onSuccess: (data) => {
+      const errCount = data.errors?.length || 0;
+      if (errCount > 0) {
+        toast.warning(`Uploaded with ${errCount} validation warnings`);
+      } else {
+        toast.success(`Uploaded "${data.filename}" — ${data.valid_prospects} valid prospects`);
+      }
+      queryClient.invalidateQueries({ queryKey: ['admin', 'prospect-lists'] });
+      resetUploadModal();
+    },
+    onError: (err: Error) => {
+      toast.error(`Upload failed: ${err.message}`);
+    },
+  });
+
+  // Legacy fallback — kept for direct upload without mapping
   const uploadMutation = useMutation({
     mutationFn: (file: File) => adminApi.uploadProspectList(file),
     onSuccess: (data) => {
       toast.success(`Uploaded "${data.filename}" with ${data.total_rows} rows`);
       queryClient.invalidateQueries({ queryKey: ['admin', 'prospect-lists'] });
-      setShowUploadModal(false);
+      resetUploadModal();
     },
     onError: (err: Error) => {
       toast.error(`Upload failed: ${err.message}`);
@@ -494,66 +550,136 @@ export function AdminProspectListsPage() {
         </Card>
       </div>
 
-      {/* Upload Modal */}
+      {/* Upload Modal — Two-Step Flow */}
       {showUploadModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <Card className="w-full max-w-lg">
+          <Card className={clsx('w-full', uploadStep === 'map' ? 'max-w-3xl' : 'max-w-lg')}>
+            {/* Header */}
             <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Upload Prospect List
-                </h2>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  Import contacts from a CSV or Excel file
-                </p>
+              <div className="flex items-center gap-3">
+                {uploadStep === 'map' && (
+                  <button
+                    onClick={() => setUploadStep('upload')}
+                    className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
+                    title="Back to file selection"
+                  >
+                    <ArrowLeft className="h-4 w-4 text-slate-500" />
+                  </button>
+                )}
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {uploadStep === 'upload' ? 'Upload Prospect List' : 'Map Columns'}
+                  </h2>
+                  <p className="text-sm text-slate-500 mt-0.5">
+                    {uploadStep === 'upload'
+                      ? 'Import contacts from a CSV or Excel file'
+                      : `${previewData?.total_rows.toLocaleString()} rows found — map your columns below`}
+                  </p>
+                </div>
               </div>
               <button
-                onClick={() => setShowUploadModal(false)}
+                onClick={resetUploadModal}
                 className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
               >
                 <X className="h-5 w-5 text-slate-400" />
               </button>
             </div>
 
-            <FileUploadZone
-              onFileSelected={(file: File) => uploadMutation.mutate(file)}
-              isUploading={uploadMutation.isPending}
-            />
+            {/* Step 1: File Upload */}
+            {uploadStep === 'upload' && (
+              <>
+                <FileUploadZone
+                  onFileSelected={(file: File) => previewMutation.mutate(file)}
+                  isUploading={previewMutation.isPending}
+                />
 
-            <div className="mt-4 p-4 bg-slate-50 rounded-lg">
-              <h4 className="text-sm font-medium text-slate-700 mb-2">
-                File Requirements
-              </h4>
-              <ul className="space-y-1.5 text-sm text-slate-500">
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
-                  <span>
-                    <strong>Required column:</strong> email
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-slate-300 mt-0.5 flex-shrink-0" />
-                  <span>
-                    <strong>Optional:</strong> first_name, last_name, title,
-                    company_name, company_domain, industry, phone, linkedin_url
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <CheckCircle2 className="h-4 w-4 text-slate-300 mt-0.5 flex-shrink-0" />
-                  <span>Max file size: 10 MB</span>
-                </li>
-              </ul>
-            </div>
+                <div className="mt-4 p-4 bg-slate-50 rounded-lg">
+                  <h4 className="text-sm font-medium text-slate-700 mb-2">
+                    File Requirements
+                  </h4>
+                  <ul className="space-y-1.5 text-sm text-slate-500">
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 flex-shrink-0" />
+                      <span>
+                        <strong>Required column:</strong> email
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-slate-300 mt-0.5 flex-shrink-0" />
+                      <span>
+                        <strong>Optional:</strong> first_name, last_name, title,
+                        company_name, company_domain, industry, phone, linkedin_url
+                      </span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-slate-300 mt-0.5 flex-shrink-0" />
+                      <span>Formats: .csv, .xlsx — Max 50 MB</span>
+                    </li>
+                  </ul>
+                </div>
 
-            <div className="flex justify-end gap-2 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => setShowUploadModal(false)}
-                disabled={uploadMutation.isPending}
-              >
-                Cancel
-              </Button>
-            </div>
+                <div className="flex justify-end gap-2 mt-6">
+                  <Button
+                    variant="outline"
+                    onClick={resetUploadModal}
+                    disabled={previewMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2: Column Mapping */}
+            {uploadStep === 'map' && previewData && (
+              <>
+                {/* List name input */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    List Name
+                  </label>
+                  <input
+                    type="text"
+                    value={listName}
+                    onChange={(e) => setListName(e.target.value)}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-purple/40"
+                    placeholder="My prospect list"
+                  />
+                </div>
+
+                {/* Column mapper */}
+                <div className="max-h-[50vh] overflow-y-auto">
+                  <ColumnMapper
+                    headers={previewData.headers}
+                    sampleRows={previewData.sample_rows}
+                    autoMapping={previewData.auto_mapping}
+                    onMappingChange={setColumnMapping}
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between mt-6 pt-4 border-t border-slate-200">
+                  <p className="text-xs text-slate-500">
+                    {previewData.total_rows.toLocaleString()} rows &middot;{' '}
+                    {(previewData.file_size / 1024).toFixed(1)} KB &middot;{' '}
+                    {previewData.format.toUpperCase()}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={resetUploadModal}>
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => confirmMutation.mutate()}
+                      isLoading={confirmMutation.isPending}
+                      disabled={!Object.values(columnMapping).includes('email')}
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Confirm &amp; Upload
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </Card>
         </div>
       )}

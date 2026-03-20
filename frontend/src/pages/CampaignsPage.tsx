@@ -11,6 +11,7 @@ import {
   Send,
   BarChart3,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Header } from '../components/layout';
 import { Card, Button, Badge, EmptyState } from '../components/ui';
 import { campaignsApi, type Campaign, type CampaignStatus } from '../api/campaigns';
@@ -221,9 +222,12 @@ export function CampaignsPage() {
                       </div>
                       <div>
                         <div className="flex items-center gap-3">
-                          <h3 className="font-semibold text-slate-900">
+                          <Link
+                            to={`/campaigns/${campaign.id}`}
+                            className="font-semibold text-slate-900 hover:text-brand-purple transition-colors"
+                          >
                             {campaign.name}
-                          </h3>
+                          </Link>
                           <Badge variant={cfg.variant}>{cfg.label}</Badge>
                         </div>
                         {campaign.description && (

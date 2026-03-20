@@ -51,6 +51,16 @@ export interface UploadProspectListResponse {
   uploaded_by?: string;
 }
 
+export interface UploadPreviewResponse {
+  format: string;
+  headers: string[];
+  sample_rows: string[][];
+  auto_mapping: Record<string, string>;
+  total_rows: number;
+  file_size: number;
+  file_hash: string;
+}
+
 // AI Campaign Pipeline Types
 
 export interface CampaignEssence {
@@ -181,6 +191,35 @@ export const adminApi = {
     formData.append('file', file);
     const response = await api.post<UploadProspectListResponse>(
       '/admin/prospect-lists/upload',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  },
+
+  async uploadPreview(file: File): Promise<UploadPreviewResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<UploadPreviewResponse>(
+      '/admin/prospect-lists/upload-preview',
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    );
+    return response.data;
+  },
+
+  async uploadConfirm(
+    file: File,
+    columnMapping: Record<string, string>,
+    name?: string,
+  ): Promise<UploadProspectListResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const params = new URLSearchParams();
+    params.set('column_mapping', JSON.stringify(columnMapping));
+    if (name) params.set('name', name);
+    const response = await api.post<UploadProspectListResponse>(
+      `/admin/prospect-lists/upload-confirm?${params.toString()}`,
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     );

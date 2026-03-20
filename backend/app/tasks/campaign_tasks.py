@@ -411,6 +411,81 @@ def schedule_campaign_sends_task(
 
 
 # --------------------------------------------------------------------------- #
+#  Campaign send execution via Celery (replaces FastAPI BackgroundTasks)
+# --------------------------------------------------------------------------- #
+
+
+@shared_task(bind=True, queue="sending", max_retries=1, default_retry_delay=60)
+def execute_campaign_send_task(
+    self,
+    campaign_id: str,
+    start_index: int = 0,
+) -> dict:
+    """Execute the campaign batch send via Celery worker.
+
+    Wraps the async execute_campaign_batch() so campaign sends run in
+    a dedicated Celery worker instead of the FastAPI process.
+
+    Parameters
+    ----------
+    campaign_id : str
+        UUID of the campaign to send.
+    start_index : int
+        Resume offset — skip the first N recipients (default 0).
+
+    Returns
+    -------
+    dict
+        Summary with sent / failed / skipped / total counts.
+    """
+
+    async def _execute():
+        from app.services.campaign_send_service import campaign_send_service
+        from app.services.campaign_service import campaign_service, CampaignStatus
+
+        try:
+            # On fresh send (start_index==0), prepare + schedule first
+            if start_index == 0:
+                async with async_session_maker() as session:
+                    await campaign_send_service.prepare_and_schedule(
+                        session=session,
+                        campaign_id=campaign_id,
+                        user_id="",
+                    )
+                    await campaign_service.update_campaign_status(
+                        session, campaign_id, CampaignStatus.RUNNING
+                    )
+
+            result = await campaign_send_service.execute_campaign_batch(
+                campaign_id, start_index=start_index
+            )
+            return result
+
+        except Exception as exc:
+            logger.error(
+                "Celery campaign send failed for %s: %s",
+                campaign_id,
+                str(exc),
+                exc_info=True,
+            )
+            try:
+                async with async_session_maker() as session:
+                    await campaign_service.update_campaign_status(
+                        session, campaign_id, CampaignStatus.FAILED
+                    )
+            except Exception:
+                pass
+            raise
+
+    try:
+        return asyncio.run(_execute())
+    except Exception as exc:
+        if _is_retryable(exc):
+            raise self.retry(exc=exc)
+        raise
+
+
+# --------------------------------------------------------------------------- #
 #  Helpers
 # --------------------------------------------------------------------------- #
 

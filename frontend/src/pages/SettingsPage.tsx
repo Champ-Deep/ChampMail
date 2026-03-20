@@ -969,6 +969,10 @@ function SmtpImapSettings() {
   const [fromName, setFromName] = useState('');
   const [replyToEmail, setReplyToEmail] = useState('');
 
+  // Inline test-connection result state
+  const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [imapTestResult, setImapTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
   // Fetch current settings
   const { data: settings, isLoading } = useQuery({
     queryKey: ['emailSettings'],
@@ -1035,15 +1039,16 @@ function SmtpImapSettings() {
   const testSmtpMutation = useMutation({
     mutationFn: () => emailSettingsApi.testSmtp(),
     onSuccess: (data) => {
+      setSmtpTestResult(data);
       if (data.success) {
-        toast.success(data.message);
         queryClient.invalidateQueries({ queryKey: ['emailSettings'] });
-      } else {
-        toast.error(data.message);
       }
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'SMTP test failed');
+      setSmtpTestResult({
+        success: false,
+        message: error.response?.data?.detail || 'SMTP test failed — check hostname and credentials',
+      });
     },
   });
 
@@ -1051,15 +1056,16 @@ function SmtpImapSettings() {
   const testImapMutation = useMutation({
     mutationFn: () => emailSettingsApi.testImap(),
     onSuccess: (data) => {
+      setImapTestResult(data);
       if (data.success) {
-        toast.success(data.message);
         queryClient.invalidateQueries({ queryKey: ['emailSettings'] });
-      } else {
-        toast.error(data.message);
       }
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.detail || 'IMAP test failed');
+      setImapTestResult({
+        success: false,
+        message: error.response?.data?.detail || 'IMAP test failed — check hostname and credentials',
+      });
     },
   });
 
@@ -1180,17 +1186,38 @@ function SmtpImapSettings() {
             </label>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
             <Button
               variant="outline"
-              onClick={() => testSmtpMutation.mutate()}
+              onClick={() => {
+                setSmtpTestResult(null);
+                testSmtpMutation.mutate();
+              }}
               isLoading={testSmtpMutation.isPending}
               disabled={!smtpHost || !smtpUsername}
             >
               Test SMTP Connection
             </Button>
-            {settings?.smtp_verified_at && (
-              <p className="text-xs text-slate-500 mt-2">
+            {/* Inline result indicator */}
+            {smtpTestResult && (
+              <div
+                className={clsx(
+                  'flex items-start gap-2 px-3 py-2 rounded-lg text-sm border',
+                  smtpTestResult.success
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-red-50 border-red-200 text-red-700',
+                )}
+              >
+                {smtpTestResult.success ? (
+                  <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                )}
+                <span>{smtpTestResult.message}</span>
+              </div>
+            )}
+            {settings?.smtp_verified_at && !smtpTestResult && (
+              <p className="text-xs text-slate-500">
                 Last verified: {new Date(settings.smtp_verified_at).toLocaleString()}
               </p>
             )}
@@ -1274,17 +1301,38 @@ function SmtpImapSettings() {
             </label>
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
             <Button
               variant="outline"
-              onClick={() => testImapMutation.mutate()}
+              onClick={() => {
+                setImapTestResult(null);
+                testImapMutation.mutate();
+              }}
               isLoading={testImapMutation.isPending}
               disabled={!imapHost || !imapUsername}
             >
               Test IMAP Connection
             </Button>
-            {settings?.imap_verified_at && (
-              <p className="text-xs text-slate-500 mt-2">
+            {/* Inline result indicator */}
+            {imapTestResult && (
+              <div
+                className={clsx(
+                  'flex items-start gap-2 px-3 py-2 rounded-lg text-sm border',
+                  imapTestResult.success
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-red-50 border-red-200 text-red-700',
+                )}
+              >
+                {imapTestResult.success ? (
+                  <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                ) : (
+                  <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                )}
+                <span>{imapTestResult.message}</span>
+              </div>
+            )}
+            {settings?.imap_verified_at && !imapTestResult && (
+              <p className="text-xs text-slate-500">
                 Last verified: {new Date(settings.imap_verified_at).toLocaleString()}
               </p>
             )}

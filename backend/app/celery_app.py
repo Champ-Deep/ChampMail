@@ -25,6 +25,7 @@ celery_app = Celery(
         "app.tasks.analytics",
         "app.tasks.campaign_tasks",
         "app.tasks.send_execution_task",
+        "app.tasks.replies",
     ],
 )
 
@@ -74,6 +75,11 @@ celery_app.conf.update(
             "task": "app.tasks.analytics.aggregate_daily_stats",
             "schedule": crontab(hour=23, minute=55),
             "options": {"queue": "default"},
+        },
+        "check-campaign-replies": {
+            "task": "check_campaign_replies",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": "sending"},
         },
     },
 )

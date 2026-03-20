@@ -45,6 +45,11 @@ RETRY_BASE_DELAY = 2  # seconds — doubles each retry: 2, 4, 8
 # SMTP errors that are transient and worth retrying
 TRANSIENT_SMTP_CODES = {421, 450, 451, 452}
 
+# Circuit breaker: pause batch after N consecutive transient failures
+CIRCUIT_BREAKER_THRESHOLD = 5
+CIRCUIT_BREAKER_COOLDOWN = 60  # seconds to wait before resuming
+CIRCUIT_BREAKER_MAX_TRIPS = 3  # abort after this many trips
+
 def _is_transient_error(exc: Exception) -> bool:
     """Determine if an SMTP error is transient (worth retrying)."""
     if isinstance(exc, smtplib.SMTPServerDisconnected):
@@ -210,6 +215,7 @@ class CampaignSendService:
         self,
         campaign_id: str,
         throttle_seconds: float = 2.0,
+        start_index: int = 0,
     ) -> Dict[str, Any]:
         """Execute all scheduled sends for a campaign with throttling.
 
@@ -220,6 +226,7 @@ class CampaignSendService:
         Args:
             campaign_id: Campaign UUID string.
             throttle_seconds: Minimum delay between sends (default 2s).
+            start_index: Skip the first N recipients (for resume after pause).
 
         Returns:
             Summary dict with sent / failed / skipped counts.
@@ -231,12 +238,24 @@ class CampaignSendService:
             if not campaign:
                 raise ValueError(f"Campaign {campaign_id} not found")
 
-            recipients = await self._get_enrolled_recipients(session, campaign_id)
+            all_recipients = await self._get_enrolled_recipients(session, campaign_id)
 
-        total = len(recipients)
+        # Skip already-processed recipients on resume
+        recipients = all_recipients[start_index:] if start_index > 0 else all_recipients
+        if start_index > 0:
+            logger.info(
+                "Campaign %s: resuming from index %d, %d recipients remaining",
+                campaign_id, start_index, len(recipients),
+            )
+
+        total = len(all_recipients)  # total stays the full count for progress display
         sent = 0
         failed = 0
         skipped = 0
+
+        # Circuit breaker state
+        consecutive_failures = 0
+        circuit_breaker_trips = 0
 
         await self._update_progress(
             campaign_id, status="sending", total=total,
@@ -255,6 +274,12 @@ class CampaignSendService:
                     status=ctrl["action"] + "d",  # "paused" or "cancelled"
                     sent=sent, failed=failed, skipped=skipped, total=total,
                 )
+                # Store absolute resume index so we can pick up later
+                await redis_client.set_json(
+                    f"campaign:{campaign_id}:last_index",
+                    {"index": start_index + idx},
+                    ex=86400 * 30,
+                )
                 break
 
             prospect_id = str(prospect.id)
@@ -263,10 +288,50 @@ class CampaignSendService:
                 result = await self.execute_single_send(campaign_id, prospect_id)
                 if result.get("status") == "sent":
                     sent += 1
+                    consecutive_failures = 0  # reset on success
                 else:
                     skipped += 1
-            except Exception:
+            except Exception as exc:
                 failed += 1
+                if _is_transient_error(exc):
+                    consecutive_failures += 1
+                else:
+                    consecutive_failures = 0  # permanent error, not server issue
+
+            # --- Circuit breaker ---
+            if consecutive_failures >= CIRCUIT_BREAKER_THRESHOLD:
+                circuit_breaker_trips += 1
+                if circuit_breaker_trips >= CIRCUIT_BREAKER_MAX_TRIPS:
+                    logger.error(
+                        "Campaign %s: circuit breaker tripped %d times — aborting. "
+                        "SMTP server appears unreachable.",
+                        campaign_id, circuit_breaker_trips,
+                    )
+                    await self._update_progress(
+                        campaign_id,
+                        status="failed_smtp",
+                        sent=sent, failed=failed, skipped=skipped, total=total,
+                    )
+                    await redis_client.set_json(
+                        f"campaign:{campaign_id}:last_index",
+                        {"index": start_index + idx},
+                        ex=86400 * 30,
+                    )
+                    break
+
+                logger.warning(
+                    "Campaign %s: %d consecutive failures — circuit breaker cooling down %ds (trip %d/%d)",
+                    campaign_id, consecutive_failures,
+                    CIRCUIT_BREAKER_COOLDOWN, circuit_breaker_trips, CIRCUIT_BREAKER_MAX_TRIPS,
+                )
+                await self._update_progress(
+                    campaign_id,
+                    status="cooldown",
+                    sent=sent, failed=failed, skipped=skipped, total=total,
+                    current_email=f"Pausing {CIRCUIT_BREAKER_COOLDOWN}s — SMTP errors",
+                )
+                await asyncio.sleep(CIRCUIT_BREAKER_COOLDOWN)
+                consecutive_failures = 0  # reset after cooldown
 
             await self._update_progress(
                 campaign_id,
@@ -281,8 +346,22 @@ class CampaignSendService:
             # Throttle — don't slam the SMTP server
             if idx < total - 1:
                 await asyncio.sleep(throttle_seconds)
+        else:
+            # Loop completed without break — store final index
+            await redis_client.set_json(
+                f"campaign:{campaign_id}:last_index",
+                {"index": total},
+                ex=86400 * 30,
+            )
 
         final_status = "completed" if failed == 0 else "completed_with_errors"
+        # Override if circuit breaker aborted
+        ctrl_check = await redis_client.get_json(f"campaign:{campaign_id}:control")
+        if ctrl_check and ctrl_check.get("action") == "cancel":
+            final_status = "cancelled"
+        elif ctrl_check and ctrl_check.get("action") == "pause":
+            final_status = "paused"
+
         await self._update_progress(
             campaign_id,
             status=final_status,

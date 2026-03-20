@@ -6,6 +6,7 @@ export { ProspectsPage } from './ProspectsPage';
 export { SequencesPage } from './SequencesPage';
 export { SequenceBuilderPage } from './SequenceBuilderPage';
 export { CampaignsPage } from './CampaignsPage';
+export { CampaignDetailPage } from './CampaignDetailPage';
 export { WorkflowsPage } from './WorkflowsPage';
 export { SettingsPage } from './SettingsPage';
 export { JoinTeamPage } from './JoinTeamPage';

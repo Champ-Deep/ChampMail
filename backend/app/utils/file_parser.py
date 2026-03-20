@@ -14,7 +14,7 @@ import csv
 import hashlib
 import io
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from fastapi import UploadFile
 
@@ -68,6 +68,25 @@ MAX_ROWS = 100_000
 PREVIEW_ROWS = 5  # rows returned in preview
 
 EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+PHONE_RE = re.compile(r"^[\d\s\-+().]{5,25}$")
+DOMAIN_RE = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$")
+
+# Max length for text fields — prevents oversized data from hitting the DB
+FIELD_MAX_LENGTHS: Dict[str, int] = {
+    "email": 320,
+    "first_name": 255,
+    "last_name": 255,
+    "company_name": 255,
+    "company_domain": 255,
+    "title": 255,
+    "phone": 50,
+    "linkedin_url": 500,
+    "industry": 255,
+    "company_size": 100,
+}
+
+# Simple regex to detect HTML tags / script injections in plain-text fields
+_HTML_TAG_RE = re.compile(r"<[a-zA-Z/][^>]*>")
 
 # Common header synonyms → system field.  Keys are lowercase / stripped.
 HEADER_ALIASES: Dict[str, str] = {
@@ -297,7 +316,47 @@ class ProspectFileParser:
 
             record["email"] = email
 
-            # Soft validation
+            # --- Field-level validation ---
+
+            # Truncate oversized fields + warn
+            for field_name, max_len in FIELD_MAX_LENGTHS.items():
+                val = record.get(field_name, "")
+                if val and len(val) > max_len:
+                    record[field_name] = val[:max_len]
+                    warnings.append(
+                        f"Row {row_idx}: '{field_name}' truncated to {max_len} chars"
+                    )
+
+            # Strip HTML/script tags from plain-text fields
+            for field_name in ("first_name", "last_name", "company_name", "title", "industry"):
+                val = record.get(field_name, "")
+                if val and _HTML_TAG_RE.search(val):
+                    record[field_name] = _HTML_TAG_RE.sub("", val).strip()
+                    warnings.append(
+                        f"Row {row_idx}: HTML tags removed from '{field_name}'"
+                    )
+
+            # Phone format
+            if record["phone"] and not PHONE_RE.match(record["phone"]):
+                warnings.append(
+                    f"Row {row_idx}: Phone '{record['phone']}' has unexpected format"
+                )
+
+            # Domain format
+            if record["company_domain"]:
+                domain = record["company_domain"]
+                # Strip protocol prefix if present
+                for prefix in ("https://", "http://", "www."):
+                    if domain.lower().startswith(prefix):
+                        domain = domain[len(prefix):]
+                domain = domain.rstrip("/")
+                record["company_domain"] = domain
+                if not DOMAIN_RE.match(domain):
+                    warnings.append(
+                        f"Row {row_idx}: Domain '{domain}' may be invalid"
+                    )
+
+            # LinkedIn URL format
             if record["linkedin_url"] and not record["linkedin_url"].startswith("http"):
                 warnings.append(
                     f"Row {row_idx}: LinkedIn URL should start with http: {record['linkedin_url']}"

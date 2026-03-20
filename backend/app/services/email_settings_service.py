@@ -147,12 +147,25 @@ class EmailSettingsService:
 
             return True, "SMTP connection successful"
 
-        except smtplib.SMTPAuthenticationError:
-            return False, "Authentication failed - check username and password"
+        except smtplib.SMTPAuthenticationError as e:
+            return False, f"Authentication failed — check username and password. Server said: {getattr(e, 'smtp_error', e)}"
         except smtplib.SMTPConnectError:
-            return False, f"Could not connect to {settings.smtp_host}:{settings.smtp_port}"
+            return False, f"Could not connect to {settings.smtp_host}:{settings.smtp_port}. Verify the hostname and port are correct."
+        except smtplib.SMTPServerDisconnected:
+            return False, f"Server {settings.smtp_host}:{settings.smtp_port} disconnected unexpectedly. Try toggling TLS/SSL or check if the port is correct (587 for STARTTLS, 465 for SSL)."
+        except ssl.SSLCertVerificationError:
+            return False, f"SSL certificate verification failed for {settings.smtp_host}. The server's certificate may be self-signed or expired."
+        except (TimeoutError, OSError) as e:
+            err = str(e)
+            if "timed out" in err.lower() or isinstance(e, TimeoutError):
+                return False, f"Connection timed out to {settings.smtp_host}:{settings.smtp_port}. Check if the server is reachable and the port is not blocked by a firewall."
+            if "name or service not known" in err.lower() or "getaddrinfo" in err.lower():
+                return False, f"DNS lookup failed for '{settings.smtp_host}'. Verify the hostname is spelled correctly."
+            if "connection refused" in err.lower():
+                return False, f"Connection refused by {settings.smtp_host}:{settings.smtp_port}. The server may be down or the port may be wrong."
+            return False, f"Network error: {err}"
         except Exception as e:
-            return False, f"Connection error: {str(e)}"
+            return False, f"Connection error: {type(e).__name__}: {str(e)}"
 
     async def test_imap_connection(
         self, session: AsyncSession, user_id: str
@@ -191,9 +204,23 @@ class EmailSettingsService:
             return True, "IMAP connection successful"
 
         except imaplib.IMAP4.error as e:
-            return False, f"IMAP error: {str(e)}"
+            err = str(e)
+            if "authentication" in err.lower() or "login" in err.lower():
+                return False, f"IMAP authentication failed — check username and password. Server said: {err}"
+            if "no such" in err.lower() or "nonexistent" in err.lower():
+                return False, f"Mailbox '{settings.imap_mailbox or 'INBOX'}' not found on server. Check the mailbox name."
+            return False, f"IMAP error: {err}"
+        except (TimeoutError, OSError) as e:
+            err = str(e)
+            if "timed out" in err.lower() or isinstance(e, TimeoutError):
+                return False, f"Connection timed out to {settings.imap_host}:{settings.imap_port}. Check if the server is reachable."
+            if "name or service not known" in err.lower() or "getaddrinfo" in err.lower():
+                return False, f"DNS lookup failed for '{settings.imap_host}'. Verify the hostname is spelled correctly."
+            if "connection refused" in err.lower():
+                return False, f"Connection refused by {settings.imap_host}:{settings.imap_port}. The server may be down or the port may be wrong."
+            return False, f"Network error: {err}"
         except Exception as e:
-            return False, f"Connection error: {str(e)}"
+            return False, f"Connection error: {type(e).__name__}: {str(e)}"
 
     def get_decrypted_smtp_password(self, settings: EmailSettings) -> Optional[str]:
         """Get decrypted SMTP password (for sending emails)."""

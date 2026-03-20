@@ -82,6 +82,17 @@ export interface PipelineStatus {
   total_emails?: number;
 }
 
+export interface CampaignProgress {
+  status: string;
+  sent: number;
+  failed: number;
+  skipped: number;
+  total: number;
+  current_email?: string;
+  updated_at?: string;
+  last_error?: string;
+}
+
 export interface CampaignTracking {
   campaign_id: string;
   campaign_name: string;
@@ -149,6 +160,11 @@ export const campaignsApi = {
 
   async resume(id: string): Promise<{ message: string; campaign_id: string }> {
     const response = await api.post(`/campaigns/${id}/resume`);
+    return response.data;
+  },
+
+  async getProgress(id: string): Promise<CampaignProgress> {
+    const response = await api.get<CampaignProgress>(`/campaigns/${id}/progress`);
     return response.data;
   },
 
