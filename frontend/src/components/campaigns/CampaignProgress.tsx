@@ -17,7 +17,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { campaignsApi, type CampaignProgress as ProgressData } from '../../api/campaigns';
+import { campaignsApi } from '../../api/campaigns';
 import { Button } from '../ui';
 
 interface CampaignProgressProps {

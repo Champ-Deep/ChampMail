@@ -14,7 +14,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { clsx } from 'clsx';
-import { SYSTEM_FIELDS, type SystemField } from '../../validations';
+import { SYSTEM_FIELDS } from '../../validations';
 
 // Human-readable labels for system fields
 const FIELD_LABELS: Record<string, string> = {

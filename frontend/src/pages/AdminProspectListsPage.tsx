@@ -173,19 +173,6 @@ export function AdminProspectListsPage() {
     },
   });
 
-  // Legacy fallback — kept for direct upload without mapping
-  const uploadMutation = useMutation({
-    mutationFn: (file: File) => adminApi.uploadProspectList(file),
-    onSuccess: (data) => {
-      toast.success(`Uploaded "${data.filename}" with ${data.total_rows} rows`);
-      queryClient.invalidateQueries({ queryKey: ['admin', 'prospect-lists'] });
-      resetUploadModal();
-    },
-    onError: (err: Error) => {
-      toast.error(`Upload failed: ${err.message}`);
-    },
-  });
-
   const processMutation = useMutation({
     mutationFn: (id: string) => adminApi.processProspectList(id),
     onSuccess: () => {

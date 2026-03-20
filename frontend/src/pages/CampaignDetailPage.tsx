@@ -20,12 +20,11 @@ import {
   Play,
   Pause,
   CheckCircle2,
-  XCircle,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Header } from '../components/layout';
 import { Card, Button, Badge } from '../components/ui';
-import { campaignsApi, type CampaignTracking, type CampaignRecipient } from '../api/campaigns';
+import { campaignsApi, type CampaignRecipient } from '../api/campaigns';
 import { CampaignProgress } from '../components/campaigns/CampaignProgress';
 
 // ---------------------------------------------------------------------------
