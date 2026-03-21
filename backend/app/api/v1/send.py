@@ -20,6 +20,7 @@ class SendEmailRequest(BaseModel):
     domain_id: Optional[str] = None
     track_opens: bool = True
     track_clicks: bool = True
+    send_mode: Optional[str] = None  # "user_smtp" or None (default = mail engine)
 
 
 class SendEmailResponse(BaseModel):
@@ -60,6 +61,18 @@ async def send_email(
     x_api_key: Optional[str] = Header(None),
     current_user = Depends(get_current_user),
 ):
+    # ── User SMTP mode: send via user's own SMTP credentials ──
+    if request.send_mode == "user_smtp":
+        try:
+            return await _send_via_user_smtp(request, current_user)
+        except HTTPException:
+            raise
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"User SMTP send failed: {type(e).__name__}: {e}")
+
+    # ── Default: send via mail engine ──
     try:
         result = await mail_engine_client.send_email(
             recipient=request.to,
@@ -83,6 +96,85 @@ async def send_email(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+
+async def _send_via_user_smtp(request: SendEmailRequest, current_user) -> SendEmailResponse:
+    """Send a single email using the current user's SMTP settings."""
+    import smtplib
+    import ssl
+    import uuid
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.utils import formataddr, formatdate, make_msgid
+
+    from app.db.postgres import async_session_maker
+    from app.services.email_settings_service import email_settings_service
+
+    async with async_session_maker() as session:
+        settings = await email_settings_service.get_settings(session, current_user.user_id)
+
+    if not settings or not settings.smtp_host or not settings.smtp_username:
+        raise HTTPException(status_code=400, detail="SMTP settings not configured. Go to Settings to set up SMTP.")
+
+    if not settings.smtp_verified:
+        raise HTTPException(status_code=400, detail="SMTP not verified. Test your connection in Settings first.")
+
+    password = email_settings_service.get_decrypted_smtp_password(settings)
+    if not password:
+        raise HTTPException(status_code=400, detail="SMTP password not set.")
+
+    from_email = request.from_address or settings.from_email or settings.smtp_username
+    from_name = request.from_name or settings.from_name or "ChampMail"
+
+    # Build MIME message
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = request.subject
+    msg["From"] = formataddr((from_name, from_email))
+    msg["To"] = request.to
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=from_email.split("@")[-1] if "@" in from_email else "champmail.local")
+
+    if request.reply_to:
+        msg["Reply-To"] = request.reply_to
+
+    if request.text_body:
+        msg.attach(MIMEText(request.text_body, "plain", "utf-8"))
+    msg.attach(MIMEText(request.html_body, "html", "utf-8"))
+
+    # Send synchronously via executor
+    import asyncio
+
+    def _send_sync() -> str:
+        ctx = ssl.create_default_context()
+        if settings.smtp_use_tls:
+            server = smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15)
+            server.starttls(context=ctx)
+        else:
+            server = smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, context=ctx, timeout=15)
+
+        try:
+            server.login(settings.smtp_username, password)
+            server.send_message(msg)
+            return msg["Message-ID"]
+        finally:
+            server.quit()
+
+    try:
+        loop = asyncio.get_event_loop()
+        message_id = await loop.run_in_executor(None, _send_sync)
+    except smtplib.SMTPAuthenticationError as e:
+        raise HTTPException(status_code=502, detail=f"SMTP auth failed: {e}")
+    except smtplib.SMTPException as e:
+        raise HTTPException(status_code=502, detail=f"SMTP error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send: {e}")
+
+    return SendEmailResponse(
+        message_id=message_id or f"<{uuid.uuid4()}@champmail>",
+        status="sent",
+        domain_id="user_smtp",
+        sent_at=datetime.utcnow(),
+    )
 
 
 @router.post("/send/batch", response_model=BatchSendResponse)
@@ -158,5 +250,17 @@ async def get_send_stats(
             bounce_rate=stats.bounce_rate,
         )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+    except Exception:
+        # Mail engine not running — return empty stats instead of crashing
+        return SendStatsResponse(
+            domain_id=domain_id or "none",
+            today_sent=0,
+            today_limit=1000,
+            total_sent=0,
+            total_opened=0,
+            total_clicked=0,
+            total_bounced=0,
+            open_rate=0.0,
+            click_rate=0.0,
+            bounce_rate=0.0,
+        )

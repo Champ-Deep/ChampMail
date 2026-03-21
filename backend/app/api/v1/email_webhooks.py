@@ -97,8 +97,8 @@ class FetchEmailsResponse(BaseModel):
 # Internal Endpoints (Authenticated - called from app frontend)
 # ============================================================================
 
-@router.post("/send", response_model=SendEmailResponse)
-async def send_email(
+@router.post("/email/send", response_model=SendEmailResponse)
+async def send_email_internal(
     request: SendEmailRequest,
     current_user: User = Depends(require_auth),
     session: AsyncSession = Depends(get_db_session),
@@ -106,7 +106,7 @@ async def send_email(
     """
     Send an email using the authenticated user's SMTP settings.
 
-    This endpoint is for internal app use (authenticated).
+    This endpoint is for internal app use (n8n workflows / email compose).
     """
     # Parse to_email - handle "Name <email>" format
     to_email = request.to

@@ -26,6 +26,9 @@ celery_app = Celery(
         "app.tasks.campaign_tasks",
         "app.tasks.send_execution_task",
         "app.tasks.replies",
+        "app.tasks.daily_reset",
+        "app.tasks.deliverability",
+        "app.tasks.research",
     ],
 )
 
@@ -44,6 +47,7 @@ celery_app.conf.update(
         Queue("sequences", routing_key="sequences"),
         Queue("warmup", routing_key="warmup"),
         Queue("domain", routing_key="domain"),
+        Queue("research", routing_key="research"),
     ],
     beat_schedule={
         "execute-due-sends": {
@@ -80,6 +84,27 @@ celery_app.conf.update(
             "task": "check_campaign_replies",
             "schedule": crontab(minute="*/5"),
             "options": {"queue": "sending"},
+        },
+        # ── Deliverability tasks ──
+        "reset-daily-counters": {
+            "task": "app.tasks.daily_reset.reset_daily_counters",
+            "schedule": crontab(hour=0, minute=0),
+            "options": {"queue": "domain"},
+        },
+        "sync-suppression-list": {
+            "task": "app.tasks.deliverability.sync_suppression_list_task",
+            "schedule": crontab(minute="*/15"),
+            "options": {"queue": "domain"},
+        },
+        "check-bounce-rates": {
+            "task": "app.tasks.deliverability.check_bounce_rates_task",
+            "schedule": crontab(minute="*/30"),
+            "options": {"queue": "domain"},
+        },
+        "check-domain-blacklists": {
+            "task": "app.tasks.deliverability.check_domain_blacklists_task",
+            "schedule": crontab(hour="*/6", minute=15),
+            "options": {"queue": "domain"},
         },
     },
 )

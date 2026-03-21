@@ -408,6 +408,13 @@ async def send_campaign(
             session, campaign_id, CampaignStatus.SCHEDULED
         )
 
+        # Auto-research enrolled prospects (non-blocking)
+        try:
+            from app.tasks.research import research_campaign_prospects_task
+            research_campaign_prospects_task.delay(campaign_id)
+        except Exception as e:
+            logger.warning("Failed to queue research for campaign %s: %s", campaign_id, e)
+
         # Dispatch to Celery worker for reliable execution
         from app.tasks.campaign_tasks import execute_campaign_send_task
         execute_campaign_send_task.delay(campaign_id)

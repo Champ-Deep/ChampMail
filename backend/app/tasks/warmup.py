@@ -1,7 +1,6 @@
 import logging
 
 from celery import shared_task
-from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session
 import asyncio
 
@@ -13,24 +12,29 @@ def execute_warmup_sends(self):
     async def _execute():
         from app.services.domain_service import domain_service
         from app.services.mail_engine_client import mail_engine_client
+        from app.services.deliverability.rate_limiter import rate_limiter
 
         async with async_session() as session:
             domains = await domain_service.get_domains_with_warmup(session)
 
             for domain in domains:
                 if domain.warmup_enabled and domain.warmup_day < 30:
-                    daily_limit = get_warmup_limit(domain.warmup_day)
-
-                    if domain.sent_today >= daily_limit:
+                    # Use the shared rate limiter (same atomic counter as campaigns)
+                    remaining = await rate_limiter.get_remaining(str(domain.id))
+                    if remaining <= 0:
                         continue
-
-                    remaining = daily_limit - domain.sent_today
 
                     warmup_emails = await get_warmup_emails(remaining)
 
                     for email_data in warmup_emails:
+                        # Double-check capacity before each send
+                        can_send, reason = await rate_limiter.can_send(str(domain.id))
+                        if not can_send:
+                            logger.info("Warmup paused for %s: %s", domain.domain_name, reason)
+                            break
+
                         try:
-                            result = await mail_engine_client.send_email(
+                            await mail_engine_client.send_email(
                                 recipient=email_data["to"],
                                 subject=email_data["subject"],
                                 html_body=email_data["body"],
@@ -39,12 +43,16 @@ def execute_warmup_sends(self):
                                 track_clicks=False,
                             )
 
-                            await domain_service.increment_sent_count(session, domain.id)
+                            # Record send via shared atomic counter
+                            await rate_limiter.record_send(str(domain.id))
 
                         except Exception as e:
                             logger.error("Warmup send failed for %s: %s", domain.domain_name, e)
 
-                    if domain.sent_today >= daily_limit:
+                    # Check if warmup day limit is fully used → advance day
+                    daily_count = await rate_limiter.get_daily_count(str(domain.id))
+                    effective = await rate_limiter.get_effective_limit(str(domain.id))
+                    if daily_count >= effective:
                         await domain_service.increment_warmup_day(session, domain.id)
 
     asyncio.run(_execute())

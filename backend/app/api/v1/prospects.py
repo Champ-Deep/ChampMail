@@ -223,6 +223,72 @@ async def enrich_prospect(email: str, user: TokenData = Depends(require_auth)):
     return _parse_prospect_result(existing)
 
 
+@router.post("/{email}/research")
+async def trigger_research(email: str, user: TokenData = Depends(require_auth)):
+    """Trigger AI research for a prospect (LinkedIn discovery, company intel).
+
+    Dispatches a Celery task that runs Perplexity Sonar web search to find
+    LinkedIn URL, company info, and personalization hooks. Results stored
+    in both PostgreSQL and FalkorDB knowledge graph.
+    """
+    from app.db.postgres import async_session_maker
+    from app.models.campaign import Prospect
+    from sqlalchemy import select
+
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(Prospect.id).where(Prospect.email == email)
+        )
+        row = result.scalar_one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="Prospect not found in database")
+
+        prospect_id = str(row)
+
+    from app.tasks.research import research_prospect_task
+    task = research_prospect_task.delay(prospect_id)
+
+    return {
+        "status": "research_queued",
+        "prospect_email": email,
+        "task_id": task.id,
+    }
+
+
+@router.get("/{email}/research")
+async def get_research_data(email: str, user: TokenData = Depends(require_auth)):
+    """Get cached research data for a prospect."""
+    from app.db.postgres import async_session_maker
+    from app.models.campaign import Prospect
+    from app.db.redis import redis_client
+    from sqlalchemy import select
+
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(Prospect).where(Prospect.email == email)
+        )
+        prospect = result.scalar_one_or_none()
+        if not prospect:
+            raise HTTPException(status_code=404, detail="Prospect not found")
+
+    # Check Redis cache for research data
+    cached = await redis_client.get_json(f"research:prospect:{prospect.id}")
+
+    return {
+        "prospect_email": email,
+        "research_status": prospect.research_status,
+        "research_completed_at": (
+            prospect.research_completed_at.isoformat()
+            if prospect.research_completed_at else None
+        ),
+        "location": prospect.location,
+        "timezone": prospect.timezone,
+        "linkedin_url": prospect.linkedin_url,
+        "linkedin_connection_status": prospect.linkedin_connection_status,
+        "research_data": cached,
+    }
+
+
 @router.get("/{email}/timeline")
 async def get_prospect_timeline(email: str, user: TokenData = Depends(require_auth)):
     """

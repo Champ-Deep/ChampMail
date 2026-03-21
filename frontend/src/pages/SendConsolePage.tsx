@@ -20,6 +20,7 @@ export function SendConsolePage() {
   const [subject, setSubject] = useState('');
   const [htmlBody, setHtmlBody] = useState('');
   const [selectedDomain, setSelectedDomain] = useState<string>('');
+  const [sendMode, setSendMode] = useState<'server' | 'user_smtp'>('user_smtp');
   const [trackOpens, setTrackOpens] = useState(true);
   const [trackClicks, setTrackClicks] = useState(true);
   const [sendResult, setSendResult] = useState<{
@@ -53,9 +54,10 @@ export function SendConsolePage() {
         to,
         subject,
         html_body: htmlBody,
-        domain_id: selectedDomain || undefined,
+        domain_id: sendMode === 'server' ? (selectedDomain || undefined) : undefined,
         track_opens: trackOpens,
         track_clicks: trackClicks,
+        send_mode: sendMode === 'user_smtp' ? 'user_smtp' : null,
       });
       setSendResult({ success: true, message_id: result.message_id, status: result.status });
       setTo('');
@@ -67,6 +69,8 @@ export function SendConsolePage() {
   };
 
   const verifiedDomains = domains.filter((d) => d.status === 'verified');
+  const isUserSmtp = sendMode === 'user_smtp';
+  const canSend = isUserSmtp || verifiedDomains.length > 0;
 
   return (
     <div className="h-full">
@@ -110,28 +114,69 @@ export function SendConsolePage() {
                 <CardTitle>Send Email</CardTitle>
               </CardHeader>
               <div className="p-4 space-y-4">
+                {/* Send Mode Toggle */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    From Domain *
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Send Via
                   </label>
-                  <select
-                    value={selectedDomain}
-                    onChange={(e) => setSelectedDomain(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple"
-                  >
-                    <option value="">Select a domain</option>
-                    {verifiedDomains.map((domain) => (
-                      <option key={domain.id} value={domain.id}>
-                        {domain.domain_name}
-                      </option>
-                    ))}
-                  </select>
-                  {verifiedDomains.length === 0 && (
-                    <p className="text-xs text-yellow-600 mt-1">
-                      No verified domains. Please verify a domain first.
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSendMode('user_smtp')}
+                      className={clsx(
+                        'flex-1 px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
+                        isUserSmtp
+                          ? 'bg-brand-purple text-white border-brand-purple'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+                      )}
+                    >
+                      My SMTP (Settings)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSendMode('server')}
+                      className={clsx(
+                        'flex-1 px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
+                        !isUserSmtp
+                          ? 'bg-brand-purple text-white border-brand-purple'
+                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50',
+                      )}
+                    >
+                      Server Domain
+                    </button>
+                  </div>
+                  {isUserSmtp && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Sends using your SMTP credentials configured in Settings.
                     </p>
                   )}
                 </div>
+
+                {/* Domain selector — only shown in server mode */}
+                {!isUserSmtp && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      From Domain *
+                    </label>
+                    <select
+                      value={selectedDomain}
+                      onChange={(e) => setSelectedDomain(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-purple"
+                    >
+                      <option value="">Select a domain</option>
+                      {verifiedDomains.map((domain) => (
+                        <option key={domain.id} value={domain.id}>
+                          {domain.domain_name}
+                        </option>
+                      ))}
+                    </select>
+                    {verifiedDomains.length === 0 && (
+                      <p className="text-xs text-yellow-600 mt-1">
+                        No verified domains. Please verify a domain first.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -142,6 +187,8 @@ export function SendConsolePage() {
                     value={to}
                     onChange={(e) => setTo(e.target.value)}
                     placeholder="recipient@example.com"
+                    autoComplete="off"
+                    name="send-to-email"
                   />
                 </div>
 
@@ -191,7 +238,7 @@ export function SendConsolePage() {
 
                 <Button
                   onClick={handleSend}
-                  disabled={isLoading || verifiedDomains.length === 0}
+                  disabled={isLoading || !canSend}
                   className="w-full"
                 >
                   {isLoading ? (
@@ -257,15 +304,15 @@ export function SendConsolePage() {
               <div className="p-4 space-y-3 text-sm text-gray-600">
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
-                  <span>Use verified domains for better deliverability</span>
+                  <span>Use "My SMTP" to test with Ethereal or your own server</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
-                  <span>Keep subject lines clear and relevant</span>
+                  <span>Configure SMTP credentials in Settings first</span>
                 </div>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="w-4 h-4 text-green-500 mt-0.5" />
-                  <span>Enable tracking to monitor engagement</span>
+                  <span>Check Ethereal inbox at ethereal.email/messages</span>
                 </div>
               </div>
             </Card>

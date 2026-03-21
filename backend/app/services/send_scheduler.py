@@ -154,10 +154,11 @@ class SendScheduler:
         """Detect timezone from prospect data.
 
         Priority order:
-        1. Explicit timezone field on the prospect
-        2. Company domain TLD mapping
-        3. Company HQ location (if available in research cache)
-        4. Default to America/New_York (US Eastern)
+        1. Explicit timezone field on the prospect (from research enrichment)
+        2. Location field → city/country to timezone mapping
+        3. Company domain TLD mapping
+        4. Company HQ location (if available in research cache)
+        5. Default to America/New_York (US Eastern)
 
         Parameters
         ----------
@@ -169,7 +170,7 @@ class SendScheduler:
         str
             IANA timezone string.
         """
-        # 1. Explicit timezone
+        # 1. Explicit timezone (set by research pipeline)
         explicit_tz = prospect.get("timezone")
         if explicit_tz:
             try:
@@ -178,7 +179,14 @@ class SendScheduler:
             except (ZoneInfoNotFoundError, KeyError):
                 pass
 
-        # 2. Company domain TLD
+        # 2. Location field → timezone (set by research pipeline)
+        location = prospect.get("location")
+        if location:
+            tz = self._timezone_from_location(location)
+            if tz:
+                return tz
+
+        # 3. Company domain TLD
         domain = prospect.get("company_domain") or ""
         if not domain:
             email = prospect.get("email", "")
@@ -190,7 +198,7 @@ class SendScheduler:
             if tz:
                 return tz
 
-        # 3. Check research cache for location info
+        # 4. Check research cache for location info
         prospect_id = prospect.get("id")
         if prospect_id:
             cached_research = await redis_client.get_json(f"research:prospect:{prospect_id}")
@@ -199,7 +207,7 @@ class SendScheduler:
                 if tz:
                     return tz
 
-        # 4. Default
+        # 5. Default
         return "America/New_York"
 
     async def schedule_campaign_sends(
@@ -384,6 +392,59 @@ class SendScheduler:
         # Common US tech domains
         if domain.endswith(".com") or domain.endswith(".io") or domain.endswith(".co"):
             return "America/New_York"
+
+        return None
+
+    def _timezone_from_location(self, location: str) -> Optional[str]:
+        """Map a location string (e.g. 'San Francisco, CA') to an IANA timezone.
+
+        Uses the same city→timezone mapping as _timezone_from_research but
+        matches against the prospect's explicit location field (set by research).
+        """
+        if not location:
+            return None
+
+        location_lower = location.lower()
+
+        location_tz_map = {
+            "san francisco": "America/Los_Angeles",
+            "silicon valley": "America/Los_Angeles",
+            "los angeles": "America/Los_Angeles",
+            "seattle": "America/Los_Angeles",
+            "portland": "America/Los_Angeles",
+            "new york": "America/New_York",
+            "boston": "America/New_York",
+            "miami": "America/New_York",
+            "atlanta": "America/New_York",
+            "washington": "America/New_York",
+            "chicago": "America/Chicago",
+            "dallas": "America/Chicago",
+            "houston": "America/Chicago",
+            "austin": "America/Chicago",
+            "denver": "America/Denver",
+            "phoenix": "America/Phoenix",
+            "london": "Europe/London",
+            "berlin": "Europe/Berlin",
+            "munich": "Europe/Berlin",
+            "paris": "Europe/Paris",
+            "amsterdam": "Europe/Amsterdam",
+            "stockholm": "Europe/Stockholm",
+            "tokyo": "Asia/Tokyo",
+            "singapore": "Asia/Singapore",
+            "sydney": "Australia/Sydney",
+            "melbourne": "Australia/Sydney",
+            "toronto": "America/Toronto",
+            "vancouver": "America/Vancouver",
+            "bangalore": "Asia/Kolkata",
+            "mumbai": "Asia/Kolkata",
+            "tel aviv": "Asia/Jerusalem",
+            "dubai": "Asia/Dubai",
+            "sao paulo": "America/Sao_Paulo",
+        }
+
+        for city, tz in location_tz_map.items():
+            if city in location_lower:
+                return tz
 
         return None
 

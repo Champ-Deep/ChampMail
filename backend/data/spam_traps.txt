@@ -1,0 +1,29 @@
+# ChampMail Spam Trap Database
+# ============================
+# One entry per line. Entries are case-insensitive.
+#
+# Formats:
+#   user@domain.com       — exact email match
+#   @domain.com           — block entire domain
+#   #                     — comment line (ignored)
+#
+# This file is loaded into memory every 10 minutes.
+# Add newly discovered spam traps here and they'll take effect automatically.
+
+# ── Role-based addresses (common spam traps) ──
+# These are also checked dynamically by pattern matching,
+# but listing them here provides an explicit blocklist.
+
+# ── Known honeypot / spam trap domains ──
+@spamtrap.example.com
+@honeypot.example.com
+
+# ── Spamhaus-maintained trap domains ──
+# Add domains here as they are discovered
+
+# ── ISP recycled traps ──
+# Addresses at major ISPs that were abandoned and converted to traps.
+# Add specific addresses here as they are discovered by bounce monitoring.
+
+# ── Custom traps ──
+# Add any addresses your team identifies through bounce logs, complaints, etc.

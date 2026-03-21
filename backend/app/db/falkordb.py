@@ -368,6 +368,66 @@ class GraphDatabase:
         )
         return result[0] if result else {}
 
+    # ------------------------------------------------------------------ #
+    #  Research enrichment
+    # ------------------------------------------------------------------ #
+
+    def update_prospect_research(self, email: str, research_data: Dict) -> dict:
+        """Update a Prospect node with research findings."""
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            return {"updated": False}
+
+        set_clauses = []
+        params = {"email": email.lower()}
+
+        for key, value in research_data.items():
+            if value:
+                safe_key = key.replace("-", "_")
+                set_clauses.append(f"p.{safe_key} = ${safe_key}")
+                params[safe_key] = value
+
+        if not set_clauses:
+            return {"updated": False}
+
+        set_clauses.append("p.researched_at = datetime()")
+        set_str = ", ".join(set_clauses)
+
+        query = f"""
+            MATCH (p:Prospect {{email: $email}})
+            SET {set_str}
+            RETURN p
+        """
+        result = self.query(query, params)
+        return result[0] if result else {"updated": False}
+
+    def update_company_details(self, domain: str, details: Dict) -> dict:
+        """Update a Company node with enriched details."""
+        if not FALKORDB_AVAILABLE or self._graph is None:
+            return {"updated": False}
+
+        set_clauses = []
+        params = {"domain": domain.lower()}
+
+        for key, value in details.items():
+            if value:
+                safe_key = key.replace("-", "_")
+                set_clauses.append(f"c.{safe_key} = ${safe_key}")
+                params[safe_key] = value
+
+        if not set_clauses:
+            return {"updated": False}
+
+        set_clauses.append("c.updated_at = datetime()")
+        set_str = ", ".join(set_clauses)
+
+        query = f"""
+            MERGE (c:Company {{domain: $domain}})
+            SET {set_str}
+            RETURN c
+        """
+        result = self.query(query, params)
+        return result[0] if result else {"updated": False}
+
 
 # Global database instance
 graph_db = GraphDatabase()

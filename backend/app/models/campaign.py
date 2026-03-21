@@ -169,6 +169,13 @@ class Prospect(Base):
         String(50), default="active"
     )  # active, bounced, unsubscribed, do_not_contact
 
+    # Research enrichment
+    location = Column(String(255), nullable=True)
+    timezone = Column(String(100), nullable=True)
+    research_status = Column(String(50), default="pending")  # pending, completed, failed
+    research_completed_at = Column(DateTime, nullable=True)
+    linkedin_connection_status = Column(String(50), nullable=True)  # pending, connected, unavailable
+
     # Source
     source = Column(String(100), nullable=True)
     import_batch_id = Column(String(100), nullable=True)

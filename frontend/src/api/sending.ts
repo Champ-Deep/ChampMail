@@ -11,6 +11,7 @@ export interface SendEmailRequest {
   domain_id?: string;
   track_opens?: boolean;
   track_clicks?: boolean;
+  send_mode?: 'user_smtp' | null;
 }
 
 export interface SendEmailResponse {

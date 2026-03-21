@@ -138,6 +138,9 @@ class CampaignSendService:
                 "company_domain": prospect.company_domain or "",
                 "subject": resolved_subject,
                 "html_body": resolved_html,
+                # Research enrichment fields for timezone-aware scheduling
+                "timezone": getattr(prospect, "timezone", None) or "",
+                "location": getattr(prospect, "location", None) or "",
             }
             personalized_emails.append(email_data)
 
@@ -252,6 +255,26 @@ class CampaignSendService:
         sent = 0
         failed = 0
         skipped = 0
+
+        # Pre-flight: check domain capacity before starting the batch
+        from app.services.deliverability.rate_limiter import rate_limiter
+
+        domain_id = str(campaign.domain_id) if campaign.domain_id else ""
+        remaining_capacity = await rate_limiter.get_remaining(domain_id)
+        if remaining_capacity <= 0 and domain_id and domain_id != "user_smtp":
+            logger.warning(
+                "Campaign %s: domain %s has 0 remaining capacity — aborting batch",
+                campaign_id, domain_id,
+            )
+            await self._update_progress(
+                campaign_id, status="completed_limit_reached",
+                sent=0, failed=0, skipped=len(recipients), total=total,
+            )
+            return {
+                "campaign_id": campaign_id,
+                "status": "completed_limit_reached",
+                "sent": 0, "failed": 0, "skipped": len(recipients), "total": total,
+            }
 
         # Circuit breaker state
         consecutive_failures = 0
@@ -406,6 +429,7 @@ class CampaignSendService:
     ) -> Dict[str, Any]:
         """Send one email from a scheduled campaign, with retry on transient errors.
 
+        0. Deliverability gate — hard block on suppressed, spam-trap, over-limit
         1. Load cached resolved HTML from Redis
         2. Inject UTM params (if campaign has UTM config)
         3. Generate tracking URLs
@@ -422,6 +446,42 @@ class CampaignSendService:
         campaign = await self._get_campaign_by_id(campaign_id)
         if not campaign:
             raise ValueError(f"Campaign {campaign_id} not found")
+
+        # ── Deliverability gate (hard block) ──────────────────────────
+        from app.services.deliverability.send_gate import send_gate
+
+        domain_id = str(campaign.domain_id) if campaign.domain_id else ""
+        user_id = str(campaign.created_by) if campaign.created_by else ""
+
+        allowed, deny_reason = await send_gate.check(
+            domain_id=domain_id,
+            recipient_email=email_data["prospect_email"],
+            user_id=user_id,
+        )
+        if not allowed:
+            logger.warning(
+                "Send blocked by deliverability gate: %s → %s",
+                email_data["prospect_email"], deny_reason,
+            )
+            await self._record_failure(
+                campaign_id=campaign_id,
+                prospect_id=prospect_id,
+                error=f"Blocked: {deny_reason}",
+                recipient_email=email_data["prospect_email"],
+                subject=email_data.get("subject", ""),
+                team_id=campaign.team_id,
+            )
+            return {"status": "skipped", "reason": deny_reason}
+
+        # Reserve an atomic send slot on the domain counter
+        reserved = await send_gate.reserve_send_slot(domain_id)
+        if not reserved:
+            logger.warning(
+                "Domain %s daily limit reached — skipping %s",
+                domain_id, email_data["prospect_email"],
+            )
+            return {"status": "skipped", "reason": "Domain daily limit reached"}
+        # ── End deliverability gate ───────────────────────────────────
 
         html_body = email_data["html_body"]
 
