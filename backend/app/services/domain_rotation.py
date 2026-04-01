@@ -1,6 +1,6 @@
 import os
 from typing import Optional
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker as async_session
 from app.services.domain_service import domain_service
 
 
@@ -14,7 +14,7 @@ class DomainRotator:
                 domains = await domain_service.get_verified_domains(session, team_id)
 
                 if not domains:
-                    raise ValueError("No verified domains available for sending")
+                    return None  # No domains configured — send without domain rotation
 
                 selected_domain = None
                 lowest_utilization = float("inf")
@@ -30,7 +30,7 @@ class DomainRotator:
                         break
 
                 if selected_domain is None:
-                    raise ValueError("All domains have reached their daily limit")
+                    return None  # All domains at limit
 
                 return selected_domain.id
 

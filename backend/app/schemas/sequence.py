@@ -51,7 +51,7 @@ class SequenceStepCreate(BaseModel):
 
 class SequenceStepResponse(SequenceStepCreate):
     """Sequence step response."""
-    id: int | None = None
+    id: str | None = None
 
 
 class SequenceCreate(BaseModel):
@@ -70,7 +70,7 @@ class SequenceUpdate(BaseModel):
 
 class SequenceResponse(BaseModel):
     """Full sequence response."""
-    id: int
+    id: str
     name: str
     description: str = ""
     status: SequenceStatus = SequenceStatus.DRAFT
@@ -111,7 +111,7 @@ class EnrollmentResponse(BaseModel):
 class ProspectEnrollment(BaseModel):
     """Individual prospect enrollment status."""
     prospect_email: str
-    sequence_id: int
+    sequence_id: str
     status: EnrollmentStatus
     current_step: int
     enrolled_at: datetime | None = None

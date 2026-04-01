@@ -1,0 +1,1 @@
+# ChampMail CLI package

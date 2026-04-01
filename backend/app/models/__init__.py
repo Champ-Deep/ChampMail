@@ -8,8 +8,9 @@ from app.models.email_account import EmailAccount
 from app.models.workflow import Workflow, WorkflowExecution, WorkflowType, WorkflowStatus
 from app.models.domain import Domain, DNSCheckLog
 from app.models.campaign import Campaign, CampaignProspect, Prospect
-from app.models.sequence import Sequence, SequenceStep, SequenceEnrollment, SequenceStepExecution
+from app.models.sequence import Sequence, SequenceStep, SequenceEnrollment, SequenceStepExecution, SequenceStepLog
 from app.models.send_log import SendLog, DailyStats, BounceLog, APIKey
+from app.models.utm import CampaignUTMConfig, LinkClick, UTMPreset
 
 __all__ = [
     "User",
@@ -30,8 +31,12 @@ __all__ = [
     "SequenceStep",
     "SequenceEnrollment",
     "SequenceStepExecution",
+    "SequenceStepLog",
     "SendLog",
     "DailyStats",
     "BounceLog",
     "APIKey",
+    "CampaignUTMConfig",
+    "LinkClick",
+    "UTMPreset",
 ]

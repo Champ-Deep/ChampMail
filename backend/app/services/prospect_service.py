@@ -238,6 +238,57 @@ class ProspectService:
         prospects = result.scalars().all()
         return [self._prospect_to_dict(p) for p in prospects]
 
+    async def get_assigned_to_user(
+        self,
+        session: AsyncSession,
+        user_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Return only prospects assigned to a specific user."""
+        query = (
+            select(Prospect)
+            .where(Prospect.assigned_to_user_id == user_id)
+            .offset(offset)
+            .limit(limit)
+        )
+        result = await session.execute(query)
+        return [self._prospect_to_dict(p) for p in result.scalars().all()]
+
+    async def assign_to_user(
+        self,
+        session: AsyncSession,
+        prospect_id: str,
+        user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Assign a prospect to a specific user."""
+        await session.execute(
+            update(Prospect)
+            .where(Prospect.id == prospect_id)
+            .values(assigned_to_user_id=user_id, updated_at=datetime.utcnow())
+        )
+        await session.commit()
+        return await self.get_by_id(session, prospect_id)
+
+    async def save_research_data(
+        self,
+        session: AsyncSession,
+        prospect_id: str,
+        data: dict,
+        status: str = "completed",
+    ) -> None:
+        """Persist AI research results onto the prospect record."""
+        await session.execute(
+            update(Prospect)
+            .where(Prospect.id == prospect_id)
+            .values(
+                research_data=data,
+                research_status=status,
+                updated_at=datetime.utcnow(),
+            )
+        )
+        await session.commit()
+
     def _prospect_to_dict(self, prospect: Prospect) -> Dict[str, Any]:
         """Convert prospect model to dictionary."""
         return {
@@ -261,6 +312,9 @@ class ProspectService:
             "created_at": prospect.created_at.isoformat() if prospect.created_at else None,
             "updated_at": prospect.updated_at.isoformat() if prospect.updated_at else None,
             "last_contacted_at": prospect.last_contacted_at.isoformat() if prospect.last_contacted_at else None,
+            "assigned_to_user_id": str(prospect.assigned_to_user_id) if prospect.assigned_to_user_id else None,
+            "research_status": getattr(prospect, "research_status", "pending"),
+            "research_data": getattr(prospect, "research_data", None),
         }
 
 

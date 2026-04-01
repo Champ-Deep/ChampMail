@@ -1,4 +1,6 @@
 export { default as api } from './client';
+export { adminProspectsApi } from './adminProspects';
+export type { AdminProspect, AdminUser, CreateProspectData, AssignProspectData, EnrollProspectData, CreateUserData, SequenceStepLog } from './adminProspects';
 export { authApi } from './auth';
 export { templatesApi } from './templates';
 export { prospectsApi } from './prospects';

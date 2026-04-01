@@ -24,6 +24,7 @@ from app.core.security import (
     TokenData,
     require_auth,
 )
+from app.core.admin_security import require_admin
 from app.db.postgres import get_db_session
 from app.services.user_service import user_service
 
@@ -42,10 +43,12 @@ class LoginRequest(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    """Registration request."""
+    """Registration request — admin-only."""
     email: EmailStr
     password: str
     name: str = ""
+    role: str = "user"          # admin can set role at creation time
+    team_id: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -126,12 +129,14 @@ async def login(
 @router.post("/register", response_model=UserResponse)
 async def register(
     request: RegisterRequest,
+    admin: TokenData = Depends(require_admin),
     session: AsyncSession = Depends(get_db_session),
 ):
     """
-    Register a new user.
+    Create a new user account. Admin only.
 
-    Creates a new user account in the database.
+    Only authenticated admins may create accounts.
+    The admin can specify role and team_id at creation time.
     """
     # Check if email already exists
     if await user_service.email_exists(session, request.email):
@@ -146,6 +151,8 @@ async def register(
         email=request.email,
         password=request.password,
         full_name=request.name,
+        role=request.role,
+        team_id=request.team_id,
     )
     await session.commit()
 

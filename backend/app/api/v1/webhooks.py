@@ -46,7 +46,7 @@ class EmailEvent(BaseModel):
 
 class LeadEvent(BaseModel):
     """Webhook payload for new leads from forms/integrations."""
-    source: str  # e.g., "lakeb2b_form", "apollo", "manual"
+    source: str
     email: str
     first_name: str = ""
     last_name: str = ""
@@ -64,7 +64,7 @@ class N8NWorkflowEvent(BaseModel):
     """Event from n8n workflow execution."""
     workflow_id: str
     execution_id: str
-    event: str  # e.g., "started", "completed", "failed"
+    event: str
     data: dict[str, Any] = {}
 
 
@@ -73,33 +73,15 @@ def verify_webhook_signature(
     signature: str | None,
     secret: str,
 ) -> bool:
-    """
-    Verify HMAC-SHA256 webhook signature for security.
-
-    Args:
-        payload: Raw request body as bytes
-        signature: Signature from X-Webhook-Signature header
-        secret: Webhook secret from settings
-
-    Returns:
-        True if signature is valid, False otherwise
-    """
-    # In development mode with no secret, skip verification
     if not secret:
         return True
-
-    # Signature is required in production
     if not signature:
         return False
-
-    # Compute expected HMAC signature
     expected = hmac.new(
         secret.encode('utf-8'),
         payload,
         hashlib.sha256
     ).hexdigest()
-
-    # Use constant-time comparison to prevent timing attacks
     return hmac.compare_digest(signature, expected)
 
 
@@ -109,82 +91,36 @@ async def handle_email_event(
     event: EmailEvent,
     x_webhook_signature: str | None = Header(default=None),
 ):
-    """
-    Handle email tracking events from BillionMail.
-
-    Events:
-    - sent: Email was sent
-    - delivered: Email was delivered
-    - opened: Recipient opened the email
-    - clicked: Recipient clicked a link
-    - replied: Recipient replied
-    - bounced: Email bounced
-    - unsubscribed: Recipient unsubscribed
-    - complained: Recipient marked as spam
-    """
-    # Verify webhook signature in production
+    """Handle email tracking events from BillionMail."""
     if settings.environment == "production":
         body = await request.body()
         if not verify_webhook_signature(body, x_webhook_signature, settings.webhook_secret):
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid webhook signature. Ensure X-Webhook-Signature header is present and correct."
-            )
+            raise HTTPException(status_code=401, detail="Invalid webhook signature.")
 
     timestamp = event.timestamp or datetime.utcnow()
+    account = event.prospect_email.split("@")[1] if "@" in event.prospect_email else "champmail"
 
-    # Update email record in graph
-    if event.event_type == EmailEventType.OPENED:
-        query = """
-            MATCH (p:Prospect {email: $email})-[:RECEIVED]->(e:Email)
-            WHERE e.sequence_id = $sequence_id AND e.step_number = $step
-            SET e.opened_at = $timestamp
-            RETURN e
-        """
-        graph_db.query(query, {
-            'email': event.prospect_email.lower(),
-            'sequence_id': event.sequence_id,
-            'step': event.step_number,
-            'timestamp': timestamp.isoformat(),
-        })
+    # Ingest the event into ChampGraph for relationship tracking
+    event_content = (
+        f"Email Event: {event.event_type.value}\n"
+        f"Prospect: {event.prospect_email}\n"
+        f"Timestamp: {timestamp.isoformat()}\n"
+        f"Sequence ID: {event.sequence_id}\n"
+        f"Step: {event.step_number}\n"
+    )
+    if event.metadata:
+        for k, v in event.metadata.items():
+            event_content += f"{k}: {v}\n"
 
-    elif event.event_type == EmailEventType.CLICKED:
-        query = """
-            MATCH (p:Prospect {email: $email})-[:RECEIVED]->(e:Email)
-            WHERE e.sequence_id = $sequence_id AND e.step_number = $step
-            SET e.clicked_at = $timestamp,
-                e.click_url = $url
-            RETURN e
-        """
-        graph_db.query(query, {
-            'email': event.prospect_email.lower(),
-            'sequence_id': event.sequence_id,
-            'step': event.step_number,
-            'timestamp': timestamp.isoformat(),
-            'url': event.metadata.get('url', ''),
-        })
+    await graph_db._ingest(
+        content=event_content,
+        name=f"Email {event.event_type.value}: {event.prospect_email}",
+        account_name=account,
+        source=f"email_event_{event.event_type.value}",
+    )
 
-    elif event.event_type == EmailEventType.REPLIED:
-        # Mark email as replied
-        query = """
-            MATCH (p:Prospect {email: $email})-[:RECEIVED]->(e:Email)
-            WHERE e.sequence_id = $sequence_id AND e.step_number = $step
-            SET e.replied_at = $timestamp
-            WITH p
-            MATCH (p)-[enroll:ENROLLED_IN]->(s:Sequence)
-            WHERE id(s) = $sequence_id
-            SET enroll.status = 'replied'
-            RETURN p
-        """
-        graph_db.query(query, {
-            'email': event.prospect_email.lower(),
-            'sequence_id': event.sequence_id,
-            'step': event.step_number,
-            'timestamp': timestamp.isoformat(),
-        })
-
-    elif event.event_type == EmailEventType.BOUNCED:
-        # Process bounce through tracking service for detailed classification
+    # Process bounces through tracking service
+    if event.event_type == EmailEventType.BOUNCED:
         try:
             await tracking_service.process_bounce_webhook({
                 "email": event.prospect_email,
@@ -194,37 +130,7 @@ async def handle_email_event(
                 "message_id": event.email_id or "",
             })
         except Exception:
-            pass  # Tracking service failure shouldn't break webhook
-
-        # Update prospect and enrollment status in graph DB
-        query = """
-            MATCH (p:Prospect {email: $email})
-            SET p.email_status = 'bounced',
-                p.bounce_type = $bounce_type
-            WITH p
-            MATCH (p)-[enroll:ENROLLED_IN]->(s:Sequence)
-            SET enroll.status = 'bounced'
-            RETURN p
-        """
-        graph_db.query(query, {
-            'email': event.prospect_email.lower(),
-            'bounce_type': event.metadata.get('bounce_type', 'unknown'),
-        })
-
-    elif event.event_type == EmailEventType.UNSUBSCRIBED:
-        query = """
-            MATCH (p:Prospect {email: $email})
-            SET p.unsubscribed = true,
-                p.unsubscribed_at = $timestamp
-            WITH p
-            MATCH (p)-[enroll:ENROLLED_IN]->(s:Sequence)
-            SET enroll.status = 'unsubscribed'
-            RETURN p
-        """
-        graph_db.query(query, {
-            'email': event.prospect_email.lower(),
-            'timestamp': timestamp.isoformat(),
-        })
+            pass
 
     return {"status": "processed", "event_type": event.event_type}
 
@@ -234,92 +140,34 @@ async def handle_new_lead(
     lead: LeadEvent,
     x_webhook_signature: str | None = Header(default=None),
 ):
-    """
-    Handle new lead submission from forms/integrations.
-
-    This is the entry point for leads from:
-    - LakeB2B contact forms
-    - Apollo imports
-    - Manual entry via n8n
-    """
-    # Create or update prospect
-    existing = graph_db.get_prospect_by_email(lead.email)
-
-    if existing and existing.get('p'):
-        # Update existing prospect with new data
-        updates = {
-            'first_name': lead.first_name,
-            'last_name': lead.last_name,
-            'title': lead.title,
-            'phone': lead.phone,
-        }
-        updates = {k: v for k, v in updates.items() if v}
-
-        if updates:
-            set_clause = ', '.join(f'p.{k} = ${k}' for k in updates.keys())
-            query = f"""
-                MATCH (p:Prospect {{email: $email}})
-                SET {set_clause},
-                    p.last_form_submission = datetime(),
-                    p.inquiry_type = $inquiry_type,
-                    p.comments = $comments
-                RETURN p
-            """
-            updates['email'] = lead.email.lower()
-            updates['inquiry_type'] = lead.inquiry_type
-            updates['comments'] = lead.comments
-            graph_db.query(query, updates)
-
-        status = "updated"
-    else:
-        # Create new prospect
-        graph_db.create_prospect(
-            email=lead.email,
-            first_name=lead.first_name,
-            last_name=lead.last_name,
-            title=lead.title,
-            phone=lead.phone,
-            inquiry_type=lead.inquiry_type,
-            comments=lead.comments,
-            source=lead.source,
-        )
-        status = "created"
+    """Handle new lead submission from forms/integrations."""
+    # Create prospect in ChampGraph
+    await graph_db.create_prospect(
+        email=lead.email,
+        first_name=lead.first_name,
+        last_name=lead.last_name,
+        title=lead.title,
+        phone=lead.phone,
+        inquiry_type=lead.inquiry_type,
+        comments=lead.comments,
+        source=lead.source,
+    )
 
     # Create/link company if provided
     if lead.company_domain:
-        graph_db.create_company(
+        await graph_db.create_company(
             name=lead.company_name or lead.company_domain,
             domain=lead.company_domain,
             industry=lead.industry,
         )
-        graph_db.link_prospect_to_company(
+        await graph_db.link_prospect_to_company(
             prospect_email=lead.email,
             company_domain=lead.company_domain,
             title=lead.title,
         )
 
-    # Record intent signal if inquiry type suggests interest
-    if lead.inquiry_type:
-        signal_query = """
-            MATCH (p:Prospect {email: $email})
-            CREATE (s:IntentSignal {
-                type: 'form_submission',
-                description: $inquiry_type,
-                source: $source,
-                detected_at: datetime(),
-                relevance_score: 0.7
-            })
-            CREATE (p)-[:HAS_SIGNAL]->(s)
-            RETURN s
-        """
-        graph_db.query(signal_query, {
-            'email': lead.email.lower(),
-            'inquiry_type': lead.inquiry_type,
-            'source': lead.source,
-        })
-
     return {
-        "status": status,
+        "status": "created",
         "prospect_email": lead.email,
         "source": lead.source,
     }
@@ -330,30 +178,15 @@ async def handle_n8n_event(
     event: N8NWorkflowEvent,
     x_n8n_signature: str | None = Header(default=None),
 ):
-    """
-    Handle workflow events from n8n.
-
-    Used for:
-    - Workflow execution notifications
-    - Error alerts
-    - Custom workflow triggers
-    """
-    # Log workflow event
-    # TODO: Store in a proper logging/metrics system
-
+    """Handle workflow events from n8n."""
     if event.event == "completed":
-        # Workflow completed successfully
         return {"status": "acknowledged", "workflow_id": event.workflow_id}
-
     elif event.event == "failed":
-        # Workflow failed - log error
-        # TODO: Send alert via Slack/email
         return {
             "status": "acknowledged",
             "workflow_id": event.workflow_id,
             "error": event.data.get("error", "Unknown error"),
         }
-
     return {"status": "acknowledged"}
 
 
@@ -362,15 +195,10 @@ async def trigger_n8n_workflow(
     workflow_name: str,
     request: Request,
 ):
-    """
-    Trigger an n8n workflow by name.
-
-    Forwards the request body to n8n webhook.
-    """
+    """Trigger an n8n workflow by name."""
     import httpx
 
     body = await request.json()
-
     webhook_url = f"{settings.n8n_webhook_url}/{workflow_name}"
 
     try:

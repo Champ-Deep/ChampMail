@@ -2,7 +2,7 @@ import logging
 
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker as async_session
 import asyncio
 
 logger = logging.getLogger(__name__)

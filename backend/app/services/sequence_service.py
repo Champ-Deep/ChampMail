@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from uuid import uuid4
 from datetime import datetime, timedelta
 
-from app.models import Sequence, SequenceStep, SequenceEnrollment, SequenceStepExecution, Prospect
+from app.models import Sequence, SequenceStep, SequenceEnrollment, SequenceStepExecution, SequenceStepLog, Prospect
 
 
 class SequenceService:
@@ -31,7 +31,7 @@ class SequenceService:
         self, session: AsyncSession, team_id: str, status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Get all sequences for a team."""
-        query = select(Sequence).where(Sequence.team_id == team_id)
+        query = select(Sequence).options(selectinload(Sequence.steps)).where(Sequence.team_id == team_id)
         if status:
             query = query.where(Sequence.status == status)
 
@@ -42,7 +42,7 @@ class SequenceService:
     async def get_active_sequences(self, session: AsyncSession) -> List[Dict[str, Any]]:
         """Get all active sequences."""
         result = await session.execute(
-            select(Sequence).where(Sequence.status == "active")
+            select(Sequence).options(selectinload(Sequence.steps)).where(Sequence.status == "active")
         )
         sequences = result.scalars().all()
         return [self._sequence_to_dict(s) for s in sequences]
@@ -68,7 +68,13 @@ class SequenceService:
 
         session.add(sequence)
         await session.commit()
-        await session.refresh(sequence)
+
+        result = await session.execute(
+            select(Sequence)
+            .options(selectinload(Sequence.steps))
+            .where(Sequence.id == sequence.id)
+        )
+        sequence = result.scalar_one()
 
         return self._sequence_to_dict(sequence)
 
@@ -443,6 +449,70 @@ class SequenceService:
             "subject": execution.subject or step.subject_template if step else None,
             "body": execution.html_body or step.html_template if step else None,
             "scheduled_for": execution.scheduled_for.isoformat() if execution.scheduled_for else None,
+        }
+
+
+    async def log_step(
+        self,
+        session: AsyncSession,
+        prospect_id: str,
+        sequence_id: str,
+        enrollment_id: str,
+        sequence_step: int,
+        action_taken: str,
+        reply_detected: bool,
+        campaign_id: Optional[str] = None,
+        email_content_summary: Optional[str] = None,
+        raw_subject: Optional[str] = None,
+        raw_body: Optional[str] = None,
+    ) -> None:
+        """Write an immutable step log row for the 3-point follow-up sequence."""
+        log = SequenceStepLog(
+            id=uuid4(),
+            prospect_id=prospect_id,
+            campaign_id=campaign_id,
+            sequence_id=sequence_id,
+            enrollment_id=enrollment_id,
+            sequence_step=sequence_step,
+            action_taken=action_taken,
+            reply_detected=reply_detected,
+            email_content_summary=email_content_summary,
+            raw_subject=raw_subject,
+            raw_body_snippet=(raw_body or "")[:500],
+            timestamp=datetime.utcnow(),
+        )
+        session.add(log)
+        await session.commit()
+
+    async def get_logs_for_prospect(
+        self,
+        session: AsyncSession,
+        prospect_id: str,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Return all sequence step logs for a prospect, newest first."""
+        result = await session.execute(
+            select(SequenceStepLog)
+            .where(SequenceStepLog.prospect_id == prospect_id)
+            .order_by(SequenceStepLog.timestamp.desc())
+            .limit(limit)
+        )
+        return [self._log_to_dict(log) for log in result.scalars().all()]
+
+    def _log_to_dict(self, log: SequenceStepLog) -> Dict[str, Any]:
+        return {
+            "id": str(log.id),
+            "prospect_id": str(log.prospect_id),
+            "campaign_id": str(log.campaign_id) if log.campaign_id else None,
+            "sequence_id": str(log.sequence_id),
+            "enrollment_id": str(log.enrollment_id),
+            "sequence_step": log.sequence_step,
+            "action_taken": log.action_taken,
+            "reply_detected": log.reply_detected,
+            "email_content_summary": log.email_content_summary,
+            "raw_subject": log.raw_subject,
+            "raw_body_snippet": log.raw_body_snippet,
+            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
         }
 
 

@@ -28,11 +28,9 @@ class Settings(BaseSettings):
     # API
     api_v1_prefix: str = "/api/v1"
 
-    # FalkorDB
-    falkordb_host: str = "localhost"
-    falkordb_port: int = 6379
-    falkordb_password: str = ""
-    falkordb_database: str = "champions_email_engine"
+    # ChampGraph (Knowledge Graph via Graphiti)
+    champgraph_url: str = "http://localhost:8080"
+    champgraph_api_key: str = ""
 
     # Redis Cache
     redis_host: str = "localhost"
@@ -88,10 +86,10 @@ class Settings(BaseSettings):
 
     # Model selection (all via OpenRouter)
     research_model: str = "perplexity/sonar-pro"
-    segmentation_model: str = "anthropic/claude-sonnet-4-20250514"
-    pitch_model: str = "anthropic/claude-sonnet-4-20250514"
-    html_model: str = "anthropic/claude-sonnet-4-20250514"
-    general_model: str = "anthropic/claude-sonnet-4-20250514"
+    segmentation_model: str = "anthropic/claude-sonnet-4"
+    pitch_model: str = "anthropic/claude-sonnet-4"
+    html_model: str = "anthropic/claude-sonnet-4"
+    general_model: str = "anthropic/claude-sonnet-4"
     embedding_model: str = "openai/text-embedding-3-small"
 
     # Research caching
@@ -107,13 +105,6 @@ class Settings(BaseSettings):
     thesys_base_url: str = "https://api.thesys.dev/v1/embed"
     thesys_model: str = "c1/google/gemini-3-flash"
     thesys_max_tokens: int = 8192
-
-    @property
-    def falkordb_url(self) -> str:
-        """Build FalkorDB connection URL."""
-        if self.falkordb_password:
-            return f"redis://:{self.falkordb_password}@{self.falkordb_host}:{self.falkordb_port}"
-        return f"redis://{self.falkordb_host}:{self.falkordb_port}"
 
     @property
     def redis_url(self) -> str:

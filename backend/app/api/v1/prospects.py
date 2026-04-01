@@ -1,6 +1,6 @@
 """
 Prospect API endpoints.
-CRUD operations for managing prospects in the knowledge graph.
+CRUD operations for managing prospects via ChampGraph + PostgreSQL.
 """
 
 from __future__ import annotations
@@ -8,7 +8,9 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Depends
 
 from app.db.falkordb import graph_db
+from app.db.postgres import get_db_session
 from app.core.security import require_auth, TokenData
+from app.core.admin_security import require_admin
 from app.schemas.prospect import (
     ProspectCreate,
     ProspectUpdate,
@@ -17,6 +19,8 @@ from app.schemas.prospect import (
     BulkProspectImport,
     BulkImportResponse,
 )
+from app.services.prospect_service import prospect_service
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/prospects", tags=["Prospects"])
 
@@ -25,13 +29,12 @@ def _parse_prospect_result(result: dict) -> ProspectResponse:
     """Parse graph query result into ProspectResponse."""
     prospect_data = result.get('p', {})
 
-    # Handle both raw dict and parsed node format
     if isinstance(prospect_data, dict) and 'properties' in prospect_data:
         props = prospect_data['properties']
         prospect_id = prospect_data.get('id')
     else:
         props = prospect_data if isinstance(prospect_data, dict) else {}
-        prospect_id = None
+        prospect_id = props.get('id') or props.get('name')
 
     company = None
     company_data = result.get('c')
@@ -70,49 +73,68 @@ async def list_prospects(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     """
-    List prospects with optional search and filtering.
+    List prospects.
 
-    - **query**: Search in name and email
-    - **industry**: Filter by company industry
-    - **skip**: Pagination offset
-    - **limit**: Max results (1-200)
+    - Admins see all prospects (via ChampGraph search).
+    - Regular users only see prospects assigned to them (via PostgreSQL).
     """
-    results = graph_db.search_prospects(
-        query_text=query,
-        industry=industry,
-        limit=limit,
-        skip=skip,
-    )
-
-    items = [_parse_prospect_result(r) for r in results]
+    if user.role != "user":
+        # Admin / team_admin / data_team: full graph search
+        results = await graph_db.search_prospects(
+            query_text=query,
+            industry=industry,
+            limit=limit,
+            skip=skip,
+        )
+        items = []
+        for r in results:
+            try:
+                parsed = _parse_prospect_result(r)
+                if parsed.email:  # Only include results with valid email
+                    items.append(parsed)
+            except Exception:
+                pass
+    else:
+        # Regular user: only assigned prospects from PostgreSQL
+        pg_prospects = await prospect_service.get_assigned_to_user(
+            session, user.user_id, limit=limit, offset=skip
+        )
+        items = [
+            ProspectResponse(
+                id=p["id"],
+                email=p["email"],
+                first_name=p.get("first_name", ""),
+                last_name=p.get("last_name", ""),
+                title=p.get("job_title", ""),
+                phone="",
+                linkedin_url=p.get("linkedin_url", ""),
+                created_at=p.get("created_at"),
+            )
+            for p in pg_prospects
+        ]
 
     return ProspectListResponse(
         items=items,
-        total=len(items),  # TODO: Add count query for accurate total
+        total=len(items),
         skip=skip,
         limit=limit,
     )
 
 
 @router.post("", response_model=ProspectResponse, status_code=201)
-async def create_prospect(prospect: ProspectCreate, user: TokenData = Depends(require_auth)):
-    """
-    Create a new prospect.
-
-    If company_domain is provided, also creates/links company.
-    """
-    # Check if prospect already exists
-    existing = graph_db.get_prospect_by_email(prospect.email)
+async def create_prospect(prospect: ProspectCreate, user: TokenData = Depends(require_admin)):
+    """Create a new prospect."""
+    existing = await graph_db.get_prospect_by_email(prospect.email)
     if existing and existing.get('p'):
         raise HTTPException(
             status_code=409,
             detail=f"Prospect with email {prospect.email} already exists"
         )
 
-    # Create prospect
-    result = graph_db.create_prospect(
+    result = await graph_db.create_prospect(
         email=prospect.email,
         first_name=prospect.first_name,
         last_name=prospect.last_name,
@@ -121,131 +143,91 @@ async def create_prospect(prospect: ProspectCreate, user: TokenData = Depends(re
         linkedin_url=prospect.linkedin_url,
     )
 
-    # Create company and link if provided
     if prospect.company_domain:
-        graph_db.create_company(
+        await graph_db.create_company(
             name=prospect.company_name or prospect.company_domain,
             domain=prospect.company_domain,
             industry=prospect.industry or "",
         )
-        graph_db.link_prospect_to_company(
+        await graph_db.link_prospect_to_company(
             prospect_email=prospect.email,
             company_domain=prospect.company_domain,
             title=prospect.title,
         )
 
-    # Fetch full prospect with relationships
-    full_result = graph_db.get_prospect_by_email(prospect.email)
+    full_result = await graph_db.get_prospect_by_email(prospect.email)
     return _parse_prospect_result(full_result or result)
 
 
 @router.get("/{email}", response_model=ProspectResponse)
 async def get_prospect(email: str, user: TokenData = Depends(require_auth)):
-    """
-    Get prospect by email address.
-
-    Returns prospect with company relationship if exists.
-    """
-    result = graph_db.get_prospect_by_email(email)
+    """Get prospect by email address."""
+    result = await graph_db.get_prospect_by_email(email)
     if not result or not result.get('p'):
         raise HTTPException(status_code=404, detail="Prospect not found")
-
     return _parse_prospect_result(result)
 
 
 @router.put("/{email}", response_model=ProspectResponse)
 async def update_prospect(email: str, update: ProspectUpdate, user: TokenData = Depends(require_auth)):
-    """
-    Update prospect fields.
-
-    Only provided fields are updated.
-    """
-    # Check prospect exists
-    existing = graph_db.get_prospect_by_email(email)
+    """Update prospect fields."""
+    existing = await graph_db.get_prospect_by_email(email)
     if not existing or not existing.get('p'):
         raise HTTPException(status_code=404, detail="Prospect not found")
 
-    # Build update query
     updates = {k: v for k, v in update.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    set_clause = ', '.join(f'p.{k} = ${k}' for k in updates.keys())
-    query = f"""
-        MATCH (p:Prospect {{email: $email}})
-        SET {set_clause}
-        RETURN p
-    """
-    updates['email'] = email.lower()
-    graph_db.query(query, updates)
+    # Re-ingest with updated data to update the graph
+    await graph_db.create_prospect(email=email, **updates)
 
-    # Return updated prospect
-    result = graph_db.get_prospect_by_email(email)
+    result = await graph_db.get_prospect_by_email(email)
     return _parse_prospect_result(result)
 
 
 @router.delete("/{email}", status_code=204)
 async def delete_prospect(email: str, user: TokenData = Depends(require_auth)):
-    """
-    Delete prospect (soft delete - marks as inactive).
-
-    Note: Does not actually remove from graph to preserve history.
-    """
-    existing = graph_db.get_prospect_by_email(email)
+    """Delete prospect (soft delete via re-ingest with deleted status)."""
+    existing = await graph_db.get_prospect_by_email(email)
     if not existing or not existing.get('p'):
         raise HTTPException(status_code=404, detail="Prospect not found")
 
-    # Soft delete - set status to deleted
-    query = """
-        MATCH (p:Prospect {email: $email})
-        SET p.status = 'deleted', p.deleted_at = datetime()
-        RETURN p
-    """
-    graph_db.query(query, {'email': email.lower()})
+    await graph_db._ingest(
+        content=f"Prospect {email} marked as deleted",
+        name=f"Prospect Deleted: {email}",
+        account_name=email.split("@")[1] if "@" in email else "champmail",
+        source="prospect_deletion",
+    )
 
 
 @router.post("/{email}/enrich", response_model=ProspectResponse)
 async def enrich_prospect(email: str, user: TokenData = Depends(require_auth)):
-    """
-    Trigger enrichment for a prospect.
-
-    Calls external enrichment service (Lake B2B, Apollo, etc.)
-    and updates prospect data.
-
-    TODO: Implement actual enrichment logic
-    """
-    existing = graph_db.get_prospect_by_email(email)
+    """Trigger enrichment for a prospect (TODO: implement enrichment logic)."""
+    existing = await graph_db.get_prospect_by_email(email)
     if not existing or not existing.get('p'):
         raise HTTPException(status_code=404, detail="Prospect not found")
-
-    # TODO: Call enrichment service
-    # For now, just return existing data
     return _parse_prospect_result(existing)
 
 
 @router.get("/{email}/timeline")
 async def get_prospect_timeline(email: str, user: TokenData = Depends(require_auth)):
-    """
-    Get activity timeline for a prospect.
-
-    Returns all interactions: emails sent, opens, clicks, replies.
-    """
-    existing = graph_db.get_prospect_by_email(email)
+    """Get activity timeline for a prospect via ChampGraph."""
+    existing = await graph_db.get_prospect_by_email(email)
     if not existing or not existing.get('p'):
         raise HTTPException(status_code=404, detail="Prospect not found")
 
-    # Query all email interactions
-    query = """
-        MATCH (p:Prospect {email: $email})-[:RECEIVED]->(e:Email)
-        RETURN e
-        ORDER BY e.sent_at DESC
-        LIMIT 50
-    """
-    emails = graph_db.query(query, {'email': email.lower()})
+    account = email.split("@")[1] if "@" in email else "champmail"
+    context = await graph_db.get_email_context(
+        account_name=account,
+        contact_email=email,
+    )
 
     return {
         "prospect_email": email,
-        "events": emails,
+        "email_history": context.get("email_history", []),
+        "all_interactions": context.get("all_interactions", []),
+        "topics_discussed": context.get("topics_discussed", []),
     }
 
 
@@ -254,14 +236,7 @@ async def bulk_import_prospects(
     data: BulkProspectImport,
     user: TokenData = Depends(require_auth)
 ):
-    """
-    Bulk import prospects.
-
-    Creates prospects and optionally links to companies.
-    Returns count of created, updated, and failed records.
-
-    Requires authentication. User must be logged in to import prospects.
-    """
+    """Bulk import prospects into ChampGraph."""
     created = 0
     updated = 0
     failed = 0
@@ -269,21 +244,16 @@ async def bulk_import_prospects(
 
     for prospect in data.prospects:
         try:
-            existing = graph_db.get_prospect_by_email(prospect.email)
+            existing = await graph_db.get_prospect_by_email(prospect.email)
 
             if existing and existing.get('p'):
-                # Update existing
                 updates = prospect.model_dump(exclude={'email', 'company_name', 'company_domain', 'industry'})
                 updates = {k: v for k, v in updates.items() if v}
                 if updates:
-                    set_clause = ', '.join(f'p.{k} = ${k}' for k in updates.keys())
-                    query = f"MATCH (p:Prospect {{email: $email}}) SET {set_clause}"
-                    updates['email'] = prospect.email.lower()
-                    graph_db.query(query, updates)
+                    await graph_db.create_prospect(email=prospect.email, **updates)
                 updated += 1
             else:
-                # Create new
-                graph_db.create_prospect(
+                await graph_db.create_prospect(
                     email=prospect.email,
                     first_name=prospect.first_name,
                     last_name=prospect.last_name,
@@ -292,14 +262,13 @@ async def bulk_import_prospects(
                     linkedin_url=prospect.linkedin_url,
                 )
 
-                # Create company link if provided
                 if prospect.company_domain:
-                    graph_db.create_company(
+                    await graph_db.create_company(
                         name=prospect.company_name or prospect.company_domain,
                         domain=prospect.company_domain,
                         industry=prospect.industry or "",
                     )
-                    graph_db.link_prospect_to_company(
+                    await graph_db.link_prospect_to_company(
                         prospect_email=prospect.email,
                         company_domain=prospect.company_domain,
                         title=prospect.title,
@@ -314,5 +283,5 @@ async def bulk_import_prospects(
         created=created,
         updated=updated,
         failed=failed,
-        errors=errors[:10],  # Limit errors in response
+        errors=errors[:10],
     )

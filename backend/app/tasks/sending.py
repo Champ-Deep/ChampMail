@@ -23,7 +23,7 @@ async def _inject_tracking(html_body: str, campaign_id: str, prospect_id: str) -
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_email_task(self, prospect_id: str, template_id: str, subject: str, html_body: str, domain_id: str = None, campaign_id: str = None):
     try:
-        from app.db.postgres import async_session
+        from app.db.postgres import async_session_maker as async_session
         from app.services.prospect_service import prospect_service
 
         async def _send():
@@ -70,7 +70,7 @@ def send_email_task(self, prospect_id: str, template_id: str, subject: str, html
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_batch_task(self, campaign_id: str, prospect_ids: list[str], template_id: str, domain_id: str = None):
     try:
-        from app.db.postgres import async_session
+        from app.db.postgres import async_session_maker as async_session
         from app.services.prospect_service import prospect_service
         from app.services.campaigns import campaign_service
 

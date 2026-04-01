@@ -314,20 +314,104 @@ async def get_recipients(
 
 
 async def _send_campaign_background(campaign_id: str):
-    """Background task to send campaign emails."""
+    """Background task to send campaign emails via the mail engine."""
+    from app.services.mail_engine_client import mail_engine_client
+    from app.services.domain_rotation import domain_rotator
+    from app.services.tracking_service import tracking_service
+    from app.db.falkordb import graph_db
+
     async with get_db() as session:
+        campaign = await campaign_service.get_campaign(session, campaign_id)
+        if not campaign:
+            logger.error("Campaign %s not found", campaign_id)
+            return
+
         recipients = await campaign_service.get_recipients(session, campaign_id, status="enrolled")
+
+        # Try to get AI pipeline results for personalized content
+        pipeline_results = await campaign_pipeline.get_all_results(campaign_id)
+        personalized_emails = {}
+        if pipeline_results and pipeline_results.get("emails"):
+            for email_data in pipeline_results["emails"]:
+                prospect_email = email_data.get("email", "")
+                if prospect_email:
+                    personalized_emails[prospect_email.lower()] = email_data
+
+        sent_count = 0
+        failed_count = 0
 
         for recipient in recipients:
             try:
-                logger.info("Processing recipient %s for campaign %s", recipient["email"], campaign_id)
+                prospect_email = recipient["email"]
+                prospect_id = recipient["prospect_id"]
+
+                # Use personalized content if available, otherwise campaign template
+                email_data = personalized_emails.get(prospect_email.lower(), {})
+                subject = email_data.get("subject") or campaign.name
+                html_body = email_data.get("html_body") or email_data.get("body", "")
+
+                if not html_body:
+                    logger.warning("No email body for %s in campaign %s, skipping", prospect_email, campaign_id)
+                    failed_count += 1
+                    continue
+
+                # Inject tracking
+                try:
+                    tracking_urls = await tracking_service.generate_tracking_urls(campaign_id, prospect_id)
+                    html_body = tracking_service.wrap_links_in_html(
+                        html_body,
+                        tracking_urls["click_base_url"],
+                        tracking_urls["signature"],
+                    )
+                    html_body = html_body.replace("{{tracking_url}}", tracking_urls.get("pixel_url", ""))
+                    html_body = html_body.replace("{{unsubscribe_url}}", tracking_urls.get("unsubscribe_url", ""))
+                except Exception:
+                    pass  # Send even if tracking injection fails
+
+                # Select domain for sending
+                try:
+                    domain_id = await domain_rotator.select_domain()
+                except ValueError:
+                    domain_id = None
+
+                result = await mail_engine_client.send_email(
+                    recipient=prospect_email,
+                    recipient_name=f"{recipient.get('first_name', '')} {recipient.get('last_name', '')}".strip(),
+                    subject=subject,
+                    html_body=html_body,
+                    from_address=campaign.from_address or "",
+                    domain_id=domain_id or "",
+                    track_opens=True,
+                    track_clicks=True,
+                )
+
+                # Record in ChampGraph for relationship intelligence
+                account = prospect_email.split("@")[1] if "@" in prospect_email else "champmail"
+                await graph_db.record_email_sent(
+                    prospect_email=prospect_email,
+                    sequence_id=0,
+                    step_number=0,
+                    subject=subject,
+                    body_hash=str(hash(html_body)),
+                )
+
+                sent_count += 1
+                logger.info("Sent to %s (message_id=%s)", prospect_email, result.message_id)
+
             except Exception as e:
-                logger.error("Error processing %s: %s", recipient["email"], e)
+                failed_count += 1
+                logger.error("Failed to send to %s: %s", recipient.get("email", "?"), e)
+
+        # Update campaign stats
+        if sent_count > 0 or failed_count > 0:
+            await campaign_service.update_stats(session, campaign_id, sent_count, failed_count)
 
         # Check if all recipients have been processed
         remaining = await campaign_service.get_recipients(session, campaign_id, status="enrolled", limit=1)
         if not remaining:
             await campaign_service.update_campaign_status(session, campaign_id, CampaignStatus.COMPLETED)
+
+        logger.info("Campaign %s: sent=%d, failed=%d", campaign_id, sent_count, failed_count)
 
 
 @router.post("/{campaign_id}/send")

@@ -1,7 +1,7 @@
 [project]
 name = "champions-email-engine"
 version = "0.1.0"
-description = "Champion's Email Automation Engine - FastAPI Backend"
+description = "Champion's Email Automation Engine - FastAPI Backend + CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -9,11 +9,7 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
 
-    # Database
-    "falkordb>=1.0.0",
-
-    # Note: graphiti-core requires OpenAI for embeddings
-    # Install separately if needed: pip install 'graphiti-core[falkordb]'
+    # Graph Database (ChampGraph via HTTP — no extra dependency)
 
     # Validation & Serialization
     "pydantic>=2.5.0",
@@ -34,7 +30,14 @@ dependencies = [
 
     # Environment
     "python-dotenv>=1.0.0",
+
+    # CLI (CLI-Anything pattern: Click + prompt_toolkit)
+    "click>=8.1.0",
+    "prompt-toolkit>=3.0.0",
 ]
+
+[project.scripts]
+champmail = "cli.champmail_cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -46,7 +49,7 @@ dev = [
     "pytest-watch>=4.2.0",
 ]
 graphiti = [
-    "graphiti-core[falkordb]>=0.25.0",
+    # ChampGraph is accessed via HTTP, no Python driver needed
 ]
 
 [tool.pytest.ini_options]

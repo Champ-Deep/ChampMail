@@ -36,6 +36,7 @@ const navigation = [
 
 const adminNavigation = [
   { name: 'Prospect Lists', href: '/admin/prospect-lists', icon: Upload, tourId: 'nav-admin-lists' },
+  { name: 'Manage Prospects', href: '/admin/prospects', icon: Users, tourId: 'nav-admin-prospects' },
 ];
 
 export function Sidebar() {

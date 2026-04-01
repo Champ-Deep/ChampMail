@@ -51,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         authApi.logout();
+        localStorage.removeItem('auth-storage');
         set({
           user: null,
           token: null,

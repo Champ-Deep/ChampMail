@@ -1,15 +1,18 @@
 """
-FalkorDB connection and graph operations.
-Provides the knowledge graph layer for the email engine.
+ChampGraph HTTP client — replaces the former FalkorDB direct driver.
+
+Talks to the graphiti-knowledge-graph-champ-graph container via its REST API.
+All graph operations (prospects, companies, sequences, emails) are mapped
+to ChampGraph's ingest / query / hooks endpoints.
 """
 
 from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Any, Optional, Dict, List
+from typing import Any, Optional
 
-from falkordb import FalkorDB
+import httpx
 
 from app.core.config import settings
 
@@ -17,79 +20,125 @@ logger = logging.getLogger(__name__)
 
 
 class GraphDatabase:
-    """FalkorDB graph database client."""
+    """ChampGraph HTTP client — drop-in replacement for the old FalkorDB driver."""
 
     def __init__(self):
-        self._client: Optional[FalkorDB] = None
-        self._graph = None
+        self._client: Optional[httpx.AsyncClient] = None
+        self._base_url: str = ""
+        self._api_key: str = ""
+        self._connected: bool = False
+
+    # ------------------------------------------------------------------
+    # Connection lifecycle
+    # ------------------------------------------------------------------
 
     def connect(self) -> None:
-        """Establish connection to FalkorDB."""
-        self._client = FalkorDB(
-            host=settings.falkordb_host,
-            port=settings.falkordb_port,
-            password=settings.falkordb_password or None,
-        )
-        self._graph = self._client.select_graph(settings.falkordb_database)
+        self._base_url = settings.champgraph_url.rstrip("/")
+        self._api_key = settings.champgraph_api_key
+        self._client = httpx.AsyncClient(timeout=30.0)
+        self._connected = True
 
     def disconnect(self) -> None:
-        """Close FalkorDB connection."""
-        # FalkorDB client handles connection pooling internally
         self._client = None
-        self._graph = None
+        self._connected = False
 
     @property
-    def graph(self):
-        """Get the graph instance."""
-        if self._graph is None:
+    def client(self) -> httpx.AsyncClient:
+        if self._client is None:
             self.connect()
-        return self._graph
+        return self._client
 
-    def query(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict]:
+    def _headers(self) -> dict[str, str]:
+        h: dict[str, str] = {"Content-Type": "application/json"}
+        if self._api_key:
+            h["X-API-Key"] = self._api_key
+        return h
+
+    # ------------------------------------------------------------------
+    # Low-level HTTP helpers
+    # ------------------------------------------------------------------
+
+    async def _get(self, path: str, params: dict | None = None) -> dict:
+        r = await self.client.get(
+            f"{self._base_url}{path}",
+            headers=self._headers(),
+            params=params,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def _post(self, path: str, data: dict | None = None) -> dict:
+        r = await self.client.post(
+            f"{self._base_url}{path}",
+            headers=self._headers(),
+            json=data or {},
+        )
+        r.raise_for_status()
+        return r.json()
+
+    # ------------------------------------------------------------------
+    # Query — uses ChampGraph /api/query
+    # ------------------------------------------------------------------
+
+    async def query(self, query_text: str, account_name: str = "champmail") -> list[dict]:
         """
-        Execute a Cypher query and return results.
+        Semantic query against ChampGraph.
 
-        Args:
-            cypher: Cypher query string
-            params: Optional query parameters
-
-        Returns:
-            List of result dictionaries
+        This replaces raw Cypher — ChampGraph does its own NL→graph resolution.
         """
-        result = self.graph.query(cypher, params or {})
-        return self._parse_result(result)
-
-    def _parse_result(self, result) -> list[dict]:
-        """Parse FalkorDB result into list of dictionaries."""
-        if not result.result_set:
+        try:
+            result = await self._post("/api/query", {
+                "account": account_name,
+                "query": query_text,
+                "num_results": 50,
+            })
+            return self._flatten_query_result(result)
+        except Exception as e:
+            logger.warning("ChampGraph query failed: %s", e)
             return []
 
-        # Get column headers
-        headers = result.header if hasattr(result, 'header') else []
+    def _flatten_query_result(self, result: dict) -> list[dict]:
+        """Normalize ChampGraph query response into a flat list of dicts."""
+        if not result.get("success"):
+            return []
+        data = result.get("data", {})
+        items: list[dict] = []
+        for node in data.get("nodes", []):
+            items.append({
+                "type": "node",
+                "name": node.get("name", ""),
+                "labels": node.get("labels", []),
+                "summary": node.get("summary", ""),
+                **{k: v for k, v in node.items() if k not in ("name", "labels", "summary")},
+            })
+        for edge in data.get("edges", []):
+            items.append({
+                "type": "edge",
+                "fact": edge.get("fact", ""),
+                "name": edge.get("name", ""),
+                **{k: v for k, v in edge.items() if k not in ("fact", "name")},
+            })
+        return items or [data] if data else []
 
-        # Convert each row to dict
-        rows = []
-        for row in result.result_set:
-            if headers:
-                row_dict = {}
-                for i, header in enumerate(headers):
-                    value = row[i] if i < len(row) else None
-                    # Handle Node objects
-                    if hasattr(value, 'properties'):
-                        row_dict[header] = {
-                            'id': value.id if hasattr(value, 'id') else None,
-                            'labels': list(value.labels) if hasattr(value, 'labels') else [],
-                            'properties': dict(value.properties) if hasattr(value, 'properties') else {},
-                        }
-                    else:
-                        row_dict[header] = value
-                rows.append(row_dict)
-            else:
-                rows.append({'result': row})
+    # ------------------------------------------------------------------
+    # Ingest — maps old create_* methods to ChampGraph /api/ingest
+    # ------------------------------------------------------------------
 
-        return rows
+    async def _ingest(self, content: str, name: str, account_name: str = "champmail", source: str = "champmail") -> dict:
+        """Ingest a single episode into ChampGraph."""
+        try:
+            return await self._post("/api/ingest", {
+                "account_name": account_name,
+                "mode": "raw",
+                "content": content,
+                "name": name,
+                "source_description": source,
+            })
+        except Exception as e:
+            logger.warning("ChampGraph ingest failed: %s", e)
+            return {"success": False, "error": str(e)}
 
-    def create_prospect(
+    async def create_prospect(
         self,
         email: str,
         first_name: str = "",
@@ -99,63 +148,62 @@ class GraphDatabase:
         linkedin_url: str = "",
         **extra_fields,
     ) -> dict:
-        """
-        Create a Prospect node in the graph.
+        """Ingest a prospect into ChampGraph."""
+        parts = [f"Prospect: {first_name} {last_name}".strip()]
+        parts.append(f"Email: {email}")
+        if title:
+            parts.append(f"Title: {title}")
+        if phone:
+            parts.append(f"Phone: {phone}")
+        if linkedin_url:
+            parts.append(f"LinkedIn: {linkedin_url}")
+        for k, v in extra_fields.items():
+            if v:
+                parts.append(f"{k}: {v}")
 
-        Returns:
-            Created prospect data
-        """
-        # Build properties dynamically
-        props = {
-            'email': email.lower(),
-            'first_name': first_name,
-            'last_name': last_name,
-            'title': title,
-            'phone': phone,
-            'linkedin_url': linkedin_url,
-            'created_at': 'datetime()',
+        content = "\n".join(parts)
+        # Use email domain as account name for grouping
+        account = email.split("@")[1] if "@" in email else "champmail"
+
+        result = await self._ingest(
+            content=content,
+            name=f"Prospect: {first_name} {last_name} ({email})",
+            account_name=account,
+            source="prospect_import",
+        )
+        return {
+            "p": {
+                "properties": {
+                    "email": email.lower(),
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "title": title,
+                    "phone": phone,
+                    "linkedin_url": linkedin_url,
+                },
+            },
+            "ingested": result.get("success", result.get("message", "") != ""),
         }
-        props.update(extra_fields)
 
-        # Remove empty values
-        props = {k: v for k, v in props.items() if v}
+    async def get_prospect_by_email(self, email: str) -> dict | None:
+        """Query ChampGraph for a prospect by email."""
+        account = email.split("@")[1] if "@" in email else "champmail"
+        results = await self.query(
+            f"Find the prospect with email {email}. What is their role, company, and interaction history?",
+            account_name=account,
+        )
+        if results:
+            return {"p": results[0], "results": results}
+        return None
 
-        # Build Cypher query
-        prop_string = ', '.join(f'{k}: ${k}' for k in props.keys() if k != 'created_at')
-        if 'created_at' in props:
-            prop_string += ', created_at: datetime()'
-            del props['created_at']
+    async def get_prospect_by_id(self, prospect_id: int) -> dict | None:
+        """Query ChampGraph for a prospect by ID (best-effort semantic lookup)."""
+        results = await self.query(f"Find prospect with ID {prospect_id}")
+        if results:
+            return {"p": results[0], "results": results}
+        return None
 
-        query = f"""
-            CREATE (p:Prospect {{{prop_string}}})
-            RETURN p
-        """
-
-        result = self.query(query, props)
-        return result[0] if result else {}
-
-    def get_prospect_by_email(self, email: str) -> dict | None:
-        """Get prospect by email address."""
-        query = """
-            MATCH (p:Prospect {email: $email})
-            OPTIONAL MATCH (p)-[r:WORKS_AT]->(c:Company)
-            RETURN p, r, c
-        """
-        result = self.query(query, {'email': email.lower()})
-        return result[0] if result else None
-
-    def get_prospect_by_id(self, prospect_id: int) -> dict | None:
-        """Get prospect by internal ID."""
-        query = """
-            MATCH (p:Prospect)
-            WHERE id(p) = $id
-            OPTIONAL MATCH (p)-[r:WORKS_AT]->(c:Company)
-            RETURN p, r, c
-        """
-        result = self.query(query, {'id': prospect_id})
-        return result[0] if result else None
-
-    def create_company(
+    async def create_company(
         self,
         name: str,
         domain: str,
@@ -163,131 +211,120 @@ class GraphDatabase:
         employee_count: int = 0,
         **extra_fields,
     ) -> dict:
-        """Create a Company node in the graph."""
-        props = {
-            'name': name,
-            'domain': domain.lower(),
-            'industry': industry,
-            'employee_count': employee_count,
+        """Ingest a company into ChampGraph."""
+        parts = [f"Company: {name}", f"Domain: {domain}"]
+        if industry:
+            parts.append(f"Industry: {industry}")
+        if employee_count:
+            parts.append(f"Employee Count: {employee_count}")
+        for k, v in extra_fields.items():
+            if v:
+                parts.append(f"{k}: {v}")
+
+        result = await self._ingest(
+            content="\n".join(parts),
+            name=f"Company: {name}",
+            account_name=domain,
+            source="company_import",
+        )
+        return {
+            "c": {
+                "properties": {"name": name, "domain": domain.lower(), "industry": industry},
+            },
+            "ingested": result.get("success", result.get("message", "") != ""),
         }
-        props.update(extra_fields)
-        props = {k: v for k, v in props.items() if v}
 
-        prop_string = ', '.join(f'{k}: ${k}' for k in props.keys())
-        query = f"""
-            MERGE (c:Company {{domain: $domain}})
-            ON CREATE SET {', '.join(f'c.{k} = ${k}' for k in props.keys())}
-            RETURN c
-        """
-
-        result = self.query(query, props)
-        return result[0] if result else {}
-
-    def link_prospect_to_company(
+    async def link_prospect_to_company(
         self,
         prospect_email: str,
         company_domain: str,
         title: str = "",
         is_current: bool = True,
     ) -> dict:
-        """Create WORKS_AT relationship between Prospect and Company."""
-        query = """
-            MATCH (p:Prospect {email: $email})
-            MATCH (c:Company {domain: $domain})
-            MERGE (p)-[r:WORKS_AT]->(c)
-            SET r.title = $title, r.is_current = $is_current
-            RETURN p, r, c
-        """
-        result = self.query(query, {
-            'email': prospect_email.lower(),
-            'domain': company_domain.lower(),
-            'title': title,
-            'is_current': is_current,
-        })
-        return result[0] if result else {}
+        """Record the WORKS_AT relationship via ingest."""
+        content = (
+            f"Employment Record\n"
+            f"Person: {prospect_email}\n"
+            f"Company Domain: {company_domain}\n"
+            f"Title: {title}\n"
+            f"Current: {is_current}"
+        )
+        result = await self._ingest(
+            content=content,
+            name=f"Employment: {prospect_email} at {company_domain}",
+            account_name=company_domain,
+            source="employment_link",
+        )
+        return {"ingested": result.get("success", result.get("message", "") != "")}
 
-    def search_prospects(
+    async def search_prospects(
         self,
         query_text: str = "",
         industry: str = "",
         limit: int = 50,
         skip: int = 0,
     ) -> list[dict]:
-        """Search prospects with optional filters."""
-        conditions = []
-        params = {'limit': limit, 'skip': skip}
-
-        if query_text:
-            conditions.append(
-                "(p.first_name CONTAINS $query OR p.last_name CONTAINS $query OR p.email CONTAINS $query)"
-            )
-            params['query'] = query_text.lower()
-
+        """Search prospects via ChampGraph semantic query."""
+        search = query_text or "all prospects"
         if industry:
-            conditions.append("c.industry = $industry")
-            params['industry'] = industry
+            search += f" in {industry} industry"
+        return await self.query(f"Find prospects: {search}")
 
-        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-        cypher = f"""
-            MATCH (p:Prospect)
-            OPTIONAL MATCH (p)-[r:WORKS_AT]->(c:Company)
-            {where_clause}
-            RETURN p, r, c
-            ORDER BY p.created_at DESC
-            SKIP $skip
-            LIMIT $limit
-        """
-
-        return self.query(cypher, params)
-
-    def create_sequence(
+    async def create_sequence(
         self,
         name: str,
         owner_id: str,
         steps_count: int = 0,
     ) -> dict:
-        """Create an email Sequence node."""
-        query = """
-            CREATE (s:Sequence {
-                name: $name,
-                owner_id: $owner_id,
-                steps_count: $steps_count,
-                status: 'draft',
-                created_at: datetime()
-            })
-            RETURN s
-        """
-        result = self.query(query, {
-            'name': name,
-            'owner_id': owner_id,
-            'steps_count': steps_count,
-        })
-        return result[0] if result else {}
+        """Ingest an email sequence into ChampGraph."""
+        content = (
+            f"Email Sequence Created\n"
+            f"Name: {name}\n"
+            f"Owner: {owner_id}\n"
+            f"Steps: {steps_count}\n"
+            f"Status: draft"
+        )
+        result = await self._ingest(
+            content=content,
+            name=f"Sequence: {name}",
+            account_name="champmail",
+            source="sequence_creation",
+        )
+        return {
+            "s": {
+                "properties": {
+                    "name": name,
+                    "owner_id": owner_id,
+                    "steps_count": steps_count,
+                    "status": "draft",
+                },
+            },
+            "ingested": result.get("success", result.get("message", "") != ""),
+        }
 
-    def enroll_prospect_in_sequence(
+    async def enroll_prospect_in_sequence(
         self,
         prospect_email: str,
         sequence_id: int,
     ) -> dict:
-        """Enroll a prospect in a sequence."""
-        query = """
-            MATCH (p:Prospect {email: $email})
-            MATCH (s:Sequence)
-            WHERE id(s) = $sequence_id
-            MERGE (p)-[r:ENROLLED_IN]->(s)
-            SET r.enrolled_at = datetime(),
-                r.status = 'active',
-                r.current_step = 1
-            RETURN p, r, s
-        """
-        result = self.query(query, {
-            'email': prospect_email.lower(),
-            'sequence_id': sequence_id,
-        })
-        return result[0] if result else {}
+        """Record sequence enrollment via ingest."""
+        content = (
+            f"Sequence Enrollment\n"
+            f"Prospect: {prospect_email}\n"
+            f"Sequence ID: {sequence_id}\n"
+            f"Status: active\n"
+            f"Current Step: 1"
+        )
+        account = prospect_email.split("@")[1] if "@" in prospect_email else "champmail"
+        result = await self._ingest(
+            content=content,
+            name=f"Enrollment: {prospect_email} → Sequence {sequence_id}",
+            account_name=account,
+            source="sequence_enrollment",
+        )
+        return {"ingested": result.get("success", result.get("message", "") != "")}
 
-    def record_email_sent(
+    async def record_email_sent(
         self,
         prospect_email: str,
         sequence_id: int,
@@ -295,27 +332,72 @@ class GraphDatabase:
         subject: str,
         body_hash: str,
     ) -> dict:
-        """Record an email sent to a prospect."""
-        query = """
-            MATCH (p:Prospect {email: $email})
-            CREATE (e:Email {
-                subject: $subject,
-                body_hash: $body_hash,
-                sent_at: datetime(),
-                step_number: $step_number,
-                sequence_id: $sequence_id
+        """Record a sent email via the email hook endpoint."""
+        account = prospect_email.split("@")[1] if "@" in prospect_email else "champmail"
+        try:
+            return await self._post("/api/hooks/email", {
+                "from_address": "champmail@champmail.dev",
+                "to_address": prospect_email,
+                "subject": subject,
+                "body": f"[Sequence {sequence_id}, Step {step_number}] body_hash={body_hash}",
+                "direction": "outbound",
+                "account_name": account,
             })
-            CREATE (p)-[:RECEIVED]->(e)
-            RETURN e
-        """
-        result = self.query(query, {
-            'email': prospect_email.lower(),
-            'subject': subject,
-            'body_hash': body_hash,
-            'step_number': step_number,
-            'sequence_id': sequence_id,
-        })
-        return result[0] if result else {}
+        except Exception as e:
+            logger.warning("ChampGraph email hook failed: %s", e)
+            return {"success": False, "error": str(e)}
+
+    # ------------------------------------------------------------------
+    # Account-level intelligence (new — exposed from ChampGraph)
+    # ------------------------------------------------------------------
+
+    async def get_email_context(
+        self,
+        account_name: str,
+        contact_email: str | None = None,
+        contact_name: str | None = None,
+        subject: str | None = None,
+    ) -> dict:
+        """Get full context for composing an email follow-up."""
+        params: dict[str, str] = {}
+        if contact_email:
+            params["contact_email"] = contact_email
+        if contact_name:
+            params["contact_name"] = contact_name
+        if subject:
+            params["subject"] = subject
+        try:
+            return await self._get(f"/api/accounts/{account_name}/email-context", params)
+        except Exception as e:
+            logger.warning("ChampGraph email-context failed: %s", e)
+            return {"success": False}
+
+    async def get_account_briefing(self, account_name: str) -> dict:
+        """Get pre-interaction briefing for an account."""
+        try:
+            return await self._get(f"/api/accounts/{account_name}/briefing")
+        except Exception as e:
+            logger.warning("ChampGraph briefing failed: %s", e)
+            return {"success": False}
+
+    async def get_stakeholder_map(self, account_name: str) -> dict:
+        """Get stakeholder mapping for an account."""
+        try:
+            return await self._get(f"/api/accounts/{account_name}/intelligence/stakeholder-map")
+        except Exception as e:
+            logger.warning("ChampGraph stakeholder-map failed: %s", e)
+            return {"success": False}
+
+    async def get_engagement_gaps(self, account_name: str, days: int = 30) -> dict:
+        """Find contacts not interacted with recently."""
+        try:
+            return await self._get(
+                f"/api/accounts/{account_name}/intelligence/engagement-gaps",
+                {"days": days},
+            )
+        except Exception as e:
+            logger.warning("ChampGraph engagement-gaps failed: %s", e)
+            return {"success": False}
 
 
 # Global database instance
@@ -326,11 +408,11 @@ graph_db = GraphDatabase()
 async def get_graph_db():
     """Dependency for getting graph database connection."""
     try:
-        if graph_db._client is None:
+        if not graph_db._connected:
             graph_db.connect()
         yield graph_db
     finally:
-        pass  # Connection pooling handles cleanup
+        pass  # httpx client handles connection pooling
 
 
 def init_graph_db() -> bool:
@@ -341,9 +423,10 @@ def init_graph_db() -> bool:
     """
     try:
         graph_db.connect()
+        logger.info("ChampGraph client initialized: %s", settings.champgraph_url)
         return True
     except Exception as e:
-        logger.warning("Could not connect to FalkorDB: %s", e)
+        logger.warning("Could not initialize ChampGraph client: %s", e)
         logger.warning("Running in degraded mode - graph features disabled")
         return False
 

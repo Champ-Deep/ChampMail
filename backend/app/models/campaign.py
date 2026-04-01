@@ -153,6 +153,18 @@ class Prospect(Base):
     source = Column(String(100), nullable=True)
     import_batch_id = Column(String(100), nullable=True)
 
+    # Assignment (admin assigns prospect to a specific user)
+    assigned_to_user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # Research results (populated after admin creates prospect)
+    research_data = Column(JSON, nullable=True)
+    research_status = Column(String(50), default="pending")  # pending, running, completed, failed
+
     # Team association
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
@@ -164,4 +176,5 @@ class Prospect(Base):
 
     # Relationships
     team = relationship("Team", back_populates="prospects")
+    assigned_user = relationship("User", foreign_keys=[assigned_to_user_id])
     campaign_enrollments = relationship("CampaignProspect", back_populates="prospect")

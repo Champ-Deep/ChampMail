@@ -15,3 +15,4 @@ export { AdminProspectListsPage } from './AdminProspectListsPage';
 export { AICampaignBuilderPage } from './AICampaignBuilderPage';
 export { UTMManagerPage } from './UTMManagerPage';
 export { AIAssistantPage } from './AIAssistantPage';
+export { AdminProspectsPage } from './AdminProspectsPage';

@@ -28,10 +28,16 @@ api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid - clear storage and redirect to login
+      // Token expired or invalid - clear all auth state before redirecting
+      // Must clear the zustand-persisted store too, otherwise PublicRoute
+      // will see isAuthenticated=true and redirect back, causing an infinite loop
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      localStorage.removeItem('auth-storage');
+      // Only redirect if not already on the login page
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

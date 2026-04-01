@@ -1,5 +1,5 @@
 # ChampMail Docker Compose Configuration
-# Full stack with PostgreSQL, FalkorDB, Redis, Backend, Celery, and Mail Engine
+# Full stack with PostgreSQL, Redis, Backend, Celery, Mail Engine, and ChampGraph integration
 
 services:
   # PostgreSQL Database (User management, Workflows)
@@ -17,24 +17,6 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-champmail}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - champmail-network
-
-  # FalkorDB (Graph database for prospects, sequences)
-  falkordb:
-    image: falkordb/falkordb:latest
-    container_name: champmail-falkordb
-    restart: unless-stopped
-    ports:
-      - "${FALKORDB_PORT:-6379}:6379"
-      - "${FALKORDB_BROWSER_PORT:-3001}:3000"
-    volumes:
-      - falkordb_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -128,9 +110,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
       POSTGRES_DB: ${POSTGRES_DB:-champmail}
 
-      FALKORDB_HOST: falkordb
-      FALKORDB_PORT: 6379
-      FALKORDB_PASSWORD: ${FALKORDB_PASSWORD:-}
+      # ChampGraph — accessible via the external graphiti network
+      CHAMPGRAPH_URL: http://graphiti-knowledge-graph-champ-graph-1:8080
+      CHAMPGRAPH_API_KEY: ${CHAMPGRAPH_API_KEY:-}
 
       REDIS_HOST: redis
       REDIS_PORT: 6379
@@ -144,8 +126,7 @@ services:
 
       MAIL_ENGINE_URL: http://mail-engine:8025
 
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
 
       NAMECHEAP_API_KEY: ${NAMECHEAP_API_KEY:-}
       NAMECHEAP_API_USER: ${NAMECHEAP_API_USER:-}
@@ -160,8 +141,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      falkordb:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -172,6 +151,7 @@ services:
       start_period: 30s
     networks:
       - champmail-network
+      - champgraph-network
 
   # Celery Worker
   worker:
@@ -184,6 +164,18 @@ services:
     environment:
       CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-}@redis:6379/0
       CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-}@redis:6379/1
+      CHAMPGRAPH_URL: http://graphiti-knowledge-graph-champ-graph-1:8080
+      CHAMPGRAPH_API_KEY: ${CHAMPGRAPH_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MAIL_ENGINE_URL: http://mail-engine:8025
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-champmail}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-champmail}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     depends_on:
       redis:
         condition: service_healthy
@@ -196,6 +188,7 @@ services:
       retries: 3
     networks:
       - champmail-network
+      - champgraph-network
 
   # Celery Beat (Scheduler)
   beat:
@@ -255,8 +248,6 @@ services:
 volumes:
   postgres_data:
     driver: local
-  falkordb_data:
-    driver: local
   redis_data:
     driver: local
   smtp_data:
@@ -265,3 +256,7 @@ volumes:
 networks:
   champmail-network:
     driver: bridge
+  # External network to reach the ChampGraph container
+  champgraph-network:
+    external: true
+    name: graphiti-knowledge-graph_default

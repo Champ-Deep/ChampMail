@@ -1,11 +1,12 @@
 """
 Knowledge Graph API endpoints.
-Direct graph queries and conversational interface.
+Routes to ChampGraph for semantic search, natural language queries,
+and account intelligence.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -17,43 +18,37 @@ from app.db.falkordb import graph_db
 router = APIRouter(prefix="/graph", tags=["Knowledge Graph"])
 
 
-class CypherQuery(BaseModel):
-    """Direct Cypher query request."""
-    query: str
-    params: dict[str, Any] = {}
-
-
 class SearchRequest(BaseModel):
     """Semantic search request."""
     query: str
     entity_types: list[str] = []  # e.g., ["Prospect", "Company"]
     limit: int = 20
+    account: str = "champmail"
 
 
 class ChatRequest(BaseModel):
     """Conversational query request."""
     message: str
+    account: str = "champmail"
     context: dict[str, Any] = {}
 
 
+class CypherQuery(BaseModel):
+    """Direct query request (now semantic, kept for API compat)."""
+    query: str
+    params: dict[str, Any] = {}
+    account: str = "champmail"
+
+
 @router.post("/query")
-async def execute_cypher_query(request: CypherQuery, user: TokenData = Depends(require_admin)):
+async def execute_query(request: CypherQuery, user: TokenData = Depends(require_admin)):
     """
-    Execute a raw Cypher query against the knowledge graph.
+    Execute a query against the knowledge graph via ChampGraph.
 
-    WARNING: This endpoint is for admin/development use only.
-    Should be protected in production.
-
-    Example queries:
-    - "MATCH (p:Prospect) RETURN p LIMIT 10"
-    - "MATCH (p:Prospect)-[:WORKS_AT]->(c:Company) RETURN p.email, c.name"
+    This now performs semantic search rather than raw Cypher.
     """
-    # TODO: Add query validation and sanitization
-    # TODO: Add rate limiting
-    # TODO: Restrict to read-only queries in production
-
     try:
-        results = graph_db.query(request.query, request.params)
+        results = await graph_db.query(request.query, account_name=request.account)
         return {
             "success": True,
             "results": results,
@@ -66,148 +61,32 @@ async def execute_cypher_query(request: CypherQuery, user: TokenData = Depends(r
 @router.post("/search")
 async def semantic_search(request: SearchRequest, user: TokenData = Depends(require_auth)):
     """
-    Semantic search across the knowledge graph.
-
-    Searches across specified entity types (or all if not specified).
-    Uses text matching on relevant fields.
-
-    TODO: Integrate with Graphiti for true semantic/embedding-based search.
+    Semantic search across the knowledge graph via ChampGraph.
     """
-    entity_types = request.entity_types or ["Prospect", "Company"]
-    all_results = []
+    search_query = request.query
+    if request.entity_types:
+        search_query += f" (entity types: {', '.join(request.entity_types)})"
 
-    for entity_type in entity_types:
-        if entity_type == "Prospect":
-            query = """
-                MATCH (p:Prospect)
-                WHERE toLower(p.email) CONTAINS toLower($query)
-                   OR toLower(p.first_name) CONTAINS toLower($query)
-                   OR toLower(p.last_name) CONTAINS toLower($query)
-                   OR toLower(p.title) CONTAINS toLower($query)
-                RETURN p, 'Prospect' as type
-                LIMIT $limit
-            """
-        elif entity_type == "Company":
-            query = """
-                MATCH (c:Company)
-                WHERE toLower(c.name) CONTAINS toLower($query)
-                   OR toLower(c.domain) CONTAINS toLower($query)
-                   OR toLower(c.industry) CONTAINS toLower($query)
-                RETURN c, 'Company' as type
-                LIMIT $limit
-            """
-        elif entity_type == "Sequence":
-            query = """
-                MATCH (s:Sequence)
-                WHERE toLower(s.name) CONTAINS toLower($query)
-                RETURN s, 'Sequence' as type
-                LIMIT $limit
-            """
-        else:
-            continue
-
-        results = graph_db.query(query, {
-            'query': request.query,
-            'limit': request.limit,
-        })
-        all_results.extend(results)
-
+    results = await graph_db.query(search_query, account_name=request.account)
     return {
         "query": request.query,
-        "results": all_results[:request.limit],
-        "count": len(all_results[:request.limit]),
+        "results": results[:request.limit],
+        "count": len(results[:request.limit]),
     }
 
 
 @router.post("/chat")
 async def conversational_query(request: ChatRequest, user: TokenData = Depends(require_auth)):
     """
-    Natural language interface to the knowledge graph.
+    Natural language interface to the knowledge graph via ChampGraph.
 
-    Examples:
-    - "Show me all prospects who opened emails but didn't reply"
-    - "Which companies in fintech have we contacted?"
-    - "Find prospects at Series A startups"
-
-    TODO: Integrate with Claude API for natural language to Cypher translation.
+    ChampGraph handles NL→graph resolution using Graphiti + LLM.
     """
-    message = request.message.lower()
+    results = await graph_db.query(request.message, account_name=request.account)
 
-    # Simple pattern matching for common queries
-    # TODO: Replace with Claude-powered NL to Cypher
-
-    if "opened" in message and ("not" in message or "didn't" in message) and "reply" in message:
-        # Prospects who opened but didn't reply
-        query = """
-            MATCH (p:Prospect)-[:RECEIVED]->(e:Email)
-            WHERE e.opened_at IS NOT NULL AND e.replied_at IS NULL
-            RETURN DISTINCT p.email, p.first_name, p.last_name
-            LIMIT 50
-        """
-        results = graph_db.query(query)
+    if not results:
         return {
-            "interpretation": "Finding prospects who opened emails but didn't reply",
-            "results": results,
-        }
-
-    elif "company" in message or "companies" in message:
-        # Get companies with optional industry filter
-        industry = None
-        for ind in ["fintech", "saas", "healthcare", "technology"]:
-            if ind in message:
-                industry = ind
-                break
-
-        if industry:
-            query = """
-                MATCH (c:Company)
-                WHERE toLower(c.industry) CONTAINS $industry
-                RETURN c.name, c.domain, c.industry
-                LIMIT 50
-            """
-            results = graph_db.query(query, {'industry': industry})
-            return {
-                "interpretation": f"Finding companies in {industry}",
-                "results": results,
-            }
-        else:
-            query = "MATCH (c:Company) RETURN c.name, c.domain, c.industry LIMIT 50"
-            results = graph_db.query(query)
-            return {
-                "interpretation": "Listing companies",
-                "results": results,
-            }
-
-    elif "prospect" in message or "contact" in message:
-        # Generic prospect query
-        query = """
-            MATCH (p:Prospect)
-            OPTIONAL MATCH (p)-[:WORKS_AT]->(c:Company)
-            RETURN p.email, p.first_name, p.last_name, p.title, c.name as company
-            LIMIT 50
-        """
-        results = graph_db.query(query)
-        return {
-            "interpretation": "Listing prospects",
-            "results": results,
-        }
-
-    elif "sequence" in message:
-        query = """
-            MATCH (s:Sequence)
-            OPTIONAL MATCH (p:Prospect)-[e:ENROLLED_IN]->(s)
-            RETURN s.name, s.status, count(e) as enrolled
-            LIMIT 20
-        """
-        results = graph_db.query(query)
-        return {
-            "interpretation": "Listing sequences",
-            "results": results,
-        }
-
-    else:
-        return {
-            "interpretation": "I couldn't understand that query. Try asking about prospects, companies, or sequences.",
+            "interpretation": "No results found for that query.",
             "results": [],
             "suggestions": [
                 "Show me all prospects",
@@ -217,83 +96,82 @@ async def conversational_query(request: ChatRequest, user: TokenData = Depends(r
             ],
         }
 
+    return {
+        "interpretation": f"Results for: {request.message}",
+        "results": results,
+    }
 
-@router.get("/entities/{entity_id}")
-async def get_entity(
-    entity_id: int,
-    include_relations: bool = Query(default=True),
+
+@router.get("/accounts/{account_name}/email-context")
+async def get_email_context(
+    account_name: str,
+    contact_email: str | None = Query(default=None),
+    contact_name: str | None = Query(default=None),
+    subject: str | None = Query(default=None),
     user: TokenData = Depends(require_auth),
 ):
-    """
-    Get any entity by its internal ID with optional relationships.
-    """
-    # First find what type of entity this is
-    type_query = """
-        MATCH (n)
-        WHERE id(n) = $id
-        RETURN labels(n) as labels, n
-    """
-    result = graph_db.query(type_query, {'id': entity_id})
+    """Get full context for composing an email to a contact at an account."""
+    result = await graph_db.get_email_context(
+        account_name=account_name,
+        contact_email=contact_email,
+        contact_name=contact_name,
+        subject=subject,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail="Failed to get email context")
+    return result
 
-    if not result:
-        raise HTTPException(status_code=404, detail="Entity not found")
 
-    entity = result[0]
-    labels = entity.get('labels', [])
+@router.get("/accounts/{account_name}/briefing")
+async def get_account_briefing(
+    account_name: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Get a comprehensive pre-interaction briefing for an account."""
+    result = await graph_db.get_account_briefing(account_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail="Failed to get briefing")
+    return result
 
-    if not include_relations:
-        return entity
 
-    # Get relationships based on entity type
-    if 'Prospect' in labels:
-        rel_query = """
-            MATCH (p:Prospect)
-            WHERE id(p) = $id
-            OPTIONAL MATCH (p)-[r]->(related)
-            RETURN p, type(r) as relationship, labels(related) as related_type, related
-        """
-    elif 'Company' in labels:
-        rel_query = """
-            MATCH (c:Company)
-            WHERE id(c) = $id
-            OPTIONAL MATCH (related)-[r]->(c)
-            RETURN c, type(r) as relationship, labels(related) as related_type, related
-        """
-    else:
-        rel_query = """
-            MATCH (n)
-            WHERE id(n) = $id
-            OPTIONAL MATCH (n)-[r]-(related)
-            RETURN n, type(r) as relationship, labels(related) as related_type, related
-        """
+@router.get("/accounts/{account_name}/stakeholders")
+async def get_stakeholder_map(
+    account_name: str,
+    user: TokenData = Depends(require_auth),
+):
+    """Get stakeholder mapping: champions, blockers, decision-makers."""
+    result = await graph_db.get_stakeholder_map(account_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail="Failed to get stakeholder map")
+    return result
 
-    relations = graph_db.query(rel_query, {'id': entity_id})
 
-    return {
-        "entity": entity,
-        "relationships": relations,
-    }
+@router.get("/accounts/{account_name}/engagement-gaps")
+async def get_engagement_gaps(
+    account_name: str,
+    days: int = Query(default=30),
+    user: TokenData = Depends(require_auth),
+):
+    """Find contacts not interacted with recently."""
+    result = await graph_db.get_engagement_gaps(account_name, days=days)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail="Failed to get engagement gaps")
+    return result
 
 
 @router.get("/stats")
 async def get_graph_stats(user: TokenData = Depends(require_auth)):
     """
     Get statistics about the knowledge graph.
+    Queries ChampGraph health for connectivity info.
     """
-    stats = {}
-
-    # Count each node type
-    for label in ["Prospect", "Company", "Sequence", "Email", "IntentSignal"]:
-        query = f"MATCH (n:{label}) RETURN count(n) as count"
-        result = graph_db.query(query)
-        stats[label.lower() + "_count"] = result[0].get('count', 0) if result else 0
-
-    # Count relationships
-    rel_query = """
-        MATCH ()-[r]->()
-        RETURN type(r) as type, count(r) as count
-    """
-    rel_results = graph_db.query(rel_query)
-    stats["relationships"] = {r.get('type', 'unknown'): r.get('count', 0) for r in rel_results}
-
-    return stats
+    try:
+        health = await graph_db._get("/health")
+        return {
+            "service": health.get("service"),
+            "status": health.get("status"),
+            "neo4j_connected": health.get("neo4j_connected"),
+            "version": health.get("version"),
+        }
+    except Exception as e:
+        return {"status": "unavailable", "error": str(e)}

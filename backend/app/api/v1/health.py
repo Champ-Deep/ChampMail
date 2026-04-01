@@ -68,35 +68,28 @@ async def health_check():
             "message": "Redis unavailable — caching disabled"
         }
 
-    # Check FalkorDB (optional - may not be available in MVP)
+    # Check ChampGraph (optional — graph features degrade gracefully)
     try:
         from app.db.falkordb import graph_db
-        if graph_db and graph_db._client:
-            graph_db._client.connection.ping()
-            health_status["checks"]["falkordb"] = {
-                "status": "healthy",
-                "host": settings.falkordb_host,
-                "port": settings.falkordb_port
-            }
-        elif graph_db:
-            graph_db.connect()
-            health_status["checks"]["falkordb"] = {
-                "status": "healthy",
-                "host": settings.falkordb_host,
-                "port": settings.falkordb_port
+        if graph_db and graph_db._connected:
+            result = await graph_db._get("/health")
+            health_status["checks"]["champgraph"] = {
+                "status": result.get("status", "unknown"),
+                "url": settings.champgraph_url,
+                "neo4j_connected": result.get("neo4j_connected", False),
             }
         else:
-            health_status["checks"]["falkordb"] = {
+            health_status["checks"]["champgraph"] = {
                 "status": "unavailable",
-                "message": "FalkorDB not configured (optional for MVP)"
+                "message": "ChampGraph not connected"
             }
     except Exception as e:
-        health_status["checks"]["falkordb"] = {
+        health_status["checks"]["champgraph"] = {
             "status": "unavailable",
             "error": str(e),
-            "message": "FalkorDB optional for MVP"
+            "message": "ChampGraph optional — graph features disabled"
         }
-        # Don't mark overall status as unhealthy for FalkorDB in MVP
+        # Don't mark overall status as unhealthy for ChampGraph
 
     # Return 503 if any critical service is unhealthy
     if health_status["status"] == "unhealthy":

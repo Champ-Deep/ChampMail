@@ -1,0 +1,11 @@
+# Local dev override - disables smtp/postfix and flower for faster startup
+# mail-engine is kept for API completeness but not required for core features
+
+services:
+  smtp:
+    profiles:
+      - optional
+
+  flower:
+    profiles:
+      - optional

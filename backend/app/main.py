@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting %s v%s", settings.app_name, settings.app_version)
     logger.info("Environment: %s", settings.environment)
-    logger.info("FalkorDB: %s:%s", settings.falkordb_host, settings.falkordb_port)
+    logger.info("ChampGraph: %s", settings.champgraph_url)
     logger.info("PostgreSQL: %s:%s", settings.postgres_host, settings.postgres_port)
 
     # Validate production settings
@@ -60,11 +60,11 @@ async def lifespan(app: FastAPI):
         logger.error("PostgreSQL initialization failed: %s", e)
         logger.error("Auth will NOT work without database!")
 
-    # Initialize FalkorDB
+    # Initialize ChampGraph
     if init_graph_db():
-        logger.info("FalkorDB connected")
+        logger.info("ChampGraph connected")
     else:
-        logger.warning("FalkorDB unavailable - graph features disabled")
+        logger.warning("ChampGraph unavailable - graph features disabled")
 
     # Check OpenRouter API key
     if settings.openrouter_api_key:
@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
     await redis_client.close()
     logger.info("Redis disconnected")
     close_graph_db()
-    logger.info("FalkorDB disconnected")
+    logger.info("ChampGraph disconnected")
     await close_db()
     logger.info("PostgreSQL disconnected")
     logger.info("Shutdown complete")

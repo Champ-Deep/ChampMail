@@ -227,6 +227,27 @@ class CampaignService:
             "reply_rate": (campaign.replied_count or 0) / sent * 100 if sent > 0 else 0,
         }
 
+    async def update_stats(
+        self,
+        session: AsyncSession,
+        campaign_id: str,
+        sent: int = 0,
+        failed: int = 0,
+    ) -> None:
+        """Bulk update sent/bounced counts after a send run."""
+        campaign_uid = UUID(campaign_id)
+        values = {}
+        if sent > 0:
+            values["sent_count"] = Campaign.sent_count + sent
+        if failed > 0:
+            values["bounced_count"] = Campaign.bounced_count + failed
+        if values:
+            values["updated_at"] = datetime.utcnow()
+            await session.execute(
+                update(Campaign).where(Campaign.id == campaign_uid).values(**values)
+            )
+            await session.flush()
+
     async def increment_stat(
         self,
         session: AsyncSession,

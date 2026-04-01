@@ -1,13 +1,18 @@
 """
 Sequence API endpoints.
 Multi-step email sequence management.
+
+Sequences are stored in PostgreSQL via sequence_service.
+ChampGraph is used as a secondary store for relationship intelligence.
 """
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_auth, TokenData
+from app.db.postgres import get_db_session
 from app.db.falkordb import graph_db
 from app.schemas.sequence import (
     SequenceCreate,
@@ -18,33 +23,25 @@ from app.schemas.sequence import (
     EnrollmentRequest,
     EnrollmentResponse,
 )
+from app.services.sequence_service import sequence_service
 
 router = APIRouter(prefix="/sequences", tags=["Sequences"])
 
 
-def _parse_sequence_result(result: dict) -> SequenceResponse:
-    """Parse graph query result into SequenceResponse."""
-    seq_data = result.get('s', {})
-
-    if isinstance(seq_data, dict) and 'properties' in seq_data:
-        props = seq_data['properties']
-        seq_id = seq_data.get('id', 0)
-    else:
-        props = seq_data if isinstance(seq_data, dict) else {}
-        seq_id = 0
-
+def _to_response(seq: dict) -> SequenceResponse:
+    """Convert a sequence dict from service layer to API response."""
     return SequenceResponse(
-        id=seq_id,
-        name=props.get('name', ''),
-        description=props.get('description', ''),
-        status=props.get('status', SequenceStatus.DRAFT),
-        steps_count=props.get('steps_count', 0),
-        owner_id=props.get('owner_id', ''),
-        created_at=props.get('created_at'),
-        enrolled_count=result.get('enrolled_count', 0),
-        active_count=result.get('active_count', 0),
-        completed_count=result.get('completed_count', 0),
-        replied_count=result.get('replied_count', 0),
+        id=seq.get("id", 0),
+        name=seq.get("name", ""),
+        description=seq.get("description", ""),
+        status=seq.get("status", "draft"),
+        steps_count=len(seq.get("steps", [])),
+        owner_id=str(seq.get("created_by") or seq.get("team_id") or ""),
+        created_at=seq.get("created_at"),
+        enrolled_count=seq.get("enrolled_count", 0),
+        active_count=seq.get("active_count", 0),
+        completed_count=seq.get("completed_count", 0),
+        replied_count=seq.get("replied_count", 0),
     )
 
 
@@ -54,147 +51,111 @@ async def list_sequences(
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
-    """
-    List all sequences with optional status filter.
-    """
-    conditions = []
-    params = {'skip': skip, 'limit': limit}
-
-    if status:
-        conditions.append("s.status = $status")
-        params['status'] = status.value
-
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-    query = f"""
-        MATCH (s:Sequence)
-        {where_clause}
-        OPTIONAL MATCH (p:Prospect)-[e:ENROLLED_IN]->(s)
-        WITH s, count(e) as enrolled_count
-        RETURN s, enrolled_count
-        ORDER BY s.created_at DESC
-        SKIP $skip
-        LIMIT $limit
-    """
-
-    results = graph_db.query(query, params)
-    items = [_parse_sequence_result(r) for r in results]
-
-    return SequenceListResponse(
-        items=items,
-        total=len(items),
+    """List all sequences with optional status filter."""
+    sequences = await sequence_service.get_by_team(
+        session, team_id=user.team_id or user.user_id, status=status.value if status else None
     )
+    items = [_to_response(s) for s in sequences[skip:skip + limit]]
+    return SequenceListResponse(items=items, total=len(sequences))
 
 
 @router.post("", response_model=SequenceResponse, status_code=201)
-async def create_sequence(sequence: SequenceCreate, user: TokenData = Depends(require_auth)):
-    """
-    Create a new email sequence.
-
-    Sequence starts in 'draft' status.
-    """
-    # TODO: Get actual owner from auth
-    owner_id = "default_user"
-
-    result = graph_db.create_sequence(
+async def create_sequence(
+    sequence: SequenceCreate,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Create a new email sequence."""
+    seq = await sequence_service.create(
+        session,
         name=sequence.name,
-        owner_id=owner_id,
-        steps_count=len(sequence.steps),
+        team_id=user.team_id or user.user_id,
+        created_by=user.user_id,
+        description=getattr(sequence, "description", None),
     )
 
-    # Create sequence steps as separate nodes (if provided)
-    if sequence.steps:
-        seq_data = result.get('s', {})
-        if isinstance(seq_data, dict) and 'properties' in seq_data:
-            # seq_id = seq_data.get('id')
-            pass
-        # TODO: Create SequenceStep nodes and link to Sequence
+    # Add steps if provided
+    for i, step in enumerate(sequence.steps or []):
+        await sequence_service.add_step(
+            session,
+            sequence_id=seq["id"],
+            order=i + 1,
+            name=step.get("name", f"Step {i+1}") if isinstance(step, dict) else f"Step {i+1}",
+            subject_template=step.get("subject", "") if isinstance(step, dict) else getattr(step, "subject", ""),
+            html_template=step.get("body", "") if isinstance(step, dict) else getattr(step, "body", ""),
+            delay_hours=step.get("delay_hours", 24) if isinstance(step, dict) else getattr(step, "delay_hours", 24),
+        )
 
-    # Fetch created sequence
-    query = """
-        MATCH (s:Sequence {name: $name, owner_id: $owner_id})
-        RETURN s
-        ORDER BY s.created_at DESC
-        LIMIT 1
-    """
-    created = graph_db.query(query, {
-        'name': sequence.name,
-        'owner_id': owner_id,
-    })
+    # Also ingest into ChampGraph for relationship intelligence
+    await graph_db.create_sequence(
+        name=sequence.name,
+        owner_id=user.user_id,
+        steps_count=len(sequence.steps) if sequence.steps else 0,
+    )
 
-    if created:
-        return _parse_sequence_result(created[0])
-
-    return _parse_sequence_result(result)
+    # Re-fetch to include steps
+    seq = await sequence_service.get_by_id(session, seq["id"])
+    return _to_response(seq)
 
 
 @router.get("/{sequence_id}", response_model=SequenceResponse)
-async def get_sequence(sequence_id: int, user: TokenData = Depends(require_auth)):
-    """
-    Get sequence by ID with enrollment statistics.
-    """
-    query = """
-        MATCH (s:Sequence)
-        WHERE id(s) = $id
-        OPTIONAL MATCH (p:Prospect)-[e:ENROLLED_IN]->(s)
-        WITH s,
-             count(e) as enrolled_count,
-             sum(CASE WHEN e.status = 'active' THEN 1 ELSE 0 END) as active_count,
-             sum(CASE WHEN e.status = 'completed' THEN 1 ELSE 0 END) as completed_count,
-             sum(CASE WHEN e.status = 'replied' THEN 1 ELSE 0 END) as replied_count
-        RETURN s, enrolled_count, active_count, completed_count, replied_count
-    """
-    results = graph_db.query(query, {'id': sequence_id})
-
-    if not results:
+async def get_sequence(
+    sequence_id: str,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Get sequence by ID with enrollment statistics."""
+    seq = await sequence_service.get_by_id(session, sequence_id)
+    if not seq:
         raise HTTPException(status_code=404, detail="Sequence not found")
-
-    return _parse_sequence_result(results[0])
+    return _to_response(seq)
 
 
 @router.put("/{sequence_id}", response_model=SequenceResponse)
-async def update_sequence(sequence_id: int, update: SequenceUpdate, user: TokenData = Depends(require_auth)):
-    """
-    Update sequence properties.
-    """
-    # Check exists
-    existing_query = "MATCH (s:Sequence) WHERE id(s) = $id RETURN s"
-    existing = graph_db.query(existing_query, {'id': sequence_id})
-    if not existing:
+async def update_sequence(
+    sequence_id: str,
+    update: SequenceUpdate,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Update sequence properties."""
+    seq = await sequence_service.get_by_id(session, sequence_id)
+    if not seq:
         raise HTTPException(status_code=404, detail="Sequence not found")
 
-    # Build update
+    # Apply updates via raw SQL update
+    from sqlalchemy import update as sql_update
+    from app.models import Sequence
+
     updates = {k: v.value if hasattr(v, 'value') else v
                for k, v in update.model_dump().items() if v is not None}
 
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    set_clause = ', '.join(f's.{k} = ${k}' for k in updates.keys())
-    query = f"""
-        MATCH (s:Sequence)
-        WHERE id(s) = $id
-        SET {set_clause}
-        RETURN s
-    """
-    updates['id'] = sequence_id
-    result = graph_db.query(query, updates)
+    from datetime import datetime
+    updates["updated_at"] = datetime.utcnow()
 
-    return _parse_sequence_result(result[0]) if result else None
+    await session.execute(
+        sql_update(Sequence).where(Sequence.id == sequence_id).values(**updates)
+    )
+    await session.commit()
+
+    seq = await sequence_service.get_by_id(session, sequence_id)
+    return _to_response(seq)
 
 
 @router.post("/{sequence_id}/enroll", response_model=EnrollmentResponse)
-async def enroll_prospects(sequence_id: int, request: EnrollmentRequest, user: TokenData = Depends(require_auth)):
-    """
-    Enroll prospects in a sequence.
-
-    - Prospects must exist
-    - Cannot enroll if already enrolled and active
-    """
-    # Verify sequence exists
-    seq_query = "MATCH (s:Sequence) WHERE id(s) = $id RETURN s"
-    seq = graph_db.query(seq_query, {'id': sequence_id})
+async def enroll_prospects(
+    sequence_id: str,
+    request: EnrollmentRequest,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Enroll prospects in a sequence by email."""
+    seq = await sequence_service.get_by_id(session, sequence_id)
     if not seq:
         raise HTTPException(status_code=404, detail="Sequence not found")
 
@@ -205,31 +166,37 @@ async def enroll_prospects(sequence_id: int, request: EnrollmentRequest, user: T
 
     for email in request.prospect_emails:
         try:
-            # Check if prospect exists
-            prospect = graph_db.get_prospect_by_email(email)
-            if not prospect or not prospect.get('p'):
+            # Look up prospect by email
+            from sqlalchemy import select as sql_select
+            from app.models import Prospect
+            result = await session.execute(
+                sql_select(Prospect).where(Prospect.email == email.lower())
+            )
+            prospect = result.scalar_one_or_none()
+
+            if not prospect:
                 failed += 1
                 errors.append(f"{email}: Prospect not found")
                 continue
 
             # Check if already enrolled
-            check_query = """
-                MATCH (p:Prospect {email: $email})-[e:ENROLLED_IN]->(s:Sequence)
-                WHERE id(s) = $sequence_id AND e.status IN ['active', 'paused']
-                RETURN e
-            """
-            existing = graph_db.query(check_query, {
-                'email': email.lower(),
-                'sequence_id': sequence_id,
-            })
-
-            if existing:
+            from app.models import SequenceEnrollment
+            existing = await session.execute(
+                sql_select(SequenceEnrollment).where(
+                    SequenceEnrollment.sequence_id == sequence_id,
+                    SequenceEnrollment.prospect_id == str(prospect.id),
+                    SequenceEnrollment.status.in_(["active", "paused"]),
+                )
+            )
+            if existing.scalar_one_or_none():
                 already_enrolled += 1
                 continue
 
-            # Enroll
-            graph_db.enroll_prospect_in_sequence(email, sequence_id)
+            await sequence_service.enroll_prospect(session, sequence_id, str(prospect.id))
             enrolled += 1
+
+            # Also record in ChampGraph for relationship tracking
+            await graph_db.enroll_prospect_in_sequence(email, int(sequence_id) if sequence_id.isdigit() else 0)
 
         except Exception as e:
             failed += 1
@@ -244,95 +211,77 @@ async def enroll_prospects(sequence_id: int, request: EnrollmentRequest, user: T
 
 
 @router.post("/{sequence_id}/pause")
-async def pause_sequence(sequence_id: int, user: TokenData = Depends(require_auth)):
-    """
-    Pause a sequence and all active enrollments.
-    """
-    query = """
-        MATCH (s:Sequence)
-        WHERE id(s) = $id
-        SET s.status = 'paused'
-        WITH s
-        MATCH (p:Prospect)-[e:ENROLLED_IN]->(s)
-        WHERE e.status = 'active'
-        SET e.status = 'paused', e.paused_at = datetime()
-        RETURN s, count(e) as paused_count
-    """
-    result = graph_db.query(query, {'id': sequence_id})
-
-    if not result:
-        raise HTTPException(status_code=404, detail="Sequence not found")
-
-    return {"status": "paused", "enrollments_paused": result[0].get('paused_count', 0)}
-
-
-@router.post("/{sequence_id}/resume")
-async def resume_sequence(sequence_id: int, user: TokenData = Depends(require_auth)):
-    """
-    Resume a paused sequence and its enrollments.
-    """
-    query = """
-        MATCH (s:Sequence)
-        WHERE id(s) = $id
-        SET s.status = 'active'
-        WITH s
-        MATCH (p:Prospect)-[e:ENROLLED_IN]->(s)
-        WHERE e.status = 'paused'
-        SET e.status = 'active', e.paused_at = null
-        RETURN s, count(e) as resumed_count
-    """
-    result = graph_db.query(query, {'id': sequence_id})
-
-    if not result:
-        raise HTTPException(status_code=404, detail="Sequence not found")
-
-    return {"status": "active", "enrollments_resumed": result[0].get('resumed_count', 0)}
-
-
-@router.get("/{sequence_id}/analytics")
-async def get_sequence_analytics(sequence_id: int, user: TokenData = Depends(require_auth)):
-    """
-    Get detailed analytics for a sequence.
-
-    Returns:
-    - Enrollment funnel
-    - Email performance (opens, clicks, replies)
-    - Step-by-step breakdown
-    """
-    # Verify exists
-    seq_query = "MATCH (s:Sequence) WHERE id(s) = $id RETURN s"
-    seq = graph_db.query(seq_query, {'id': sequence_id})
+async def pause_sequence(
+    sequence_id: str,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Pause a sequence and all active enrollments."""
+    seq = await sequence_service.get_by_id(session, sequence_id)
     if not seq:
         raise HTTPException(status_code=404, detail="Sequence not found")
 
-    # Get enrollment stats
-    enrollment_query = """
-        MATCH (p:Prospect)-[e:ENROLLED_IN]->(s:Sequence)
-        WHERE id(s) = $id
-        RETURN
-            e.status as status,
-            count(*) as count
-    """
-    enrollment_stats = graph_db.query(enrollment_query, {'id': sequence_id})
+    await sequence_service.pause(session, sequence_id)
+    return {"status": "paused"}
 
-    # Get email stats
-    email_query = """
-        MATCH (p:Prospect)-[:RECEIVED]->(e:Email)
-        WHERE e.sequence_id = $id
-        RETURN
-            e.step_number as step,
-            count(*) as sent,
-            sum(CASE WHEN e.opened_at IS NOT NULL THEN 1 ELSE 0 END) as opened,
-            sum(CASE WHEN e.clicked_at IS NOT NULL THEN 1 ELSE 0 END) as clicked,
-            sum(CASE WHEN e.replied_at IS NOT NULL THEN 1 ELSE 0 END) as replied
-    """
-    email_stats = graph_db.query(email_query, {'id': sequence_id})
+
+@router.post("/{sequence_id}/resume")
+async def resume_sequence(
+    sequence_id: str,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Resume a paused sequence and its enrollments."""
+    seq = await sequence_service.get_by_id(session, sequence_id)
+    if not seq:
+        raise HTTPException(status_code=404, detail="Sequence not found")
+
+    await sequence_service.resume(session, sequence_id)
+    return {"status": "active"}
+
+
+@router.get("/{sequence_id}/analytics")
+async def get_sequence_analytics(
+    sequence_id: str,
+    user: TokenData = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
+):
+    """Get detailed analytics for a sequence."""
+    seq = await sequence_service.get_by_id(session, sequence_id)
+    if not seq:
+        raise HTTPException(status_code=404, detail="Sequence not found")
+
+    # Get enrollment stats from PostgreSQL
+    from sqlalchemy import select as sql_select, func
+    from app.models import SequenceEnrollment, SequenceStepExecution
+
+    enrollment_result = await session.execute(
+        sql_select(
+            SequenceEnrollment.status,
+            func.count().label("count"),
+        ).where(
+            SequenceEnrollment.sequence_id == sequence_id
+        ).group_by(SequenceEnrollment.status)
+    )
+    enrollment_stats = {row[0]: row[1] for row in enrollment_result.fetchall()}
+
+    # Get email stats by step
+    email_result = await session.execute(
+        sql_select(
+            SequenceStepExecution.step_id,
+            func.count().label("sent"),
+        ).join(
+            SequenceEnrollment,
+            SequenceStepExecution.enrollment_id == SequenceEnrollment.id,
+        ).where(
+            SequenceEnrollment.sequence_id == sequence_id,
+            SequenceStepExecution.status == "sent",
+        ).group_by(SequenceStepExecution.step_id)
+    )
+    email_stats = [{"step_id": str(row[0]), "sent": row[1]} for row in email_result.fetchall()]
 
     return {
         "sequence_id": sequence_id,
-        "enrollment_stats": {
-            stat.get('status', 'unknown'): stat.get('count', 0)
-            for stat in enrollment_stats
-        },
+        "enrollment_stats": enrollment_stats,
         "email_stats": email_stats,
     }

@@ -1,6 +1,5 @@
 from celery import shared_task
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker as async_session
 from datetime import datetime, timedelta
 import asyncio
 
@@ -11,6 +10,7 @@ def execute_pending_steps(self):
         from app.services.sequence_service import sequence_service
         from app.services.mail_engine_client import mail_engine_client
         from app.services.domain_rotation import domain_rotator
+        from app.db.falkordb import graph_db
 
         async with async_session() as session:
             pending_steps = await sequence_service.get_pending_steps(session)
@@ -24,12 +24,21 @@ def execute_pending_steps(self):
                         recipient_name=step.get("prospect_name"),
                         subject=step.get("subject"),
                         html_body=step.get("body"),
-                        domain_id=domain_id,
+                        domain_id=domain_id or "",
                         track_opens=True,
                         track_clicks=True,
                     )
 
                     await sequence_service.mark_step_sent(session, step.get("id"), result.message_id)
+
+                    # Record in ChampGraph for relationship intelligence
+                    await graph_db.record_email_sent(
+                        prospect_email=step.get("prospect_email", ""),
+                        sequence_id=int(step.get("sequence_id", 0)) if str(step.get("sequence_id", "")).isdigit() else 0,
+                        step_number=step.get("step_order", 0),
+                        subject=step.get("subject", ""),
+                        body_hash=str(hash(step.get("body", ""))),
+                    )
 
                     await sequence_service.schedule_next_step(
                         session,
@@ -76,16 +85,19 @@ def check_replies_and_pause(self):
             active_sequences = await sequence_service.get_active_sequences(session)
 
             for seq in active_sequences:
-                prospect_ids = await sequence_service.get_enrolled_prospect_ids(session, seq.id)
+                prospect_ids = await sequence_service.get_enrolled_prospect_ids(session, seq.get("id"))
 
                 for prospect_id in prospect_ids:
-                    has_replied = await mail_engine_client.check_for_replies(
-                        prospect_email=seq.prospect_email
-                    )
-
-                    if has_replied:
-                        await sequence_service.pause(
-                            session, seq.id, prospect_id, reason="reply_detected"
+                    try:
+                        has_replied = await mail_engine_client.check_for_replies(
+                            prospect_email=seq.get("prospect_email", "")
                         )
+
+                        if has_replied:
+                            await sequence_service.pause(
+                                session, seq.get("id"), prospect_id, reason="reply_detected"
+                            )
+                    except Exception:
+                        pass  # Best effort reply detection
 
     asyncio.run(_check())

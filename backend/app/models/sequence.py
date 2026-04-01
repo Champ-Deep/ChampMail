@@ -9,7 +9,7 @@ from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from app.db.postgres import Base
@@ -174,3 +174,36 @@ class SequenceStepExecution(Base):
     # Relationships
     enrollment = relationship("SequenceEnrollment")
     step = relationship("SequenceStep", back_populates="executions")
+
+
+class SequenceStepLog(Base):
+    """
+    Immutable audit log for each step executed in the 3-point follow-up sequence.
+    Used as historical context for future AI email generation.
+    """
+
+    __tablename__ = "sequence_step_logs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    prospect_id = Column(UUID(as_uuid=True), ForeignKey("prospects.id", ondelete="CASCADE"), nullable=False)
+    campaign_id = Column(UUID(as_uuid=True), ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True)
+    sequence_id = Column(UUID(as_uuid=True), ForeignKey("sequences.id", ondelete="CASCADE"), nullable=False)
+    enrollment_id = Column(UUID(as_uuid=True), ForeignKey("sequence_enrollments.id", ondelete="CASCADE"), nullable=False)
+
+    sequence_step = Column(Integer, nullable=False)  # 1, 2, or 3
+    # sent | acknowledged | followed_up | completed | skipped
+    action_taken = Column(String(50), nullable=False)
+    reply_detected = Column(Boolean, nullable=False, default=False)
+
+    # Stored for future AI context
+    email_content_summary = Column(Text, nullable=True)
+    raw_subject = Column(Text, nullable=True)
+    raw_body_snippet = Column(Text, nullable=True)  # first 500 chars
+
+    timestamp = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    # Relationships
+    prospect = relationship("Prospect")
+    sequence = relationship("Sequence")
+    enrollment = relationship("SequenceEnrollment")

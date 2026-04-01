@@ -7,7 +7,7 @@ Handles user CRUD operations with PostgreSQL persistence.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -42,6 +42,7 @@ class UserService:
         password: str,
         full_name: str = "",
         role: str = "user",
+        team_id: Optional[str] = None,
     ) -> User:
         """Create a new user."""
         user = User(
@@ -50,6 +51,7 @@ class UserService:
             hashed_password=get_password_hash(password),
             full_name=full_name or None,
             role=role,
+            team_id=team_id or None,
             is_active=True,
             is_verified=False,
             onboarding_progress={"completed_tours": [], "skipped_tours": []},
@@ -57,6 +59,22 @@ class UserService:
         session.add(user)
         await session.flush()
         return user
+
+    async def list_users(
+        self,
+        session: AsyncSession,
+        team_id: Optional[str] = None,
+        role: Optional[str] = None,
+    ) -> List[User]:
+        """List all users, optionally filtered by team or role."""
+        query = select(User)
+        if team_id:
+            query = query.where(User.team_id == team_id)
+        if role:
+            query = query.where(User.role == role)
+        query = query.order_by(User.created_at.desc())
+        result = await session.execute(query)
+        return result.scalars().all()
 
     async def authenticate(
         self,
