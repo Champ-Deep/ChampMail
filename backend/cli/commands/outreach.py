@@ -121,14 +121,26 @@ def cmd_prospect(obj, email, first_name, last_name, title, phone,
                 pg_id = p.get("id")
                 created = True
 
-        # 1b — ChampGraph ingest (prospect node + company link)
-        parts = [f"Prospect: {first_name} {last_name}".strip() or email]
+        # 1b — ChampGraph ingest (rich prospect profile for research agent)
+        full_name = f"{first_name} {last_name}".strip() or email
+        parts = [f"{full_name} is a prospect in the ChampMail outreach system."]
         parts.append(f"Email: {email}")
-        if title:      parts.append(f"Title: {title}")
-        if phone:      parts.append(f"Phone: {phone}")
-        if company_name: parts.append(f"Company: {company_name}")
-        if industry:   parts.append(f"Industry: {industry}")
-        if linkedin_url: parts.append(f"LinkedIn: {linkedin_url}")
+        if first_name:   parts.append(f"First name: {first_name}")
+        if last_name:    parts.append(f"Last name: {last_name}")
+        if title:        parts.append(f"Job title: {title}")
+        if phone:        parts.append(f"Phone number: {phone}")
+        if linkedin_url: parts.append(f"LinkedIn profile: {linkedin_url}")
+        if company_name: parts.append(f"Works at company: {company_name}")
+        if company_domain: parts.append(f"Company website/domain: {company_domain}")
+        if industry:     parts.append(f"Industry: {industry}")
+        # Summary sentence for the research agent
+        who = f"{full_name}, {title} at {company_name}" if title and company_name else full_name
+        parts.append(
+            f"Summary: {who} can be reached at {email}"
+            + (f" or {phone}" if phone else "")
+            + (f". LinkedIn: {linkedin_url}" if linkedin_url else "")
+            + "."
+        )
 
         # Use name-based account key so research queries can find this data
         name_key = f"{first_name}_{last_name}".strip("_").lower().replace(" ", "_")

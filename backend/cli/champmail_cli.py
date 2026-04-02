@@ -33,6 +33,11 @@ for noisy in ("sqlalchemy", "sqlalchemy.engine", "sqlalchemy.pool",
     logging.getLogger(noisy).setLevel(logging.WARNING)
 
 from cli.context import CliContext
+from cli.config_store import apply_to_runtime
+# Apply any stored admin config (SMTP, IMAP, AI key) to os.environ at startup
+# so all commands automatically use the user's saved credentials.
+apply_to_runtime()
+
 from cli.repl_skin import (
     get_prompt_html,
     make_prompt_session,
@@ -55,6 +60,8 @@ from cli.commands.health import health
 from cli.commands.send import send
 from cli.commands.tunnel import tunnel
 from cli.commands.outreach import outreach
+from cli.commands.setup import setup
+from cli.commands.chat import chat
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,6 +100,8 @@ cli.add_command(health)
 cli.add_command(send)
 cli.add_command(tunnel)
 cli.add_command(outreach)
+cli.add_command(setup)
+cli.add_command(chat)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

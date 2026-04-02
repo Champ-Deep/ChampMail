@@ -18,6 +18,17 @@ pip install -e .
 python -m cli.champmail_cli
 ```
 
+## Quick Start (any terminal)
+
+```bash
+# Install globally (one-time)
+ln -sf ~/Desktop/ChampMail-main-1/champmail ~/.local/bin/champmail
+
+# Then from any directory:
+champmail auth login --email admin@champions.dev --password admin123
+champmail chat           # conversational AI interface ← start here
+```
+
 ## Authentication (required first)
 
 ```bash
@@ -25,6 +36,33 @@ champmail auth login --email admin@champions.dev --password admin123
 champmail auth whoami
 champmail auth logout
 ```
+
+## Admin Setup (run once before outreach)
+
+```bash
+champmail setup domain   --name outreach.yourcompany.com --provider cloudflare
+champmail setup smtp     --host smtp.ethereal.email --port 587 --username U --password P --from-email E
+champmail setup imap     --host imap.ethereal.email --port 993 --username U --password P
+champmail setup prospect --industry SaaS --source linkedin
+champmail setup campaign --from-name "Your Name" --from-email you@company.com --daily-limit 50
+champmail setup ai       --api-key sk-or-... --model openai/gpt-4.1-mini
+champmail setup show     # view all config (passwords hidden)
+champmail setup test smtp|imap|all   # verify connections
+```
+
+## Conversational Chat Interface
+
+```bash
+champmail chat           # start conversational session (animated intro, AI-guided flow)
+champmail chat --setup   # start with setup wizard
+champmail chat --plain   # skip animated intro (CI/pipe-friendly)
+```
+
+Inside chat: type naturally. Built-in commands:
+- `status`  — show setup completion status
+- `help`    — command reference
+- `clear`   — clear conversation history
+- `exit`    — quit
 
 ## Interactive REPL
 
