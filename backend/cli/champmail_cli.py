@@ -27,6 +27,11 @@ import click
 # Must be set BEFORE app.db.postgres is imported (it reads settings at import time).
 os.environ.setdefault("DEBUG", "false")
 
+# CLI runs on host, not inside Docker — rewrite Docker-internal hostnames to localhost
+_champgraph = os.environ.get("CHAMPGRAPH_URL", "")
+if "graphiti-knowledge-graph" in _champgraph or not _champgraph:
+    os.environ["CHAMPGRAPH_URL"] = "http://localhost:8080"
+
 logging.basicConfig(level=logging.WARNING)
 for noisy in ("sqlalchemy", "sqlalchemy.engine", "sqlalchemy.pool",
               "asyncio", "httpx", "aiosqlite", "alembic"):

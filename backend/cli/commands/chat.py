@@ -185,22 +185,74 @@ After collecting → say: SAVE_PROSPECT:{industry}|{source}
 
 ### Outreach flow (when user wants to reach out to someone)
 Ask these questions one or two at a time — be natural, not robotic:
-1. "Who do you want to reach out to? Give me their email address."
-2. "What's their full name, job title, and company?"
-3. "Do you have their phone number or LinkedIn profile? (optional but helps with research)"
-4. "What industry are they in?"
-5. "What's your goal with this email? (e.g. book a demo, introduce a product)"
-6. "What problem or pain point are you solving for them?"
-7. "What's your value proposition in one sentence?"
-8. "Any extra context? (e.g. they just raised funding, recently hired, spoke at a conference)"
-9. "What's your call to action? (e.g. '15-min call this week?')"
-10. "What tone? (casual / professional / friendly)"
+1. "What email address should this be sent FROM? And what's your name and role/position?"
+   (e.g. "rajesh@lakeb2b.com — Rajesh, Sales Executive at LakeB2B")
+2. "Who do you want to reach out to? Give me their email address."
+3. "What's their full name, job title, and company?"
+4. "Do you have their phone number or LinkedIn profile? (optional but helps with research)"
+5. "What industry are they in?"
+6. "What's your goal with this email? (e.g. book a demo, introduce a product)"
+7. "What problem or pain point are you solving for them?"
+8. "What's your value proposition in one sentence?"
+9. "Any extra context? (e.g. they just raised funding, recently hired, spoke at a conference)"
+10. "What's your call to action? (e.g. '15-min call this week?')"
+11. "What tone? (casual / professional / friendly)"
 After collecting ALL fields → your response MUST end with this exact token on its own line:
-RUN_OUTREACH:{email}|{first}|{last}|{title}|{company}|{domain}|{industry}|{goal}|{pain}|{value}|{context}|{cta}|{tone}|{phone}|{linkedin}
+RUN_OUTREACH:{email}|{first}|{last}|{title}|{company}|{domain}|{industry}|{goal}|{pain}|{value}|{context}|{cta}|{tone}|{phone}|{linkedin}|{sender_name}|{sender_position}|{sender_company}|{sender_email}
+
+Where:
+- {sender_name}: The sender's name (e.g. "Rajesh")
+- {sender_position}: The sender's role/position (e.g. "Sales Executive")
+- {sender_company}: The sender's company (e.g. "LakeB2B")
+- {sender_email}: The from email address (e.g. "rajesh@lakeb2b.com")
 
 CRITICAL: Never say "I'm sending it now" or "email sent" — the system sends it automatically when it sees the token. Just say "Launching outreach pipeline now!" before the token line, then stop.
 Never promise to "notify" the user — the pipeline runs live and they'll see real-time progress directly.
 Skip any field the user says is unavailable — use empty string for missing values.
+ALWAYS ask for sender name, position, company, and from-email FIRST before prospect details.
+
+### Custom / manual email (when user provides exact email content to send)
+
+If the user writes or dictates the exact email they want sent (not a campaign-style outreach), OR asks you to compose a specific type of email (data enrichment, follow-up, introduction, etc.) and provides/confirms the content, use the SEND_CUSTOM token instead of RUN_OUTREACH.
+
+Ask:
+1. "Who should I send this to? (email address)" — if not already known
+2. Confirm the subject line and body with the user before sending
+3. After confirmation, emit on its own line:
+SEND_CUSTOM:{to_email}|{subject}|{body_text}
+
+Where body_text uses \\n for newlines. Keep the exact wording the user provided or confirmed.
+
+CRITICAL: Use SEND_CUSTOM (not RUN_OUTREACH) when:
+- The user gives you a specific email to send verbatim
+- The user asks for a non-campaign email (data enrichment, introduction request, feedback request, etc.)
+- The user says "send this" or provides the subject and body directly
+- The user customizes a template you suggested and says "send it"
+
+### Status & monitoring (when user asks about status, replies, or connections)
+
+**Outreach status** — if user says "outreach status", "check status for X", "what's happening with X", "show me the pipeline for X":
+Ask for email if not provided, then emit on its own line:
+RUN_STATUS:{email}
+
+**Check replies** — if user says "show replies", "any replies from X", "check inbox for X", "did X reply":
+Ask for email if not provided, then emit on its own line:
+RUN_REPLIES:{email}
+
+**View research** — if user says "show research for X", "what do we know about X", "view research", "show me the research":
+Ask for email if not provided, then emit on its own line:
+VIEW_RESEARCH:{email}
+
+**Verify SMTP** — if user says "test smtp", "verify smtp", "check email connection", "is smtp working":
+Emit on its own line:
+RUN_VERIFY:smtp
+
+**Check IMAP inbox** — if user says "test imap", "check imap", "check inbox", "show my inbox":
+Emit on its own line:
+RUN_IMAP_CHECK
+
+CRITICAL: These tokens MUST appear on their own line. The system executes them automatically and shows live output.
+Never say "I can't check that" or "check your dashboard" — you CAN check it via these tokens.
 
 ## Conversation style
 - Be warm, concise, and direct. Like a helpful colleague, not a manual.
@@ -478,10 +530,22 @@ def _run_outreach_visual(email, first, last, title, company, domain, industry,
                    email, "--answers-file", answers_file]
         elif step == "prep":
             cmd = [sys.executable, "-m", "cli.champmail_cli", "outreach", "prep",
-                   email, "--save", answers_file + ".draft.json"]
+                   email, "--save", answers_file + ".draft.json",
+                   "--answers-file", answers_file]
         elif step == "send":
             cmd = [sys.executable, "-m", "cli.champmail_cli", "outreach", "send",
                    email, "--draft-file", answers_file + ".draft.json"]
+            # Pass sender info from answers
+            try:
+                import json as _json2
+                with open(answers_file) as _af:
+                    _ans = _json2.load(_af)
+                if _ans.get("sender"):
+                    cmd += ["--from-name", _ans["sender"]]
+                if _ans.get("from_email"):
+                    cmd += ["--from-email", _ans["from_email"]]
+            except Exception:
+                pass
         else:
             cmd = [sys.executable, "-m", "cli.champmail_cli", "outreach", step, email]
 
@@ -639,12 +703,31 @@ def _execute_chat_actions(response: str) -> str:
                 phone    = parts[13] if len(parts) > 13 else ""
                 linkedin = parts[14] if len(parts) > 14 else ""
 
+                # Parse sender fields (appended after linkedin)
+                sender_name    = parts[15] if len(parts) > 15 else ""
+                sender_position = parts[16] if len(parts) > 16 else ""
+                sender_company = parts[17] if len(parts) > 17 else ""
+                sender_email   = parts[18] if len(parts) > 18 else ""
+
+                # Build sender line: "Name, Position at Company"
+                sender_display = sender_name.strip()
+                if sender_position.strip():
+                    sender_display += f", {sender_position.strip()}"
+                if sender_company.strip():
+                    sender_display += f" at {sender_company.strip()}"
+                if not sender_display:
+                    sender_display = get_value("campaign_defaults", "from_name") or "Your Name"
+                if not sender_email:
+                    sender_email = get_value("campaign_defaults", "from_email") or ""
+
                 import json as _json, tempfile as _tmp, subprocess as _sp, threading as _th
                 answers = {
                     "goal": goal, "pain_point": pain, "value_prop": value,
                     "context": ctx, "cta": cta, "tone": tone,
-                    "sender": get_value("campaign_defaults", "from_name") or "Your Name",
-                    "from_email": get_value("campaign_defaults", "from_email") or "",
+                    "sender": sender_display,
+                    "sender_position": sender_position,
+                    "sender_company": sender_company,
+                    "from_email": sender_email,
                 }
                 with _tmp.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
                     _json.dump(answers, f)
@@ -657,6 +740,127 @@ def _execute_chat_actions(response: str) -> str:
                     phone=phone, linkedin=linkedin, answers_file=answers_file,
                     full_name=full_name,
                 )
+            continue
+
+        # ── SEND_CUSTOM ───────────────────────────────────────────────────
+        m = _re.match(r"SEND_CUSTOM:(.+)", stripped)
+        if m:
+            parts = m.group(1).split("|", 2)  # max 3 parts: email|subject|body
+            if len(parts) >= 3:
+                to_email = parts[0].strip()
+                subj     = parts[1].strip()
+                body_raw = parts[2].strip().replace("\\n", "\n")
+
+                import subprocess as _sp
+
+                click.echo(f"\n  \033[1;36m✉  Sending custom email to {to_email}...\033[0m\n")
+
+                _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+                _cwd = str(Path(__file__).parent.parent.parent)
+
+                # Build HTML body from plain text
+                html_body = "".join(f"<p>{line}</p>" for line in body_raw.split("\n") if line.strip())
+
+                # Get sender info from config
+                sender_name  = get_value("campaign_defaults", "from_name") or ""
+                sender_email = get_value("campaign_defaults", "from_email") or ""
+
+                cmd = [
+                    sys.executable, "-m", "cli.champmail_cli", "outreach", "send",
+                    to_email,
+                    "--subject", subj,
+                    "--body", html_body,
+                ]
+                if sender_name:
+                    cmd += ["--from-name", sender_name]
+                if sender_email:
+                    cmd += ["--from-email", sender_email]
+
+                result = _sp.run(cmd, env=_env, cwd=_cwd, capture_output=True, text=True)
+
+                if result.returncode == 0:
+                    click.echo(f"  \033[32m✓  Email sent to {to_email}!\033[0m")
+                    click.echo(f"     Subject: {subj}")
+                else:
+                    click.echo(f"  \033[31m✗  Send failed\033[0m")
+                    if result.stdout:
+                        for ln in result.stdout.strip().splitlines()[-3:]:
+                            click.echo(f"     {ln}")
+                    if result.stderr:
+                        for ln in result.stderr.strip().splitlines()[-2:]:
+                            click.echo(f"     \033[31m{ln}\033[0m")
+                click.echo()
+            continue
+
+        # ── RUN_STATUS ────────────────────────────────────────────────────
+        m = _re.match(r"RUN_STATUS:(.+)", stripped)
+        if m:
+            import subprocess as _sp
+            _email = m.group(1).strip()
+            click.echo(f"\n  \033[1;36m📊  Checking pipeline status for {_email}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "outreach", "status", _email],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
+            continue
+
+        # ── RUN_REPLIES ───────────────────────────────────────────────────
+        m = _re.match(r"RUN_REPLIES:(.+)", stripped)
+        if m:
+            import subprocess as _sp
+            _email = m.group(1).strip()
+            click.echo(f"\n  \033[1;36m📬  Checking replies for {_email}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "outreach", "replies", _email],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
+            continue
+
+        # ── VIEW_RESEARCH ─────────────────────────────────────────────────
+        m = _re.match(r"VIEW_RESEARCH:(.+)", stripped)
+        if m:
+            import subprocess as _sp
+            _email = m.group(1).strip()
+            click.echo(f"\n  \033[1;36m🔍  Showing saved research for {_email}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "outreach", "view-research", _email],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
+            continue
+
+        # ── RUN_VERIFY ────────────────────────────────────────────────────
+        if stripped == "RUN_VERIFY:smtp":
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m🔌  Verifying SMTP connection...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "send", "verify"],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
+            continue
+
+        # ── RUN_IMAP_CHECK ────────────────────────────────────────────────
+        if stripped == "RUN_IMAP_CHECK":
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m📥  Checking IMAP inbox...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "send", "imap-check"],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
             continue
 
         clean_lines.append(line)

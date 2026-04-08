@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     smtp_username: str = ""
     smtp_password: str = ""
     smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
     mail_from_email: str = "noreply@champmail.dev"
     mail_from_name: str = "ChampMail"
 

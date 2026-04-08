@@ -91,13 +91,26 @@ class ResearchService(OpenRouterClient):
         name = f"{prospect.get('first_name', '')} {prospect.get('last_name', '')}".strip() or "the contact"
         title = prospect.get("title") or prospect.get("job_title", "professional")
         domain = prospect.get("company_domain", "")
+        email_addr = prospect.get("email", "")
+        linkedin_url = prospect.get("linkedin_url", "")
 
-        prompt = f"""Research this B2B prospect for a cold email campaign. Return structured JSON only.
+        prompt = f"""Research this specific B2B prospect for a cold email campaign. Return structured JSON only.
 
-Company: {company}
+IMPORTANT: Search for the EXACT person described below. Cross-reference name + company + title to confirm identity. Do NOT return information about a different person with a similar name.
+
 Person: {name}
 Title: {title}
-{f"Domain: {domain}" if domain else ""}
+Company: {company}
+{f"Email: {email_addr}" if email_addr else ""}
+{f"Company domain: {domain}" if domain else ""}
+{f"LinkedIn: {linkedin_url}" if linkedin_url else ""}
+
+SEARCH INSTRUCTIONS (follow these precisely):
+1. Search LinkedIn for "{name}" who works at "{company}" as "{title}" — find their exact profile, headline, about section, and recent activity/posts
+2. Search for recent posts, articles, podcast appearances, conference talks, or interviews by "{name}" at "{company}"
+3. Search for "{company}" {f'site:{domain}' if domain else ''} recent news — funding rounds, product launches, partnerships, press releases, hiring sprees
+4. Search for "{name}" on Twitter/X, GitHub, Medium, Substack, or other public profiles
+5. Search Crunchbase or similar for "{company}" company data — funding, investors, revenue, headcount
 
 Return JSON with these exact keys:
 {{
@@ -105,30 +118,39 @@ Return JSON with these exact keys:
     "description": "brief company description",
     "industry": "industry/sector",
     "size": "estimated employee count",
-    "revenue": "estimated revenue range",
+    "revenue": "estimated revenue range if available",
     "products": ["key products/services"],
-    "tech_stack": ["known technologies"],
-    "recent_news": ["last 6 months developments"]
+    "tech_stack": ["known technologies used"],
+    "recent_news": ["last 6 months developments with approximate dates"]
+  }},
+  "person_intel": {{
+    "linkedin_headline": "their LinkedIn headline verbatim if found",
+    "linkedin_about": "summary of their LinkedIn about section",
+    "recent_posts": ["summaries of their recent LinkedIn or social media posts"],
+    "articles_or_talks": ["any articles they wrote, podcasts, or conference talks with titles"],
+    "public_profiles": ["URLs or handles for Twitter/X, GitHub, Medium, etc."],
+    "career_background": "career history summary — previous roles, companies, education",
+    "interests": ["professional topics or causes they engage with publicly"]
   }},
   "industry_insights": {{
-    "trends": ["current trends"],
-    "pain_points": ["common challenges"],
-    "regulatory": ["relevant regulations/changes"]
+    "trends": ["current industry trends relevant to {company}"],
+    "pain_points": ["common challenges for companies like {company}"],
+    "regulatory": ["relevant regulations or market changes"]
   }},
   "persona_details": {{
-    "responsibilities": ["typical responsibilities for {title}"],
-    "challenges": ["common challenges"],
-    "priorities": ["key metrics/goals"],
-    "decision_authority": "level of buying authority"
+    "responsibilities": ["typical responsibilities for a {title} at a company like {company}"],
+    "challenges": ["specific challenges someone in this role faces"],
+    "priorities": ["key metrics and goals they likely care about"],
+    "decision_authority": "estimated level of buying/decision authority"
   }},
   "triggers": {{
-    "funding": "recent funding info or null",
-    "acquisitions": "recent M&A or null",
-    "leadership_changes": "recent exec changes or null",
-    "hiring": ["relevant job postings"],
-    "expansion": "growth signals"
+    "funding": "recent funding info with date and amount, or null",
+    "acquisitions": "recent M&A activity, or null",
+    "leadership_changes": "recent executive changes, or null",
+    "hiring": ["relevant job postings that signal growth or needs"],
+    "expansion": "growth signals — new markets, offices, products"
   }},
-  "personalization_hooks": ["3-5 specific details useful for email personalization"]
+  "personalization_hooks": ["5-7 specific, verified details useful for email personalization — strongly prefer things {name} personally said, wrote, posted, or did recently"]
 }}"""
 
         try:
@@ -144,6 +166,7 @@ Return JSON with these exact keys:
             except json.JSONDecodeError:
                 research_data = {
                     "company_info": {"description": content[:500]},
+                    "person_intel": {},
                     "industry_insights": {},
                     "persona_details": {},
                     "triggers": {},
@@ -167,6 +190,7 @@ Return JSON with these exact keys:
             return {
                 "error": f"API error: {e.response.status_code}",
                 "company_info": {"description": f"Unable to research {company}"},
+                "person_intel": {},
                 "industry_insights": {},
                 "persona_details": {},
                 "triggers": {},
@@ -176,6 +200,7 @@ Return JSON with these exact keys:
             return {
                 "error": str(e),
                 "company_info": {"description": f"Research failed for {company}"},
+                "person_intel": {},
                 "industry_insights": {},
                 "persona_details": {},
                 "triggers": {},

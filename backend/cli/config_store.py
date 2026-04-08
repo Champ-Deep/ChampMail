@@ -87,6 +87,7 @@ _ENV_MAP = {
     "smtp.username":    "SMTP_USERNAME",
     "smtp.password":    "SMTP_PASSWORD",
     "smtp.use_tls":     "SMTP_USE_TLS",
+    "smtp.use_ssl":     "SMTP_USE_SSL",
     "smtp.from_email":  "MAIL_FROM_EMAIL",
     "smtp.from_name":   "MAIL_FROM_NAME",
     "imap.host":        "IMAP_HOST",
