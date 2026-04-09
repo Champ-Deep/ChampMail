@@ -52,7 +52,7 @@ def check(obj: CliContext) -> None:
 
     # ChampGraph
     async def _graph():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
         try:
             ok = init_graph_db()
             if not ok:

@@ -7,7 +7,7 @@ FastAPI backend for the Champion's Email Automation Engine.
 ### Prerequisites
 
 - Python 3.11+
-- FalkorDB running (see `/infrastructure`)
+- ChampGraph running (see `/infrastructure`)
 - Redis running (see `/infrastructure`)
 
 ### Installation
@@ -104,7 +104,7 @@ backend/
 │   │   ├── config.py          # Settings
 │   │   └── security.py        # JWT auth
 │   ├── db/
-│   │   └── falkordb.py        # FalkorDB client
+│   │   └── champgraph.py      # ChampGraph client
 │   ├── schemas/
 │   │   ├── prospect.py        # Prospect schemas
 │   │   └── sequence.py        # Sequence schemas

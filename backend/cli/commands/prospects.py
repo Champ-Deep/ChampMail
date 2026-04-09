@@ -21,12 +21,19 @@ import click
 
 from cli.context import CliContext
 from cli.repl_skin import print_error, print_info, print_kv, print_section, print_success, print_table
-from cli.session import is_logged_in
+from cli.session import get_role, is_logged_in
 
 
 def _require_login(obj):
     if not is_logged_in():
         print_error("Not logged in.  Run: champmail auth login")
+        raise SystemExit(1)
+
+
+def _require_admin(obj):
+    _require_login(obj)
+    if get_role() not in ("admin",):
+        print_error("Admin role required.  Use: admin prospects create / admin prospects bulk-import")
         raise SystemExit(1)
 
 
@@ -38,43 +45,54 @@ def prospects() -> None:
 # ── list ──────────────────────────────────────────────────────────────────────
 
 @prospects.command("list")
-@click.option("--query", "-q", default="", help="Search text.")
-@click.option("--industry", default="", help="Filter by industry.")
+@click.option("--query", "-q", default="", help="Search text (admin only).")
+@click.option("--industry", default="", help="Filter by industry (admin only).")
 @click.option("--limit", default=50, show_default=True)
 @click.option("--skip", default=0, show_default=True)
 @click.pass_obj
 def list_prospects(obj, query, industry, limit, skip) -> None:
-    """List / search prospects."""
+    """List prospects.  Admins see all; users see only their assigned prospects."""
     _require_login(obj)
+    role = get_role()
 
     async def _do():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.postgres import init_db, get_db
+        from app.services.prospect_service import prospect_service
+        from cli.session import get_user_id
 
-        init_graph_db()
-        results = await graph_db.search_prospects(
-            query_text=query, industry=industry, limit=limit, skip=skip
-        )
-        out = []
-        for r in results:
-            p = r.get("p", {})
-            props = p.get("properties", p) if isinstance(p, dict) else {}
-            out.append({
-                "email": props.get("email", ""),
-                "first_name": props.get("first_name", ""),
-                "last_name": props.get("last_name", ""),
-                "title": props.get("title", ""),
-                "id": str(p.get("id", "") or props.get("id", "")),
-            })
-        return [r for r in out if r["email"]]
+        await init_db()
+        async with get_db() as session:
+            if role == "admin":
+                rows = await prospect_service.list_all(session, limit=limit, offset=skip)
+            else:
+                user_id = get_user_id()
+                rows = await prospect_service.get_assigned_to_user(
+                    session, user_id, limit=limit, offset=skip
+                )
+        return [
+            {
+                "email": r.get("email", ""),
+                "first_name": r.get("first_name", "") or "",
+                "last_name": r.get("last_name", "") or "",
+                "title": r.get("job_title", "") or "",
+                "company": r.get("company_name", "") or "",
+                "id": r.get("id", ""),
+            }
+            for r in rows
+            if r.get("email")
+        ]
 
     data = obj.run(_do())
 
     if obj.json_output:
         print(json.dumps({"ok": True, "prospects": data, "total": len(data)}))
     else:
+        if role != "admin" and not data:
+            print_info("No prospects assigned to you yet.  Ask your admin to assign some.")
+            return
         print_table(
-            ["Email", "First", "Last", "Title"],
-            [[d["email"], d["first_name"], d["last_name"], d["title"]] for d in data],
+            ["Email", "First", "Last", "Title", "Company"],
+            [[d["email"], d["first_name"], d["last_name"], d["title"], d["company"]] for d in data],
         )
 
 
@@ -88,7 +106,7 @@ def get_prospect(obj, email) -> None:
     _require_login(obj)
 
     async def _do():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         return await graph_db.get_prospect_by_email(email)
@@ -127,11 +145,11 @@ def get_prospect(obj, email) -> None:
 @click.pass_obj
 def create_prospect(obj, email, first_name, last_name, title, phone, linkedin_url,
                     company_name, company_domain, industry) -> None:
-    """Create a new prospect."""
-    _require_login(obj)
+    """Create a new prospect (admin only). Use: admin prospects create"""
+    _require_admin(obj)
 
     async def _do():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         existing = await graph_db.get_prospect_by_email(email)
@@ -196,7 +214,7 @@ def update_prospect(obj, email, first_name, last_name, title, phone, linkedin_ur
         raise SystemExit(1)
 
     async def _do():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         existing = await graph_db.get_prospect_by_email(email)
@@ -226,13 +244,13 @@ def update_prospect(obj, email, first_name, last_name, title, phone, linkedin_ur
 @click.option("--yes", is_flag=True, default=False, help="Skip confirmation.")
 @click.pass_obj
 def delete_prospect(obj, email, yes) -> None:
-    """Delete a prospect (soft delete)."""
-    _require_login(obj)
+    """Delete a prospect (admin only)."""
+    _require_admin(obj)
     if not yes:
         click.confirm(f"Delete prospect {email}?", abort=True)
 
     async def _do():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         existing = await graph_db.get_prospect_by_email(email)
@@ -267,8 +285,8 @@ def delete_prospect(obj, email, yes) -> None:
               help="CSV file with columns: email,first_name,last_name,title,company_domain,industry")
 @click.pass_obj
 def bulk_import(obj, filepath) -> None:
-    """Bulk-import prospects from a CSV file."""
-    _require_login(obj)
+    """Bulk-import prospects from a CSV file (admin only). Use: admin prospects bulk-import"""
+    _require_admin(obj)
 
     rows = []
     with open(filepath, newline="") as fh:
@@ -286,7 +304,7 @@ def bulk_import(obj, filepath) -> None:
     errors = []
 
     async def _do(batch):
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         nonlocal created, updated, failed
@@ -343,7 +361,7 @@ def timeline(obj, email) -> None:
     _require_login(obj)
 
     async def _do():
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         account = email.split("@")[1] if "@" in email else "champmail"

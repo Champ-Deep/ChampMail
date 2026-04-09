@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.admin_security import require_admin
 from app.core.security import TokenData
-from app.db.falkordb import graph_db
+from app.db.champgraph import graph_db
 from app.db.postgres import get_db_session
 from app.services.prospect_service import prospect_service
 from app.services.sequence_service import sequence_service

@@ -1,5 +1,5 @@
 """
-ChampGraph HTTP client — replaces the former FalkorDB direct driver.
+ChampGraph HTTP client.
 
 Talks to the graphiti-knowledge-graph-champ-graph container via its REST API.
 All graph operations (prospects, companies, sequences, emails) are mapped
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 class GraphDatabase:
-    """ChampGraph HTTP client — drop-in replacement for the old FalkorDB driver."""
+    """ChampGraph HTTP client for the knowledge graph."""
 
     def __init__(self):
         self._client: Optional[httpx.AsyncClient] = None
@@ -134,9 +134,12 @@ class GraphDatabase:
                 "name": name,
                 "source_description": source,
             })
+        except httpx.ConnectError:
+            logger.warning("ChampGraph ingest failed: cannot connect to %s", self._base_url)
+            return {"success": False, "error": f"Cannot connect to ChampGraph at {self._base_url}"}
         except Exception as e:
-            logger.warning("ChampGraph ingest failed: %s", e)
-            return {"success": False, "error": str(e)}
+            logger.warning("ChampGraph ingest failed: %s: %s", type(e).__name__, e)
+            return {"success": False, "error": f"{type(e).__name__}: {e}"}
 
     async def create_prospect(
         self,

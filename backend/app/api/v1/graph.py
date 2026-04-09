@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from app.core.security import require_auth, TokenData
 from app.core.admin_security import require_admin
-from app.db.falkordb import graph_db
+from app.db.champgraph import graph_db
 
 router = APIRouter(prefix="/graph", tags=["Knowledge Graph"])
 

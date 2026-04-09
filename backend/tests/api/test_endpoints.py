@@ -14,7 +14,7 @@ class TestHealthEndpoints:
     def mock_db(self):
         """Create mock database connections."""
         with patch('app.db.postgres.init_db') as mock_init, \
-             patch('app.db.falkordb.init_graph_db') as mock_graph:
+             patch('app.db.champgraph.init_graph_db') as mock_graph:
             mock_init.return_value = None
             mock_graph.return_value = True
             yield

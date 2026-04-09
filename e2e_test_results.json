@@ -1,0 +1,20 @@
+[
+  {
+    "account": "Account 1 \u2014 accountsonline.biz",
+    "smtp_verified": false,
+    "email_sent": false,
+    "message_id": null,
+    "send_error": "[Errno 110] Connection timed out",
+    "imap_connected": true,
+    "inbox_messages": 0
+  },
+  {
+    "account": "Account 2 \u2014 infobase360.com (TurboSMTP)",
+    "smtp_verified": false,
+    "email_sent": false,
+    "message_id": null,
+    "send_error": "Connection unexpectedly closed",
+    "imap_connected": false,
+    "inbox_messages": 0
+  }
+]

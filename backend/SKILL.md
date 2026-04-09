@@ -275,6 +275,6 @@ Command history is saved to `~/.champmail/history`.
 - CLI invokes backend service layer **directly** (no HTTP round-trip)
 - Async operations use `asyncio.run_until_complete` under the hood
 - All mutations commit via SQLAlchemy async sessions
-- Graph operations go through ChampGraph HTTP API (`app.db.falkordb`)
+- Graph operations go through ChampGraph HTTP API (`app.db.champgraph`)
 - Celery tasks (sending, warmup, sequences) run in background workers —
   the CLI triggers state changes; actual sending is done by workers

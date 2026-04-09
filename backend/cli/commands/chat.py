@@ -229,6 +229,58 @@ CRITICAL: Use SEND_CUSTOM (not RUN_OUTREACH) when:
 - The user says "send this" or provides the subject and body directly
 - The user customizes a template you suggested and says "send it"
 
+### Batch outreach (when user wants to reach out to multiple prospects from a CSV)
+
+If the user says "batch outreach", "send to multiple prospects", "run campaign on CSV", "upload a prospect list", "I have a CSV of prospects", or mentions reaching out to multiple people:
+
+1. Ask: "What's the path to your CSV file? (must have an 'email' column; optional: first_name, last_name, title, company_name, company_domain, industry, phone, linkedin_url)"
+2. Ask the same campaign questions as single outreach (goal, pain point, value prop, CTA, tone, sender name, from email) — these apply to ALL prospects
+3. Ask: "Should I send the emails right away, or just prepare drafts?" (skip-send or send)
+After collecting ALL fields → emit on its own line:
+RUN_BATCH:{csv_path}|{goal}|{pain_point}|{value_prop}|{cta}|{tone}|{sender}|{from_email}|{context}|{skip_send}
+
+Where:
+- {csv_path}: Full path to the CSV file
+- {skip_send}: "true" if user wants drafts only, "false" to send immediately
+- Other fields same as single outreach
+
+CRITICAL: The CSV is processed locally — the user must provide a valid file path on their machine.
+Tell the user how many prospects were found and that the pipeline will run for each one sequentially.
+
+### Prospect import from CSV (when user wants to import prospects from a CSV file)
+
+If the user says "import prospects", "add prospects from CSV", "upload prospects", "bulk import", "load prospects from file", or wants to add multiple prospects at once:
+
+1. Ask: "What's the full path to your CSV file? (must have an 'email' column; optional: first_name, last_name, title, company_name, company_domain, industry, phone, linkedin_url)"
+2. Once the user provides the path, emit on its own line:
+IMPORT_PROSPECTS:{csv_path}
+
+CRITICAL: After importing, tell the user how many prospects were processed and that they can now run outreach for any of them.
+
+### Campaign reference documents (when user wants to add, list, search, or remove docs)
+
+Campaign docs are reference materials (product sheets, pricing guides, brand docs) that get ingested into the knowledge graph. Once ingested, they are **automatically referenced** during email generation to produce detailed, accurate emails with real data points.
+
+**Add a document** — if user says "add a document", "ingest this doc", "upload reference", "add campaign doc", or provides a file path to ingest:
+1. Ask for the file path if not provided: "What's the full path to the document? (supports .docx, .txt, .pdf)"
+2. Ask for an optional title: "Any title for this document? (or I'll use the filename)"
+After collecting → emit on its own line:
+INGEST_DOC:{file_path}|{title}
+
+**List documents** — if user says "list docs", "show documents", "what docs are ingested", "campaign docs":
+Emit on its own line:
+LIST_DOCS
+
+**Search documents** — if user says "search docs for X", "find in docs", "look up X in reference docs":
+Ask for the search query if not clear, then emit on its own line:
+SEARCH_DOCS:{query}
+
+**Remove a document** — if user says "remove doc X", "delete document X":
+Ask for the doc ID if not provided (tell them to run list first), then emit on its own line:
+REMOVE_DOC:{doc_id}
+
+CRITICAL: After ingesting a doc, tell the user it will be automatically used when generating emails for matching campaigns. They don't need to reference it manually.
+
 ### Status & monitoring (when user asks about status, replies, or connections)
 
 **Outreach status** — if user says "outreach status", "check status for X", "what's happening with X", "show me the pipeline for X":
@@ -790,6 +842,118 @@ def _execute_chat_actions(response: str) -> str:
                         for ln in result.stderr.strip().splitlines()[-2:]:
                             click.echo(f"     \033[31m{ln}\033[0m")
                 click.echo()
+            continue
+
+        # ── IMPORT_PROSPECTS ──────────────────────────────────────────────
+        m = _re.match(r"IMPORT_PROSPECTS:(.+)", stripped)
+        if m:
+            _csv_path = m.group(1).strip()
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m📋  Importing prospects from {_csv_path}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _result = _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "prospects", "bulk-import", "--file", _csv_path],
+                env=_env, cwd=_cwd, capture_output=False,
+            )
+            click.echo()
+            continue
+
+        # ── RUN_BATCH ─────────────────────────────────────────────────────
+        m = _re.match(r"RUN_BATCH:(.+)", stripped)
+        if m:
+            parts = m.group(1).split("|")
+            if len(parts) >= 2:
+                _csv_path = parts[0].strip()
+                _goal = parts[1] if len(parts) > 1 else ""
+                _pain = parts[2] if len(parts) > 2 else ""
+                _value = parts[3] if len(parts) > 3 else ""
+                _cta = parts[4] if len(parts) > 4 else ""
+                _tone = parts[5] if len(parts) > 5 else "casual"
+                _sender = parts[6] if len(parts) > 6 else ""
+                _from_email = parts[7] if len(parts) > 7 else ""
+                _context = parts[8] if len(parts) > 8 else ""
+                _skip_send = parts[9].strip().lower() == "true" if len(parts) > 9 else False
+
+                import subprocess as _sp
+                click.echo(f"\n  \033[1;35m📋  Launching batch outreach from {_csv_path}...\033[0m\n")
+                _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+                _cwd = str(Path(__file__).parent.parent.parent)
+                _cmd = [
+                    sys.executable, "-m", "cli.champmail_cli",
+                    "outreach", "batch", _csv_path,
+                ]
+                if _goal:       _cmd.extend(["--goal", _goal])
+                if _pain:       _cmd.extend(["--pain-point", _pain])
+                if _value:      _cmd.extend(["--value-prop", _value])
+                if _cta:        _cmd.extend(["--cta", _cta])
+                if _tone:       _cmd.extend(["--tone", _tone])
+                if _sender:     _cmd.extend(["--sender", _sender])
+                if _from_email: _cmd.extend(["--from-email", _from_email])
+                if _context:    _cmd.extend(["--context", _context])
+                if _skip_send:  _cmd.append("--skip-send")
+                _sp.run(_cmd, env=_env, cwd=_cwd)
+                click.echo()
+            continue
+
+        # ── INGEST_DOC ────────────────────────────────────────────────────
+        m = _re.match(r"INGEST_DOC:(.+)", stripped)
+        if m:
+            parts = m.group(1).split("|")
+            _file_path = parts[0].strip()
+            _title = parts[1].strip() if len(parts) > 1 and parts[1].strip() else ""
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m📄  Ingesting document: {_file_path}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _cmd = [sys.executable, "-m", "cli.champmail_cli", "outreach", "docs", "add", _file_path]
+            if _title:
+                _cmd.extend(["--title", _title])
+            _sp.run(_cmd, env=_env, cwd=_cwd)
+            click.echo()
+            continue
+
+        # ── LIST_DOCS ────────────────────────────────────────────────────
+        if stripped == "LIST_DOCS":
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m📚  Listing ingested campaign documents...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "outreach", "docs", "list"],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
+            continue
+
+        # ── SEARCH_DOCS ──────────────────────────────────────────────────
+        m = _re.match(r"SEARCH_DOCS:(.+)", stripped)
+        if m:
+            _query = m.group(1).strip()
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m🔎  Searching campaign docs for: {_query}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "outreach", "docs", "search", _query],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
+            continue
+
+        # ── REMOVE_DOC ───────────────────────────────────────────────────
+        m = _re.match(r"REMOVE_DOC:(.+)", stripped)
+        if m:
+            _doc_id = m.group(1).strip()
+            import subprocess as _sp
+            click.echo(f"\n  \033[1;36m🗑️  Removing document: {_doc_id}...\033[0m\n")
+            _env = {**os.environ, "PYTHONPATH": str(Path(__file__).parent.parent.parent)}
+            _cwd = str(Path(__file__).parent.parent.parent)
+            _sp.run(
+                [sys.executable, "-m", "cli.champmail_cli", "outreach", "docs", "remove", _doc_id],
+                env=_env, cwd=_cwd,
+            )
+            click.echo()
             continue
 
         # ── RUN_STATUS ────────────────────────────────────────────────────

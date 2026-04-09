@@ -318,7 +318,7 @@ async def _send_campaign_background(campaign_id: str):
     from app.services.mail_engine_client import mail_engine_client
     from app.services.domain_rotation import domain_rotator
     from app.services.tracking_service import tracking_service
-    from app.db.falkordb import graph_db
+    from app.db.champgraph import graph_db
 
     async with get_db() as session:
         campaign = await campaign_service.get_campaign(session, campaign_id)

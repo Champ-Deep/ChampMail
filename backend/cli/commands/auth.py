@@ -17,6 +17,9 @@ from cli.context import CliContext
 from cli.repl_skin import print_error, print_info, print_kv, print_section, print_success
 from cli.session import clear_auth, get_email, get_role, get_user_id, is_logged_in, set_auth
 
+# auth register is deprecated in favour of: champmail admin users create
+# Kept for compatibility but enforces admin role.
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -129,9 +132,12 @@ def whoami(obj: CliContext) -> None:
 @click.option("--role", default="user", type=click.Choice(["user", "admin", "team_admin", "data_team"]), help="Role.")
 @click.pass_obj
 def register(obj: CliContext, email: str, password: str, name: str, role: str) -> None:
-    """Create a new user account (admin only)."""
+    """Create a new user account (admin only). Prefer: champmail admin users create"""
     if not is_logged_in():
         print_error("Must be logged in as admin.")
+        raise SystemExit(1)
+    if get_role() not in ("admin",):
+        print_error("Admin role required.  Use: champmail admin users create")
         raise SystemExit(1)
 
     async def _do():

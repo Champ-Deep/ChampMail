@@ -61,8 +61,8 @@ pytest-watch
 export TEST_DATABASE_URL="postgresql://champmail:champmail_dev@localhost:5432/champmail_test"
 export TEST_REDIS_URL="redis://localhost:6379/15"
 export TEST_MAIL_ENGINE_URL="http://localhost:8025"
-export TEST_FALKORDB_HOST="localhost"
-export TEST_FALKORDB_PORT="6379"
+export TEST_CHAMPGRAPH_HOST="localhost"
+export TEST_CHAMPGRAPH_PORT="8080"
 ```
 
 ## Test Fixtures

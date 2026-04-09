@@ -10,7 +10,7 @@ def execute_pending_steps(self):
         from app.services.sequence_service import sequence_service
         from app.services.mail_engine_client import mail_engine_client
         from app.services.domain_rotation import domain_rotator
-        from app.db.falkordb import graph_db
+        from app.db.champgraph import graph_db
 
         async with async_session() as session:
             pending_steps = await sequence_service.get_pending_steps(session)

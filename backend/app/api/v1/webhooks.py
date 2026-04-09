@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, Header, Request
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.db.falkordb import graph_db
+from app.db.champgraph import graph_db
 from app.services.tracking_service import tracking_service
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])

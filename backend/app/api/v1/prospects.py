@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, Depends
 
-from app.db.falkordb import graph_db
+from app.db.champgraph import graph_db
 from app.db.postgres import get_db_session
 from app.core.security import require_auth, TokenData
 from app.core.admin_security import require_admin

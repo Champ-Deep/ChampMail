@@ -148,7 +148,7 @@ def create_sequence(obj, name, description, steps_file) -> None:
 
     async def _do():
         from app.db.postgres import init_db, get_db
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
         from app.services.sequence_service import sequence_service
 
         await init_db()
@@ -256,7 +256,7 @@ def enroll(obj, sequence_id, emails) -> None:
 
     async def _do():
         from app.db.postgres import init_db, get_db
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
         from app.services.sequence_service import sequence_service
         from app.models import Prospect, SequenceEnrollment
         from sqlalchemy import select

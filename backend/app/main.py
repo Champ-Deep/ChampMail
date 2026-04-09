@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.db.falkordb import init_graph_db, close_graph_db
+from app.db.champgraph import init_graph_db, close_graph_db
 from app.db.postgres import init_db, close_db, get_db
 from app.db.redis import redis_client
 from app.services.user_service import user_service

@@ -13,6 +13,12 @@ Full process in one command group:
   outreach replies       EMAIL              # step 6: check for replies
   outreach status        EMAIL              # full pipeline status for a prospect
 
+  outreach batch         CSV_FILE [options]  # batch outreach for multiple prospects
+  outreach docs add      PATH               # ingest a reference doc (.docx/.txt/.pdf)
+  outreach docs list                        # list all ingested campaign docs
+  outreach docs search   QUERY              # search docs by keywords
+  outreach docs remove   DOC_ID             # remove a doc from the index
+
 All steps are idempotent — run any step independently or run `outreach start`
 to walk through the full wizard interactively.
 """
@@ -30,7 +36,7 @@ from cli.repl_skin import (
     print_error, print_info, print_kv, print_section,
     print_success, print_table, print_warning,
 )
-from cli.session import is_logged_in, get_user_id, get_email as get_session_email, load_session
+from cli.session import is_logged_in, get_user_id, get_role, get_email as get_session_email, load_session
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -41,13 +47,72 @@ def _require_login(obj):
         raise SystemExit(1)
 
 
+def _is_admin() -> bool:
+    return get_role() in ("admin",)
+
+
+async def _fetch_assigned_prospects() -> list[dict]:
+    """Return prospects assigned to the current user from PostgreSQL."""
+    from app.db.postgres import init_db, get_db
+    from app.services.prospect_service import prospect_service
+
+    await init_db()
+    async with get_db() as session:
+        user_id = get_user_id()
+        return await prospect_service.get_assigned_to_user(session, user_id, limit=200)
+
+
+def _pick_prospect_from_assigned(obj) -> dict:
+    """
+    For non-admin users: fetch their assigned prospect list and let them
+    pick interactively.  Returns the chosen prospect dict.
+    Exits with error if no prospects are assigned.
+    """
+    prospects = obj.run(_fetch_assigned_prospects())
+    if not prospects:
+        print_error(
+            "No prospects assigned to your account.\n"
+            "Ask your admin to run:  champmail admin prospects send-list --user <your-email> --emails <...>"
+        )
+        raise SystemExit(1)
+
+    click.echo()
+    click.echo("\033[1;36m── Your Assigned Prospects ─────────────────────────────\033[0m")
+    for i, p in enumerate(prospects, 1):
+        name = f"{p.get('first_name','') or ''} {p.get('last_name','') or ''}".strip()
+        company = p.get("company_name", "") or ""
+        label = f"  {i:>3}.  {p['email']}"
+        if name:    label += f"  ({name})"
+        if company: label += f"  @ {company}"
+        click.echo(label)
+    click.echo("\033[1;36m────────────────────────────────────────────────────────\033[0m")
+
+    while True:
+        raw = click.prompt("  Select prospect number (or type email directly)", default="")
+        raw = raw.strip()
+        if not raw:
+            print_error("No selection made.")
+            raise SystemExit(1)
+        if raw.isdigit():
+            idx = int(raw) - 1
+            if 0 <= idx < len(prospects):
+                return prospects[idx]
+            print_warning(f"Enter a number between 1 and {len(prospects)}")
+        else:
+            # Allow typing email directly if it's in the list
+            match = next((p for p in prospects if p["email"].lower() == raw.lower()), None)
+            if match:
+                return match
+            print_warning("That email is not in your assigned list.  Pick from the list above.")
+
+
 def _account_name(email: str) -> str:
     """Derive ChampGraph account_name from email — matches what was ingested."""
     return email.split("@")[1] if "@" in email else "champmail"
 
 
 def _graph_init():
-    from app.db.falkordb import init_graph_db, graph_db
+    from app.db.champgraph import init_graph_db, graph_db
     init_graph_db()
     return graph_db
 
@@ -80,24 +145,44 @@ def outreach() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 @outreach.command("prospect")
-@click.argument("email")
-@click.option("--first-name", "first_name", default="", help="First name.")
-@click.option("--last-name",  "last_name",  default="", help="Last name.")
-@click.option("--title",      default="",   help="Job title.")
-@click.option("--phone",      default="",   help="Phone number.")
-@click.option("--linkedin",   "linkedin_url", default="", help="LinkedIn URL.")
-@click.option("--company",    "company_name",  default="", help="Company name.")
-@click.option("--domain",     "company_domain", default="", help="Company domain.")
-@click.option("--industry",   default="",   help="Industry.")
+@click.argument("email", default="", required=False)
+@click.option("--first-name", "first_name", default="", help="First name (admin only).")
+@click.option("--last-name",  "last_name",  default="", help="Last name (admin only).")
+@click.option("--title",      default="",   help="Job title (admin only).")
+@click.option("--phone",      default="",   help="Phone number (admin only).")
+@click.option("--linkedin",   "linkedin_url", default="", help="LinkedIn URL (admin only).")
+@click.option("--company",    "company_name",  default="", help="Company name (admin only).")
+@click.option("--domain",     "company_domain", default="", help="Company domain (admin only).")
+@click.option("--industry",   default="",   help="Industry (admin only).")
 @click.pass_obj
 def cmd_prospect(obj, email, first_name, last_name, title, phone,
                  linkedin_url, company_name, company_domain, industry):
-    """Step 1 — Create prospect in DB + ChampGraph, then kick off research ingest."""
+    """Step 1 — Select or create a prospect.
+
+    Admins: provide EMAIL to create/use any prospect.
+    Users:  prompted to pick from their admin-assigned prospect list.
+    """
     _require_login(obj)
+
+    # ── Non-admin: pick from assigned list ───────────────────────────────────
+    if not _is_admin():
+        if email and not obj.json_output:
+            print_warning("You are not an admin — ignoring provided email.")
+        chosen = _pick_prospect_from_assigned(obj)
+        email = chosen["email"]
+        first_name = chosen.get("first_name") or ""
+        last_name  = chosen.get("last_name")  or ""
+        company_name = chosen.get("company_name") or ""
+        if not obj.json_output:
+            print_info(f"Selected prospect: {email}")
+
+    if not email:
+        print_error("Email required (provide as argument or select from assigned list).")
+        raise SystemExit(1)
 
     async def _do():
         from app.db.postgres import init_db, get_db
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
         from app.services.prospect_service import prospect_service
 
         await init_db()
@@ -112,7 +197,13 @@ def cmd_prospect(obj, email, first_name, last_name, title, phone,
             if existing:
                 pg_id = existing.get("id")
                 created = False
+                # Pull richer fields from DB if we only have partial data
+                nonlocal first_name, last_name, company_name
+                first_name   = first_name   or existing.get("first_name", "")  or ""
+                last_name    = last_name    or existing.get("last_name", "")   or ""
+                company_name = company_name or existing.get("company_name", "") or ""
             else:
+                # Only admins reach here with a new email (non-admins always pick existing)
                 p = await prospect_service.create(
                     session, email=email, team_id=team_id,
                     first_name=first_name, last_name=last_name,
@@ -126,15 +217,14 @@ def cmd_prospect(obj, email, first_name, last_name, title, phone,
         full_name = f"{first_name} {last_name}".strip() or email
         parts = [f"{full_name} is a prospect in the ChampMail outreach system."]
         parts.append(f"Email: {email}")
-        if first_name:   parts.append(f"First name: {first_name}")
-        if last_name:    parts.append(f"Last name: {last_name}")
-        if title:        parts.append(f"Job title: {title}")
-        if phone:        parts.append(f"Phone number: {phone}")
-        if linkedin_url: parts.append(f"LinkedIn profile: {linkedin_url}")
-        if company_name: parts.append(f"Works at company: {company_name}")
+        if first_name:     parts.append(f"First name: {first_name}")
+        if last_name:      parts.append(f"Last name: {last_name}")
+        if title:          parts.append(f"Job title: {title}")
+        if phone:          parts.append(f"Phone number: {phone}")
+        if linkedin_url:   parts.append(f"LinkedIn profile: {linkedin_url}")
+        if company_name:   parts.append(f"Works at company: {company_name}")
         if company_domain: parts.append(f"Company website/domain: {company_domain}")
-        if industry:     parts.append(f"Industry: {industry}")
-        # Summary sentence for the research agent
+        if industry:       parts.append(f"Industry: {industry}")
         who = f"{full_name}, {title} at {company_name}" if title and company_name else full_name
         parts.append(
             f"Summary: {who} can be reached at {email}"
@@ -143,7 +233,6 @@ def cmd_prospect(obj, email, first_name, last_name, title, phone,
             + "."
         )
 
-        # Use name-based account key so research queries can find this data
         name_key = f"{first_name}_{last_name}".strip("_").lower().replace(" ", "_")
         account = name_key if name_key else _account_name(email)
         await graph_db._ingest(
@@ -171,7 +260,7 @@ def cmd_prospect(obj, email, first_name, last_name, title, phone,
     if obj.json_output:
         print(json.dumps({"ok": True, "email": email, **data}))
     else:
-        status = "Created" if data["created"] else "Already exists"
+        status = "Created" if data["created"] else "Ready"
         print_section("Step 1 — Prospect")
         print_kv("Email",   email)
         print_kv("Status",  status)
@@ -582,14 +671,16 @@ def cmd_view_research(obj, email, raw):
 # ─────────────────────────────────────────────────────────────────────────────
 
 QUESTIONNAIRE = [
-    ("goal",       "What is your main goal with this outreach? (e.g. book a demo, partnership, feedback)"),
-    ("pain_point", "What pain point / problem does your offer solve for this prospect?"),
-    ("value_prop", "In one sentence — what value do you uniquely deliver?"),
-    ("context",    "Why THIS person right now? Any recent trigger or reason to reach out?"),
-    ("cta",        "What is the one call-to-action you want in the email? (e.g. 15-min call, reply with interest)"),
-    ("tone",       "Preferred tone: [formal / casual / friendly / direct]"),
-    ("sender",     "Who is sending this email? (your name and role)"),
-    ("from_email", "From email address to use:"),
+    ("goal",            "What is your main goal with this outreach? (e.g. book a demo, partnership, feedback)"),
+    ("pain_point",      "What pain point / problem does your offer solve for this prospect?"),
+    ("value_prop",      "In one sentence — what value do you uniquely deliver?"),
+    ("context",         "Why THIS person right now? Any recent trigger or reason to reach out?"),
+    ("cta",             "What is the one call-to-action you want in the email? (e.g. 15-min call, reply with interest)"),
+    ("tone",            "Preferred tone: [formal / casual / friendly / direct]"),
+    ("sender_name",     "Sender full name (e.g. Rajesh Kumar):"),
+    ("sender_position", "Sender job title / role (e.g. Sales Executive):"),
+    ("sender_company",  "Sender company name (e.g. LakeB2B):"),
+    ("from_email",      "Sender email address (e.g. rajesh@lakeb2b.com):"),
 ]
 
 
@@ -771,16 +862,17 @@ def cmd_prep(obj, email, subject, save_to, answers_file):
         if raw_answers:
             intent_lines = []
             field_labels = {
-                "goal": "Campaign Goal",
-                "pain_point": "Pain Point Solved",
-                "value_prop": "Value Proposition",
-                "context": "Why This Person Now",
-                "cta": "Call to Action",
-                "tone": "Tone",
-                "sender": "Sender Name & Role",
+                "goal":            "Campaign Goal",
+                "pain_point":      "Pain Point Solved",
+                "value_prop":      "Value Proposition",
+                "context":         "Why This Person Now",
+                "cta":             "Call to Action",
+                "tone":            "Tone",
+                "sender_name":     "Sender Name",
+                "sender":          "Sender Name",   # legacy key
                 "sender_position": "Sender Position",
-                "sender_company": "Sender Company",
-                "from_email": "Sender Email",
+                "sender_company":  "Sender Company",
+                "from_email":      "Sender Email",
             }
             for key, label in field_labels.items():
                 val = raw_answers.get(key, "").strip()
@@ -799,39 +891,63 @@ def cmd_prep(obj, email, subject, save_to, answers_file):
                 for n in intent if n.get("type") == "node" and n.get("summary")
             ) or "No questionnaire answers ingested yet."
 
+        # ── Campaign reference docs (RAG auto-retrieval) ──
+        campaign_doc_context = ""
+        try:
+            from app.services.campaign_docs import campaign_docs_service
+
+            # Combine intent + prospect info + research for keyword matching
+            match_text = " ".join([
+                intent_text,
+                prospect_info,
+                research_text,
+                " ".join(raw_answers.values()) if raw_answers else "",
+            ])
+            campaign_doc_context = campaign_docs_service.get_context_for_campaign(
+                match_text, max_chunks=8,
+            )
+        except Exception:
+            pass  # RAG failure should never block the pipeline
+
         # ── Sender signature ──
-        sender_name     = raw_answers.get("sender", "").strip()
+        # Read from new per-field questionnaire keys; also support legacy "sender" key
+        sender_name     = (raw_answers.get("sender_name") or raw_answers.get("sender") or "").strip()
         sender_position = raw_answers.get("sender_position", "").strip()
         sender_company  = raw_answers.get("sender_company", "").strip()
         sender_email    = raw_answers.get("from_email", "").strip()
-        if not sender_name:
-            from cli.config_store import get_value
-            sender_name = get_value("campaign_defaults", "from_name") or ""
-        if not sender_email:
-            from cli.config_store import get_value
-            sender_email = get_value("campaign_defaults", "from_email") or ""
 
-        # Build signature block
-        sig_parts = []
-        if sender_name:
-            sig_parts.append(sender_name)
-        if sender_position:
-            sig_parts.append(sender_position)
-        if sender_company:
-            sig_parts.append(sender_company)
-        if sender_email:
-            sig_parts.append(sender_email)
+        # NEVER fall back to MAIL_FROM_NAME / MAIL_FROM_EMAIL — those are SMTP
+        # envelope settings, not the human sender identity for the email body.
+        # If the user didn't provide sender details in the questionnaire we
+        # leave them blank and tell the AI to write [Your Name] etc.
 
-        signature_instruction = ""
-        if sig_parts:
-            sig_block = "\n  ".join(sig_parts)
+        # Build the signature block that the AI MUST copy verbatim
+        sig_lines = []
+        if sender_name:     sig_lines.append(sender_name)
+        if sender_position: sig_lines.append(sender_position)
+        if sender_company:  sig_lines.append(sender_company)
+        if sender_email:    sig_lines.append(sender_email)
+
+        if sig_lines:
+            # Give the AI the exact text, line by line
+            sig_text = "\n".join(sig_lines)
             signature_instruction = f"""
-IMPORTANT — Sender signature:
-  The email MUST end with a professional signature block:
-  {sig_block}
-  Include "Best regards," or "Warm regards," before the signature.
-  Do NOT use placeholder text like [Your Name] or [Your Position].
-  Do NOT use "ChampMail Test" as sender — use the actual sender name above."""
+SIGNATURE — copy this block EXACTLY, word for word, after "Warm regards,":
+
+{sig_text}
+
+RULES:
+  ✗ Do NOT alter, reorder, or add to the signature block above.
+  ✗ Do NOT use "ChampMail", "ChampMail Test", or any name not listed above.
+  ✗ Do NOT include the recipient address ({email}) anywhere in the email.
+  ✗ Do NOT append any URL, phone, or extra line after the signature."""
+        else:
+            signature_instruction = f"""
+SIGNATURE RULES:
+  You do not have sender details. End the email with "Warm regards," and
+  leave ONE blank line — do not invent a name or company.
+  ✗ Do NOT use "ChampMail", "ChampMail Test", or any placeholder name.
+  ✗ Do NOT include the recipient address ({email}) in the email body."""
 
         system_prompt = textwrap.dedent(f"""\
             You are an expert cold email copywriter.
@@ -842,15 +958,21 @@ IMPORTANT — Sender signature:
             - Ends with one clear, low-friction CTA
             - Subject line is punchy and specific, not generic
 
-            CRITICAL RULES:
-            - The CAMPAIGN INTENT section contains the user's EXACT instructions.
-              Use the EXACT goal, pain point, value prop, CTA, and tone they specified.
-              Do NOT invent offers, discounts, or claims not in the campaign intent.
-            - Use research data ONLY for personalisation (referencing their role,
-              company, interests, recent events). Do NOT let research override
-              the campaign intent.
-            - The Call to Action MUST match what the user specified — do not change
-              "5 min call" to "15-minute chat" or similar.
+            CRITICAL RULES — ALL MUST BE FOLLOWED:
+            1. RECIPIENT EMAIL FORBIDDEN IN BODY: The recipient address ({email})
+               must NEVER appear anywhere in the email body or signature. Not once.
+            2. NO INVENTED SENDER: Never write "ChampMail", "ChampMail Test", or
+               any generic/placeholder sender name. Use only the name given in the
+               signature rules below, or leave a blank line if none is provided.
+            3. CAMPAIGN INTENT IS PRIMARY: Follow the CAMPAIGN INTENT section exactly.
+               Use the exact goal, pain point, value prop, CTA, and tone specified.
+               Do NOT invent offers, discounts, or claims not in the campaign intent.
+            4. RESEARCH IS FOR PERSONALISATION ONLY: Reference their role, company,
+               or recent events to personalise — do NOT let research override the
+               campaign intent.
+            5. CTA MUST MATCH EXACTLY: Do not rephrase the call-to-action.
+            6. REFERENCE DOCUMENTS: If provided, use them as the primary source for
+               product details, stats, and value props. Do not fabricate numbers.
             {signature_instruction}
 
             Return a JSON object ONLY with keys:
@@ -861,7 +983,7 @@ IMPORTANT — Sender signature:
 
         user_prompt = textwrap.dedent(f"""\
             === PROSPECT INFO ===
-            Email: {email}
+            Recipient email (DO NOT include this address in the email body or signature): {email}
             {prospect_info}
 
             === CAMPAIGN INTENT (PRIMARY — follow these instructions exactly) ===
@@ -876,7 +998,11 @@ IMPORTANT — Sender signature:
             === EMAIL CONTEXT HINTS ===
             {ctx_hints or 'None'}
 
+            {campaign_doc_context if campaign_doc_context else ''}
+
             Write the cold email now. Follow the campaign intent exactly.
+            If reference documents are provided above, incorporate specific
+            data points and value propositions from them into the email.
         """)
 
         # Call OpenRouter (same key used everywhere in ChampMail)
@@ -904,6 +1030,12 @@ IMPORTANT — Sender signature:
         # Override subject if provided
         if subject:
             draft["subject"] = subject
+
+        # Store sender identity in draft so cmd_send can use it directly
+        if sender_name:
+            draft["from_name"] = sender_name
+        if sender_email:
+            draft["from_email"] = sender_email
 
         # Ingest the draft into ChampGraph so it's part of the prospect's timeline
         await gdb._ingest(
@@ -961,13 +1093,15 @@ def cmd_send(obj, email, subject, body, draft_file, from_name, from_email_addr):
         with open(draft_file) as f:
             draft = json.load(f)
 
-    final_subject = subject or draft.get("subject") or "Following up"
-    final_body    = body    or draft.get("body_html") or draft.get("body_text") or \
-                    f"<p>Hi,</p><p>Reaching out regarding a potential collaboration.</p>"
+    final_subject  = subject or draft.get("subject") or "Following up"
+    final_body     = body    or draft.get("body_html") or draft.get("body_text") or \
+                     f"<p>Hi,</p><p>Reaching out regarding a potential collaboration.</p>"
+    final_from_name  = from_name       or draft.get("from_name")
+    final_from_email = from_email_addr or draft.get("from_email")
 
     async def _do():
         from app.services.email_provider import get_email_provider, EmailMessage
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         provider = get_email_provider()
@@ -977,8 +1111,8 @@ def cmd_send(obj, email, subject, body, draft_file, from_name, from_email_addr):
             subject=final_subject,
             html_body=final_body,
             text_body=draft.get("body_text"),
-            from_name=from_name,
-            from_email=from_email_addr,
+            from_name=final_from_name,
+            from_email=final_from_email,
         )
         result = await provider.send_email(msg)
 
@@ -1037,7 +1171,7 @@ def cmd_replies(obj, email, limit):
 
     async def _do():
         from app.services.email_provider import get_reply_detector
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         init_graph_db()
         detector = get_reply_detector()
@@ -1166,7 +1300,7 @@ def cmd_status(obj, email):
     async def _do():
         from app.db.postgres import init_db, get_db
         from app.services.prospect_service import prospect_service
-        from app.db.falkordb import init_graph_db, graph_db
+        from app.db.champgraph import init_graph_db, graph_db
 
         await init_db()
         init_graph_db()
@@ -1215,18 +1349,397 @@ def cmd_status(obj, email):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DOCS — campaign reference document management
+# ─────────────────────────────────────────────────────────────────────────────
+
+@outreach.group("docs")
+def cmd_docs():
+    """Manage campaign reference documents (add, list, search, remove)."""
+
+
+@cmd_docs.command("add")
+@click.argument("file_path", type=click.Path(exists=True))
+@click.option("--title", default="", help="Human-readable title for the document.")
+@click.option("--account", "graph_account", default="campaign_docs",
+              help="ChampGraph account name for ingestion.")
+@click.pass_obj
+def cmd_docs_add(obj, file_path, title, graph_account):
+    """Ingest a reference document into ChampGraph + keyword index.
+
+    Supports: .docx, .txt, .pdf
+    Example: outreach docs add /path/to/LakeB2B_Master_Reference.docx
+    """
+    _require_login(obj)
+
+    async def _do():
+        from app.services.campaign_docs import campaign_docs_service
+        meta = await campaign_docs_service.ingest_document(
+            file_path=file_path,
+            graph_account=graph_account,
+            title=title,
+        )
+        return meta
+
+    meta = obj.run(_do())
+
+    if obj.json_output:
+        from dataclasses import asdict
+        print(json.dumps({"ok": True, **asdict(meta)}))
+    else:
+        print_section("Document Ingested")
+        print_kv("Doc ID",    meta.doc_id)
+        print_kv("Title",     meta.title)
+        print_kv("File",      meta.filename)
+        print_kv("Type",      meta.doc_type)
+        print_kv("Chunks",    str(meta.chunk_count))
+        print_kv("Account",   meta.graph_account)
+        print_kv("Keywords",  ", ".join(meta.keywords[:10]))
+        print_success(
+            f"Document ingested into ChampGraph ({meta.chunk_count} chunks). "
+            f"It will be auto-referenced in email prep when campaigns match its keywords."
+        )
+
+
+@cmd_docs.command("list")
+@click.pass_obj
+def cmd_docs_list(obj):
+    """List all ingested campaign reference documents."""
+    _require_login(obj)
+
+    from app.services.campaign_docs import campaign_docs_service
+    docs = campaign_docs_service.list_documents()
+
+    if obj.json_output:
+        from dataclasses import asdict
+        print(json.dumps({"ok": True, "docs": [asdict(d) for d in docs]}))
+        return
+
+    if not docs:
+        print_warning("No campaign documents ingested yet.")
+        print_info("Add one with: outreach docs add /path/to/document.docx")
+        return
+
+    print_section(f"Campaign Reference Documents ({len(docs)})")
+    print_table(
+        ["Doc ID", "Title", "Type", "Chunks", "Ingested"],
+        [
+            [d.doc_id, d.title[:30], d.doc_type, str(d.chunk_count),
+             d.ingested_at[:10]]
+            for d in docs
+        ],
+    )
+    for d in docs:
+        print_kv(f"  {d.doc_id} keywords", ", ".join(d.keywords[:8]))
+
+
+@cmd_docs.command("search")
+@click.argument("query")
+@click.option("--doc", "doc_id_filter", default=None, help="Filter to a specific doc ID.")
+@click.option("--limit", "max_results", default=5, show_default=True, help="Max results.")
+@click.pass_obj
+def cmd_docs_search(obj, query, doc_id_filter, max_results):
+    """Search campaign documents by keyword query.
+
+    Example: outreach docs search "SalesTech bounce rate data quality"
+    """
+    _require_login(obj)
+
+    from app.services.campaign_docs import campaign_docs_service
+    chunks = campaign_docs_service.search(query, max_results, doc_id_filter)
+
+    if obj.json_output:
+        from dataclasses import asdict
+        print(json.dumps({"ok": True, "results": [asdict(c) for c in chunks]}))
+        return
+
+    if not chunks:
+        print_warning(f"No results for: {query}")
+        print_info("Make sure documents are ingested: outreach docs list")
+        return
+
+    print_section(f"Search Results for: {query}")
+    for i, chunk in enumerate(chunks, 1):
+        click.echo(f"\n  \033[1;36m── Result {i} [{chunk.doc_id}] ──\033[0m")
+        if chunk.heading:
+            print_kv("Section", chunk.heading)
+        # Show truncated text
+        preview = chunk.text[:300].replace('\n', ' ')
+        click.echo(f"  \033[2m{preview}\033[0m")
+        if len(chunk.text) > 300:
+            click.echo(f"  \033[2m...(truncated, {len(chunk.text)} chars total)\033[0m")
+
+
+@cmd_docs.command("remove")
+@click.argument("doc_id")
+@click.pass_obj
+def cmd_docs_remove(obj, doc_id):
+    """Remove an ingested document from the index."""
+    _require_login(obj)
+
+    from app.services.campaign_docs import campaign_docs_service
+    removed = campaign_docs_service.remove_document(doc_id)
+
+    if obj.json_output:
+        print(json.dumps({"ok": removed, "doc_id": doc_id}))
+    elif removed:
+        print_success(f"Document '{doc_id}' removed from index.")
+    else:
+        print_error(f"Document '{doc_id}' not found. Run: outreach docs list")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BATCH — multi-prospect outreach from CSV
+# ─────────────────────────────────────────────────────────────────────────────
+
+@outreach.command("batch")
+@click.argument("csv_file", default=None, required=False)
+@click.option("--goal",        default="", help="Campaign goal (e.g. 'book a demo').")
+@click.option("--pain-point",  "pain_point", default="", help="Pain point your offer solves.")
+@click.option("--value-prop",  "value_prop", default="", help="Your value proposition.")
+@click.option("--cta",         default="", help="Call to action (e.g. '15-min call').")
+@click.option("--tone",        default="casual", help="Email tone: casual / professional / friendly.")
+@click.option("--sender",      default="", help="Sender name and role.")
+@click.option("--from-email",  "from_email", default="", help="From email address.")
+@click.option("--context",     "extra_context", default="", help="Extra context for all prospects.")
+@click.option("--skip-send",   is_flag=True, default=False, help="Prep emails but don't send.")
+@click.option("--answers-file", "answers_file", default=None, type=click.Path(exists=True),
+              help="JSON file with shared questionnaire answers for all prospects.")
+@click.option("--save-drafts", "drafts_dir", default=None, type=click.Path(),
+              help="Directory to save individual draft JSON files.")
+@click.pass_obj
+def cmd_batch(obj, csv_file, goal, pain_point, value_prop, cta, tone,
+              sender, from_email, extra_context, skip_send, answers_file, drafts_dir):
+    """Batch outreach: run the full pipeline for multiple prospects.
+
+    Admins: pass a CSV_FILE with an 'email' column.
+    Users:  pass a CSV_FILE filtered to their assigned prospects, OR omit the file
+            to run on ALL prospects assigned to you (ignores CSV_FILE argument).
+
+    CSV optional columns: first_name, last_name, title, company_name, company_domain,
+    industry, phone, linkedin_url
+
+    Example:
+        outreach batch prospects.csv --goal "book a demo" --sender "Alex, Sales" --from-email alex@acme.com
+    """
+    _require_login(obj)
+
+    import csv as csv_mod
+    import os
+
+    # ── Build prospect list ───────────────────────────────────────────────
+    if not _is_admin():
+        # Regular users: load from their assigned list in DB, optionally
+        # filtered by the CSV if provided
+        assigned = obj.run(_fetch_assigned_prospects())
+        if not assigned:
+            print_error(
+                "No prospects assigned to your account.\n"
+                "Ask your admin to run:  champmail admin prospects send-list --user <your-email> --emails ..."
+            )
+            raise SystemExit(1)
+        assigned_emails = {p["email"].lower() for p in assigned}
+
+        # If a CSV was given, filter to only assigned prospects in that CSV
+        if csv_file:
+            prospects = []
+            with open(csv_file, encoding="utf-8-sig") as f:
+                reader = csv_mod.DictReader(f)
+                for row in reader:
+                    row_clean = {k.strip().lower(): (v or "").strip() for k, v in row.items() if k}
+                    em = row_clean.get("email", "").lower()
+                    if em and em in assigned_emails:
+                        prospects.append(row_clean)
+            if not prospects:
+                print_error("None of the emails in the CSV are in your assigned prospect list.")
+                raise SystemExit(1)
+        else:
+            # Use all assigned prospects
+            prospects = [
+                {
+                    "email": p["email"],
+                    "first_name": p.get("first_name", "") or "",
+                    "last_name":  p.get("last_name", "")  or "",
+                    "company_name": p.get("company_name", "") or "",
+                }
+                for p in assigned
+            ]
+
+        if not obj.json_output:
+            print_info(f"Running batch on {len(prospects)} of your assigned prospects.")
+    else:
+        # Admin path — CSV required
+        if not csv_file:
+            print_error("Admin must provide CSV_FILE argument.")
+            raise SystemExit(1)
+        prospects = []
+        with open(csv_file, encoding="utf-8-sig") as f:
+            reader = csv_mod.DictReader(f)
+            if not reader.fieldnames or "email" not in [h.strip().lower() for h in reader.fieldnames]:
+                print_error("CSV must have an 'email' column.")
+                raise SystemExit(1)
+            for row in reader:
+                row_clean = {k.strip().lower(): (v or "").strip() for k, v in row.items() if k}
+                email = row_clean.get("email", "").lower()
+                if not email or "@" not in email:
+                    continue
+                prospects.append(row_clean)
+
+        if not prospects:
+            print_error("No valid prospects found in CSV.")
+            raise SystemExit(1)
+
+    # ── Build shared answers ─────────────────────────────────────────────
+    shared_answers = {}
+    if answers_file:
+        with open(answers_file) as f:
+            shared_answers = json.load(f)
+    else:
+        if goal:       shared_answers["goal"] = goal
+        if pain_point: shared_answers["pain_point"] = pain_point
+        if value_prop: shared_answers["value_prop"] = value_prop
+        if cta:        shared_answers["cta"] = cta
+        if tone:       shared_answers["tone"] = tone
+        if sender:     shared_answers["sender"] = sender
+        if from_email: shared_answers["from_email"] = from_email
+        if extra_context: shared_answers["context"] = extra_context
+
+    # Interactive prompts if no answers provided
+    if not shared_answers and not obj.json_output:
+        print_section("Batch Campaign Setup")
+        print_info(f"Found {len(prospects)} prospects in {csv_file}")
+        print_info("Answer these once — they apply to all prospects.\n")
+
+        for key, question in QUESTIONNAIRE:
+            click.echo(f"  \033[36m{question}\033[0m")
+            val = click.prompt("  > ", default="", show_default=False).strip()
+            if val:
+                shared_answers[key] = val
+            print()
+
+    # Create drafts directory if specified
+    if drafts_dir:
+        os.makedirs(drafts_dir, exist_ok=True)
+
+    # ── Banner ───────────────────────────────────────────────────────────
+    if not obj.json_output:
+        click.echo()
+        click.echo("\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
+        click.echo(f"\033[1;35m  ChampMail Batch Outreach — {len(prospects)} Prospects\033[0m")
+        click.echo("\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
+        click.echo()
+
+    results = []
+    ctx = click.get_current_context()
+
+    for i, p in enumerate(prospects, 1):
+        email = p["email"]
+        first_name = p.get("first_name", "")
+        last_name = p.get("last_name", "")
+        title = p.get("title", "")
+        company = p.get("company_name", "")
+        domain = p.get("company_domain", "")
+        industry = p.get("industry", "")
+        phone = p.get("phone", "")
+        linkedin = p.get("linkedin_url", "")
+
+        if not obj.json_output:
+            click.echo(f"\033[1;36m  ── Prospect {i}/{len(prospects)}: {email} ──\033[0m")
+            click.echo()
+
+        try:
+            # Step 1: Prospect
+            ctx.invoke(cmd_prospect, email=email, first_name=first_name,
+                       last_name=last_name, title=title, phone=phone,
+                       linkedin_url=linkedin, company_name=company,
+                       company_domain=domain, industry=industry)
+
+            # Step 2: Research
+            if not obj.json_output:
+                click.echo()
+            ctx.invoke(cmd_research, email=email)
+
+            # Step 3: Questionnaire (shared answers for all)
+            if shared_answers:
+                # Write temp answers file for this invocation
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tf:
+                    json.dump(shared_answers, tf)
+                    temp_answers = tf.name
+                try:
+                    if not obj.json_output:
+                        click.echo()
+                    ctx.invoke(cmd_questionnaire, email=email, answers_file=temp_answers)
+                finally:
+                    os.unlink(temp_answers)
+
+            # Step 4: Prep
+            draft_file = None
+            if drafts_dir:
+                safe_email = email.replace("@", "_at_").replace(".", "_")
+                draft_file = os.path.join(drafts_dir, f"{safe_email}.json")
+
+            if not obj.json_output:
+                click.echo()
+            ctx.invoke(cmd_prep, email=email, subject=None,
+                       save_to=draft_file, answers_file=None)
+
+            # Step 5: Send (unless skipped)
+            if not skip_send:
+                if not obj.json_output:
+                    click.echo()
+                ctx.invoke(cmd_send, email=email, subject=None, body=None,
+                           draft_file=draft_file, from_name=None, from_email_addr=None)
+
+            results.append({"email": email, "status": "ok"})
+
+        except Exception as e:
+            results.append({"email": email, "status": "error", "error": str(e)})
+            if not obj.json_output:
+                print_error(f"Failed for {email}: {e}")
+
+        if not obj.json_output:
+            click.echo()
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    fail_count = len(results) - ok_count
+
+    if obj.json_output:
+        print(json.dumps({"ok": True, "total": len(results),
+                          "success": ok_count, "failed": fail_count,
+                          "results": results}))
+    else:
+        click.echo("\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
+        print_section("Batch Outreach Summary")
+        print_kv("Total Prospects", str(len(results)))
+        print_kv("Successful",     str(ok_count))
+        print_kv("Failed",         str(fail_count))
+        if skip_send:
+            print_info("Emails were NOT sent (--skip-send). Drafts are ready.")
+        if drafts_dir:
+            print_info(f"Drafts saved to: {drafts_dir}")
+        if fail_count:
+            print_warning("Failed prospects:")
+            for r in results:
+                if r["status"] == "error":
+                    print_kv(f"  {r['email']}", r.get("error", "unknown")[:80])
+        click.echo("\033[1;32m  Batch pipeline complete.\033[0m")
+        click.echo()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # START — full guided wizard
 # ─────────────────────────────────────────────────────────────────────────────
 
 @outreach.command("start")
-@click.argument("email")
-@click.option("--first-name",    "first_name",      default="", help="Prospect first name.")
-@click.option("--last-name",     "last_name",       default="", help="Prospect last name.")
-@click.option("--title",         default="",        help="Job title.")
-@click.option("--phone",         default="",        help="Phone.")
-@click.option("--company",       "company_name",    default="", help="Company name.")
-@click.option("--domain",        "company_domain",  default="", help="Company domain.")
-@click.option("--industry",      default="",        help="Industry.")
+@click.argument("email", default="", required=False)
+@click.option("--first-name",    "first_name",      default="", help="Prospect first name (admin only).")
+@click.option("--last-name",     "last_name",       default="", help="Prospect last name (admin only).")
+@click.option("--title",         default="",        help="Job title (admin only).")
+@click.option("--phone",         default="",        help="Phone (admin only).")
+@click.option("--company",       "company_name",    default="", help="Company name (admin only).")
+@click.option("--domain",        "company_domain",  default="", help="Company domain (admin only).")
+@click.option("--industry",      default="",        help="Industry (admin only).")
 @click.option("--answers-file",  "answers_file",    default=None, type=click.Path(exists=True),
               help="Pre-filled questionnaire JSON (skips interactive prompts).")
 @click.option("--draft-file",    "draft_file",      default=None, type=click.Path(),
@@ -1236,10 +1749,13 @@ def cmd_status(obj, email):
 def cmd_start(obj, email, first_name, last_name, title, phone,
               company_name, company_domain, industry,
               answers_file, draft_file, skip_send):
-    """Full guided pipeline: prospect → research → questionnaire → prep → send → replies."""
+    """Full guided pipeline: prospect → research → questionnaire → prep → send → replies.
+
+    Admins: optionally pass EMAIL to start immediately.
+    Users:  shown a numbered list of their assigned prospects to pick from.
+    """
     _require_login(obj)
 
-    # ── Step 1: Prospect ──────────────────────────────────────────────────────
     if not obj.json_output:
         click.echo()
         click.echo("\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
@@ -1247,9 +1763,24 @@ def cmd_start(obj, email, first_name, last_name, title, phone,
         click.echo("\033[1;35m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
         click.echo()
 
+    # ── Prospect selection ────────────────────────────────────────────────────
+    if not _is_admin():
+        # Regular users must pick from their assigned list
+        chosen = _pick_prospect_from_assigned(obj)
+        email        = chosen["email"]
+        first_name   = chosen.get("first_name") or ""
+        last_name    = chosen.get("last_name")  or ""
+        company_name = chosen.get("company_name") or ""
+        if not obj.json_output:
+            click.echo()
+            print_info(f"Running pipeline for: {email}")
+    elif not email:
+        print_error("Admin must provide EMAIL argument.")
+        raise SystemExit(1)
+
     ctx = click.get_current_context()
 
-    # Invoke each sub-command with the shared obj
+    # ── Step 1: Prospect ──────────────────────────────────────────────────────
     ctx.invoke(cmd_prospect, email=email, first_name=first_name, last_name=last_name,
                title=title, phone=phone, linkedin_url="",
                company_name=company_name, company_domain=company_domain, industry=industry)

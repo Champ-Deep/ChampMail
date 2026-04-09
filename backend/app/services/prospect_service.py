@@ -238,6 +238,36 @@ class ProspectService:
         prospects = result.scalars().all()
         return [self._prospect_to_dict(p) for p in prospects]
 
+    async def list_all(
+        self,
+        session: AsyncSession,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """List all prospects (admin view)."""
+        result = await session.execute(
+            select(Prospect).offset(offset).limit(limit)
+        )
+        return [self._prospect_to_dict(p) for p in result.scalars().all()]
+
+    async def assign_list_to_user(
+        self,
+        session: AsyncSession,
+        prospect_ids: List[str],
+        user_id: str,
+    ) -> int:
+        """Assign multiple prospects to a user by their IDs. Returns count assigned."""
+        from uuid import UUID
+        ids = [UUID(pid) if isinstance(pid, str) else pid for pid in prospect_ids]
+        await session.execute(
+            update(Prospect)
+            .where(Prospect.id.in_(ids))
+            .values(assigned_to_user_id=UUID(user_id) if isinstance(user_id, str) else user_id,
+                    updated_at=datetime.utcnow())
+        )
+        await session.commit()
+        return len(ids)
+
     async def get_assigned_to_user(
         self,
         session: AsyncSession,

@@ -70,7 +70,7 @@ async def health_check():
 
     # Check ChampGraph (optional — graph features degrade gracefully)
     try:
-        from app.db.falkordb import graph_db
+        from app.db.champgraph import graph_db
         if graph_db and graph_db._connected:
             result = await graph_db._get("/health")
             health_status["checks"]["champgraph"] = {
