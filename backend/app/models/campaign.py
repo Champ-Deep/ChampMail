@@ -54,9 +54,10 @@ class Campaign(Base):
     end_date = Column(DateTime, nullable=True)
     timezone = Column(String(50), default="UTC")
 
-    # Limits
+    # Limits & Cadence
     daily_limit = Column(Integer, default=100)
     total_limit = Column(Integer, nullable=True)
+    cadence_seconds = Column(Integer, default=3600)  # Min gap between sends (default 1 hour)
 
     # Statistics (updated periodically)
     total_prospects = Column(Integer, default=0)

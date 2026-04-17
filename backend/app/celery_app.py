@@ -64,6 +64,11 @@ celery_app.conf.update(
             "schedule": crontab(hour=23, minute=55),
             "options": {"queue": "default"},
         },
+        "process-imap-unsubscribes": {
+            "task": "app.tasks.sequences.process_imap_unsubscribes",
+            "schedule": crontab(minute="*/5"),
+            "options": {"queue": "sequences"},
+        },
     },
 )
 

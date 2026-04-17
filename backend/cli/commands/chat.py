@@ -636,6 +636,77 @@ def _run_outreach_visual(email, first, last, title, company, domain, industry,
 
 import re as _re
 
+def _sync_email_account_to_db(
+    smtp: dict | None = None,
+    imap: dict | None = None,
+) -> None:
+    """Sync CLI-configured SMTP/IMAP credentials to the backend database.
+
+    Creates or updates an EmailAccount so the backend email_service can
+    find and use the credentials. This bridges the CLI config.json ->
+    database gap (Phase 6).
+    """
+    import httpx
+
+    session_data = load_session()
+    token = session_data.get("token", "")
+    if not token:
+        return  # Not logged in, skip DB sync
+
+    base_url = os.environ.get("PUBLIC_API_URL", "http://localhost:8000")
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    try:
+        # Check if a "CLI Account" already exists
+        resp = httpx.get(f"{base_url}/api/v1/email-accounts", headers=headers, timeout=10)
+        accounts = resp.json() if resp.status_code == 200 else []
+
+        cli_account = next((a for a in accounts if a.get("name") == "CLI Account"), None)
+
+        # Build payload from current config
+        smtp_cfg = smtp or get_section("smtp") or {}
+        imap_cfg = imap or get_section("imap") or {}
+
+        payload: dict = {
+            "name": "CLI Account",
+            "email": smtp_cfg.get("username", ""),
+            "smtp_host": smtp_cfg.get("host"),
+            "smtp_port": int(smtp_cfg.get("port", 587)),
+            "smtp_username": smtp_cfg.get("username"),
+            "smtp_password": smtp_cfg.get("password"),
+            "smtp_use_tls": smtp_cfg.get("use_tls", True),
+            "from_email": smtp_cfg.get("from_email"),
+            "from_name": smtp_cfg.get("from_name"),
+            "is_default": True,
+        }
+
+        if imap_cfg.get("host"):
+            payload.update({
+                "imap_host": imap_cfg.get("host"),
+                "imap_port": int(imap_cfg.get("port", 993)),
+                "imap_username": imap_cfg.get("username"),
+                "imap_password": imap_cfg.get("password"),
+                "imap_use_ssl": imap_cfg.get("use_ssl", True),
+                "imap_mailbox": imap_cfg.get("mailbox", "INBOX"),
+            })
+
+        if not payload.get("email"):
+            return
+
+        if cli_account:
+            httpx.put(
+                f"{base_url}/api/v1/email-accounts/{cli_account['id']}",
+                json=payload, headers=headers, timeout=10,
+            )
+        else:
+            httpx.post(
+                f"{base_url}/api/v1/email-accounts",
+                json=payload, headers=headers, timeout=10,
+            )
+    except Exception:
+        pass  # Best effort — don't break CLI flow if backend is unreachable
+
+
 def _execute_chat_actions(response: str) -> str:
     """
     Scan the AI response for SAVE_*/RUN_OUTREACH tokens, execute them silently,
@@ -656,12 +727,14 @@ def _execute_chat_actions(response: str) -> str:
             if len(parts) >= 4:
                 host, port, username, password = parts[0], parts[1], parts[2], parts[3]
                 from_name = parts[4] if len(parts) > 4 else username
-                set_section("smtp", {
+                smtp_data = {
                     "host": host, "port": int(port) if port.isdigit() else 587,
                     "username": username, "password": password,
                     "from_email": username, "from_name": from_name, "use_tls": True,
-                })
+                }
+                set_section("smtp", smtp_data)
                 sync_to_env(); apply_to_runtime()
+                _sync_email_account_to_db(smtp=smtp_data)
                 action_messages.append("\033[32m✓ SMTP saved!\033[0m")
             continue
 
@@ -671,12 +744,14 @@ def _execute_chat_actions(response: str) -> str:
             parts = m.group(1).split("|")
             if len(parts) >= 4:
                 host, port, username, password = parts[0], parts[1], parts[2], parts[3]
-                set_section("imap", {
+                imap_data = {
                     "host": host, "port": int(port) if port.isdigit() else 993,
                     "username": username, "password": password,
                     "mailbox": "INBOX", "use_ssl": True,
-                })
+                }
+                set_section("imap", imap_data)
                 sync_to_env(); apply_to_runtime()
+                _sync_email_account_to_db(imap=imap_data)
                 action_messages.append("\033[32m✓ IMAP saved!\033[0m")
             continue
 

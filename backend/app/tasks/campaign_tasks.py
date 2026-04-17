@@ -333,9 +333,9 @@ def schedule_campaign_sends_task(
 ) -> dict:
     """Schedule all ready emails in a campaign for optimal send times.
 
-    Reads the personalized emails from the database, computes optimal
-    send windows using the SendScheduler, and enqueues individual
-    send tasks with appropriate ETAs.
+    Reads personalized emails from the database, computes optimal send
+    windows using the SendScheduler, enforces daily_limit and cadence_seconds,
+    and enqueues individual send tasks with appropriate Celery ETAs.
 
     Parameters
     ----------
@@ -350,8 +350,10 @@ def schedule_campaign_sends_task(
 
     async def _schedule():
         from app.services.send_scheduler import send_scheduler
-        from sqlalchemy import select
+        from app.tasks.sending import send_email_task
+        from sqlalchemy import select, func
         from app.models.campaign import Campaign, CampaignProspect, Prospect
+        from datetime import datetime, timezone, timedelta
 
         async with async_session_maker() as session:
             # Load campaign
@@ -362,6 +364,22 @@ def schedule_campaign_sends_task(
             if not campaign:
                 raise ValueError(f"Campaign {campaign_id} not found")
 
+            # --- Enforce daily limit ---
+            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            sent_today_result = await session.execute(
+                select(func.count(CampaignProspect.id))
+                .where(CampaignProspect.campaign_id == campaign_id)
+                .where(CampaignProspect.email_sent == True)  # noqa: E712
+                .where(CampaignProspect.last_sent_at >= today_start)
+            )
+            sent_today = sent_today_result.scalar() or 0
+            daily_limit = campaign.daily_limit or 100
+            remaining_quota = max(0, daily_limit - sent_today)
+
+            if remaining_quota == 0:
+                logger.info("Daily limit reached for campaign %s (%d sent today)", campaign_id, sent_today)
+                return {"scheduled_count": 0, "message": f"Daily limit reached ({sent_today}/{daily_limit})"}
+
             # Load active CampaignProspect enrollments that haven't been sent
             result = await session.execute(
                 select(CampaignProspect, Prospect)
@@ -371,6 +389,9 @@ def schedule_campaign_sends_task(
                 .where(CampaignProspect.email_sent == False)  # noqa: E712
             )
             rows = result.all()
+
+        # Cap by daily remaining quota
+        rows = rows[:remaining_quota]
 
         # Build personalized email list for scheduling
         personalized_emails = []
@@ -390,15 +411,54 @@ def schedule_campaign_sends_task(
         if not personalized_emails:
             return {"scheduled_count": 0, "message": "No emails ready to send"}
 
-        # Schedule sends
+        # Compute optimal send schedule
         scheduled = await send_scheduler.schedule_campaign_sends(
             campaign_id=campaign_id,
             personalized_emails=personalized_emails,
         )
 
+        # --- Enqueue individual sends with Celery ETAs ---
+        cadence = campaign.cadence_seconds or 3600
+        now = datetime.now(timezone.utc)
+        enqueued = 0
+
+        for i, entry in enumerate(scheduled):
+            # Enforce minimum cadence gap between sends
+            send_at_str = entry.get("send_at", "")
+            try:
+                send_at = datetime.fromisoformat(send_at_str).replace(tzinfo=timezone.utc)
+            except (ValueError, TypeError):
+                send_at = now + timedelta(seconds=cadence * (i + 1))
+
+            # Ensure cadence gap from previous send
+            min_send_at = now + timedelta(seconds=cadence * i)
+            if send_at < min_send_at:
+                send_at = min_send_at
+
+            send_email_task.apply_async(
+                kwargs={
+                    "prospect_id": entry["prospect_id"],
+                    "template_id": "",
+                    "subject": entry.get("subject", ""),
+                    "html_body": personalized_emails[i].get("html_body", ""),
+                    "campaign_id": campaign_id,
+                },
+                eta=send_at,
+                queue="sending",
+            )
+            enqueued += 1
+
+        logger.info(
+            "Enqueued %d sends for campaign %s with %ds cadence",
+            enqueued, campaign_id, cadence,
+        )
+
         return {
-            "scheduled_count": len(scheduled),
+            "scheduled_count": enqueued,
             "campaign_id": campaign_id,
+            "cadence_seconds": cadence,
+            "daily_limit": daily_limit,
+            "sent_today": sent_today,
             "schedule": scheduled,
         }
 

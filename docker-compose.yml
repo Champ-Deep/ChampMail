@@ -126,6 +126,12 @@ services:
 
       MAIL_ENGINE_URL: http://mail-engine:8025
 
+      SMTP_HOST: smtp
+      SMTP_PORT: 587
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: Champ@123456
+      SMTP_USE_TLS: "true"
+
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
 
       NAMECHEAP_API_KEY: ${NAMECHEAP_API_KEY:-}
@@ -177,9 +183,9 @@ services:
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "celery", "-A", "app.celery_app", "inspect", "ping"]

@@ -103,6 +103,7 @@ class EmailAccountService:
         imap_password: Optional[str] = None,
         imap_use_ssl: bool = True,
         imap_mailbox: str = "INBOX",
+        from_email: Optional[str] = None,
         from_name: Optional[str] = None,
         reply_to_email: Optional[str] = None,
         is_default: bool = False,
@@ -131,6 +132,7 @@ class EmailAccountService:
             imap_password_encrypted=self._encrypt(imap_password) if imap_password else None,
             imap_use_ssl=imap_use_ssl,
             imap_mailbox=imap_mailbox,
+            from_email=from_email,
             from_name=from_name or name,
             reply_to_email=reply_to_email,
             is_default=is_default,
@@ -164,6 +166,7 @@ class EmailAccountService:
         imap_password: Optional[str] = None,
         imap_use_ssl: Optional[bool] = None,
         imap_mailbox: Optional[str] = None,
+        from_email: Optional[str] = None,
         from_name: Optional[str] = None,
         reply_to_email: Optional[str] = None,
         is_default: Optional[bool] = None,
@@ -210,6 +213,8 @@ class EmailAccountService:
             account.imap_use_ssl = imap_use_ssl
         if imap_mailbox is not None:
             account.imap_mailbox = imap_mailbox
+        if from_email is not None:
+            account.from_email = from_email
         if from_name is not None:
             account.from_name = from_name
         if reply_to_email is not None:

@@ -52,6 +52,7 @@ class EmailAccount(Base):
     imap_verified_at = Column(DateTime, nullable=True)
 
     # Sending Identity
+    from_email = Column(String(255), nullable=True)  # Display "From" address (may differ from login email)
     from_name = Column(String(255), nullable=True)
     reply_to_email = Column(String(255), nullable=True)
 

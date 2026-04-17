@@ -37,6 +37,7 @@ class EmailAccountCreate(BaseModel):
     imap_password: Optional[str] = None
     imap_use_ssl: bool = True
     imap_mailbox: str = "INBOX"
+    from_email: Optional[str] = None
     from_name: Optional[str] = None
     reply_to_email: Optional[str] = None
     is_default: bool = False
@@ -57,6 +58,7 @@ class EmailAccountUpdate(BaseModel):
     imap_password: Optional[str] = None
     imap_use_ssl: Optional[bool] = None
     imap_mailbox: Optional[str] = None
+    from_email: Optional[str] = None
     from_name: Optional[str] = None
     reply_to_email: Optional[str] = None
     is_default: Optional[bool] = None
@@ -85,6 +87,7 @@ class EmailAccountResponse(BaseModel):
     imap_verified: bool
     imap_verified_at: Optional[str]
     imap_has_password: bool
+    from_email: Optional[str]
     from_name: Optional[str]
     reply_to_email: Optional[str]
     created_at: str
@@ -127,6 +130,7 @@ def account_to_response(account) -> EmailAccountResponse:
         imap_verified=account.imap_verified,
         imap_verified_at=account.imap_verified_at.isoformat() if account.imap_verified_at else None,
         imap_has_password=bool(account.imap_password_encrypted),
+        from_email=account.from_email,
         from_name=account.from_name,
         reply_to_email=account.reply_to_email,
         created_at=account.created_at.isoformat() if account.created_at else None,
@@ -196,6 +200,7 @@ async def create_account(
         imap_password=data.imap_password,
         imap_use_ssl=data.imap_use_ssl,
         imap_mailbox=data.imap_mailbox,
+        from_email=data.from_email,
         from_name=data.from_name,
         reply_to_email=data.reply_to_email,
         is_default=data.is_default,
@@ -229,6 +234,7 @@ async def update_account(
         imap_password=data.imap_password,
         imap_use_ssl=data.imap_use_ssl,
         imap_mailbox=data.imap_mailbox,
+        from_email=data.from_email,
         from_name=data.from_name,
         reply_to_email=data.reply_to_email,
         is_default=data.is_default,

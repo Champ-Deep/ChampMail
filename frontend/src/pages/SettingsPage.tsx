@@ -482,6 +482,7 @@ function EmailAccountsSettings() {
     imap_password: '',
     imap_use_ssl: true,
     imap_mailbox: 'INBOX',
+    from_email: '',
     from_name: '',
     is_default: false,
   });
@@ -508,6 +509,7 @@ function EmailAccountsSettings() {
       imap_password: '',
       imap_use_ssl: true,
       imap_mailbox: 'INBOX',
+      from_email: '',
       from_name: '',
       is_default: false,
     });
@@ -532,6 +534,7 @@ function EmailAccountsSettings() {
       imap_password: '',
       imap_use_ssl: account.imap_use_ssl,
       imap_mailbox: account.imap_mailbox || 'INBOX',
+      from_email: account.from_email || '',
       from_name: account.from_name || '',
       is_default: account.is_default,
     });
@@ -810,13 +813,23 @@ function EmailAccountsSettings() {
               />
             </div>
 
-            <Input
-              label="From Name"
-              value={formData.from_name || ''}
-              onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
-              placeholder="Your Name"
-              helperText="Name recipients will see"
-            />
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="From Name"
+                value={formData.from_name || ''}
+                onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
+                placeholder="Your Name"
+                helperText="Name recipients will see"
+              />
+              <Input
+                label="Send From Email"
+                type="email"
+                value={formData.from_email || ''}
+                onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
+                placeholder="you@yourdomain.com"
+                helperText="Visible 'From' address in recipient's inbox (leave blank to use account email)"
+              />
+            </div>
 
             {/* SMTP Settings */}
             <div className="border-t pt-4">

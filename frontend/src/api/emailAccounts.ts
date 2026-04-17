@@ -21,6 +21,7 @@ export interface EmailAccount {
   imap_verified: boolean;
   imap_verified_at: string | null;
   imap_has_password: boolean;
+  from_email: string | null;
   from_name: string | null;
   reply_to_email: string | null;
   created_at: string;
@@ -41,6 +42,7 @@ export interface EmailAccountCreate {
   imap_password?: string;
   imap_use_ssl?: boolean;
   imap_mailbox?: string;
+  from_email?: string;
   from_name?: string;
   reply_to_email?: string;
   is_default?: boolean;
@@ -60,6 +62,7 @@ export interface EmailAccountUpdate {
   imap_password?: string;
   imap_use_ssl?: boolean;
   imap_mailbox?: string;
+  from_email?: string;
   from_name?: string;
   reply_to_email?: string;
   is_default?: boolean;
