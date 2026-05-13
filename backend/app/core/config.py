@@ -5,15 +5,21 @@ Loads from environment variables and .env file.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve .env from the repo root (two levels up from this file: backend/app/core/config.py)
+_REPO_ROOT = Path(__file__).resolve().parents[3]  # backend/app/core -> backend/app -> backend -> repo root
+_ENV_FILES = [_REPO_ROOT / ".env", Path(".env")]
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=[str(p) for p in _ENV_FILES],
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -106,6 +112,41 @@ class Settings(BaseSettings):
     thesys_base_url: str = "https://api.thesys.dev/v1/embed"
     thesys_model: str = "c1/google/gemini-3-flash"
     thesys_max_tokens: int = 8192
+
+    # ── Infrastructure ────────────────────────────────────────────────────────
+    vps_public_ip: str = ""          # Public IP of your sending VPS — set VPS_PUBLIC_IP
+    mail_hostname: str = "localhost"  # Must match PTR/rDNS record — set MAIL_HOSTNAME
+    primary_domain: str = ""         # Root brand domain — set PRIMARY_DOMAIN
+    tracking_domain: str = ""        # Separate subdomain for open/click pixels — set TRACKING_DOMAIN
+    bounce_domain: str = ""          # Domain for VERP bounce addresses — set BOUNCE_DOMAIN
+
+    # ── Email compliance ──────────────────────────────────────────────────────
+    dmarc_report_email: str = ""     # Inbox for DMARC aggregate XML reports
+    admin_alert_email: str = ""      # Where blacklist/bounce alerts are sent
+    letsencrypt_email: str = ""      # Certbot expiry notifications
+    unsubscribe_base_url: str = ""   # Base URL for one-click unsubscribe
+
+    # ── DKIM ─────────────────────────────────────────────────────────────────
+    dkim_selector: str = "champmail"
+    dkim_keys_path: str = "/etc/opendkim/keys"  # Shared volume with OpenDKIM container
+
+    # ── Warmup ───────────────────────────────────────────────────────────────
+    # Comma-separated seed addresses for warmup sends (real mailboxes you control)
+    warmup_seed_emails: str = ""
+
+    # ── Seed inbox accounts (for pre-campaign placement testing) ─────────────
+    seed_gmail_email: str = ""
+    seed_gmail_password: str = ""
+    seed_outlook_email: str = ""
+    seed_outlook_password: str = ""
+    seed_yahoo_email: str = ""
+    seed_yahoo_password: str = ""
+
+    # ── Campaign sending ──────────────────────────────────────────────────────
+    campaign_cadence_seconds: int = 3600  # Base interval between sends (±30% jitter applied)
+
+    # ── Monitoring ───────────────────────────────────────────────────────────
+    blacklist_check_interval_hours: int = 6
 
     @property
     def redis_url(self) -> str:

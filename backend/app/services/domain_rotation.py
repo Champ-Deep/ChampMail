@@ -1,60 +1,62 @@
-import os
 from typing import Optional
 from app.db.postgres import async_session_maker as async_session
 from app.services.domain_service import domain_service
+from app.services.warmup_schedule import effective_daily_limit
 
 
 class DomainRotator:
-    def __init__(self):
-        self.cache = {}
+    async def select_domain(self, team_id: Optional[str] = None) -> Optional[str]:
+        async with async_session() as session:
+            domains = await domain_service.get_verified_domains(session, team_id)
 
-    async def select_domain(self, team_id: Optional[str] = None) -> str:
-        async def _select():
-            async with async_session() as session:
-                domains = await domain_service.get_verified_domains(session, team_id)
+            if not domains:
+                return None
 
-                if not domains:
-                    return None  # No domains configured — send without domain rotation
+            selected = None
+            lowest_utilization = float("inf")
 
-                selected_domain = None
-                lowest_utilization = float("inf")
+            for domain in domains:
+                # Skip paused or blacklisted domains
+                if domain.get("paused") or domain.get("blacklisted"):
+                    continue
 
-                for domain in domains:
-                    utilization = domain.sent_today / domain.daily_send_limit
+                cap = effective_daily_limit(domain)
+                sent = domain.get("sent_today", 0)
 
-                    if utilization < lowest_utilization:
-                        lowest_utilization = utilization
-                        selected_domain = domain
+                if sent >= cap:
+                    continue  # This domain is at its warmup/daily limit
 
-                    if utilization == 0:
-                        break
+                utilization = sent / max(cap, 1)
+                if utilization < lowest_utilization:
+                    lowest_utilization = utilization
+                    selected = domain
 
-                if selected_domain is None:
-                    return None  # All domains at limit
+                if utilization == 0:
+                    break
 
-                return selected_domain.id
+            return selected["id"] if selected else None
 
-        return await _select()
+    async def get_optimal_domain(self, prospect_count: int, team_id: Optional[str] = None) -> Optional[str]:
+        async with async_session() as session:
+            domains = await domain_service.get_verified_domains(session, team_id)
 
-    async def get_optimal_domain(self, prospect_count: int, team_id: Optional[str] = None) -> str:
-        async def _get():
-            async with async_session() as session:
-                domains = await domain_service.get_verified_domains(session, team_id)
+            candidates = []
+            for domain in domains:
+                if domain.get("paused") or domain.get("blacklisted"):
+                    continue
 
-                candidates = []
-                for domain in domains:
-                    remaining_capacity = domain.daily_send_limit - domain.sent_today
-                    if remaining_capacity >= prospect_count:
-                        utilization = domain.sent_today / domain.daily_send_limit
-                        candidates.append((domain, utilization))
+                cap = effective_daily_limit(domain)
+                remaining = cap - domain.get("sent_today", 0)
 
-                if not candidates:
-                    return await self.select_domain(team_id)
+                if remaining >= prospect_count:
+                    utilization = domain.get("sent_today", 0) / max(cap, 1)
+                    candidates.append((domain, utilization))
 
-                candidates.sort(key=lambda x: x[1])
-                return candidates[0][0].id
+            if not candidates:
+                return await self.select_domain(team_id)
 
-        return await _get()
+            candidates.sort(key=lambda x: x[1])
+            return candidates[0][0]["id"]
 
 
 domain_rotator = DomainRotator()

@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.tasks.bounces",
         "app.tasks.analytics",
         "app.tasks.campaign_tasks",
+        "app.tasks.dmarc",
     ],
 )
 
@@ -51,7 +52,7 @@ celery_app.conf.update(
         },
         "check-domain-health": {
             "task": "app.tasks.domains.check_all_domain_health",
-            "schedule": crontab(hour="*/6"),
+            "schedule": crontab(minute=30, hour="*/6"),
             "options": {"queue": "domain"},
         },
         "process-bounces": {
@@ -63,6 +64,18 @@ celery_app.conf.update(
             "task": "app.tasks.analytics.aggregate_daily_stats",
             "schedule": crontab(hour=23, minute=55),
             "options": {"queue": "default"},
+        },
+        # Reset sent_today + advance warmup_day for all domains
+        "midnight-reset": {
+            "task": "app.tasks.warmup.midnight_reset",
+            "schedule": crontab(hour=0, minute=0),
+            "options": {"queue": "warmup"},
+        },
+        # DMARC report processing — daily at 8am UTC
+        "process-dmarc-reports": {
+            "task": "app.tasks.dmarc.process_dmarc_reports",
+            "schedule": crontab(hour=8, minute=0),
+            "options": {"queue": "domain"},
         },
         "process-imap-unsubscribes": {
             "task": "app.tasks.sequences.process_imap_unsubscribes",

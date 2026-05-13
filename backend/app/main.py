@@ -7,6 +7,7 @@ Main application entry point.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -78,6 +79,18 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("THESYS_API_KEY not set - AI Assistant will be disabled")
 
+    # Verify SMTP connectivity (Postfix container must be reachable)
+    try:
+        import smtplib
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=5) as _smtp:
+            _smtp.noop()
+        logger.info("SMTP reachable at %s:%s", settings.smtp_host, settings.smtp_port)
+    except Exception as smtp_err:
+        logger.warning(
+            "SMTP not reachable at %s:%s — email sending will fail until Postfix is up: %s",
+            settings.smtp_host, settings.smtp_port, smtp_err,
+        )
+
     yield
 
     # Shutdown
@@ -121,16 +134,10 @@ app = FastAPI(
 )
 
 # CORS middleware
-# In production, only allow requests from the frontend domain
-# In development, allow localhost variants
 allowed_origins = [settings.frontend_url]
-if settings.environment == "development":
-    allowed_origins.extend([
-        "http://localhost:3000",
-        "http://localhost:5173",  # Vite default
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ])
+extra = os.environ.get("EXTRA_CORS_ORIGINS", "")
+if extra:
+    allowed_origins.extend([o.strip() for o in extra.split(",") if o.strip()])
 
 app.add_middleware(
     CORSMiddleware,
@@ -171,9 +178,9 @@ app.include_router(email_accounts.router, prefix=f"{settings.api_v1_prefix}/emai
 app.include_router(teams.router, prefix=settings.api_v1_prefix)
 app.include_router(webhooks.router, prefix=settings.api_v1_prefix)
 app.include_router(workflows.router, prefix=settings.api_v1_prefix)
+app.include_router(send.router, prefix=settings.api_v1_prefix, tags=["Send"])
 app.include_router(email_webhooks.router, prefix=settings.api_v1_prefix, tags=["Email Webhooks"])
 app.include_router(graph.router, prefix=settings.api_v1_prefix)
-app.include_router(send.router, prefix=settings.api_v1_prefix, tags=["Send"])
 app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains"])
 app.include_router(tracking.router, prefix=settings.api_v1_prefix, tags=["Tracking"])
 app.include_router(analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"])

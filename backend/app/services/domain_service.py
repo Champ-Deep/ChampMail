@@ -61,12 +61,12 @@ class DomainService:
         return [self._domain_to_dict(d) for d in domains]
 
     async def get_domains_with_warmup(self, session: AsyncSession) -> List[Dict[str, Any]]:
-        """Get domains that need warmup sends."""
+        """Get verified domains still in warmup (day < 60)."""
         result = await session.execute(
             select(Domain).where(
                 Domain.warmup_enabled == True,
-                Domain.warmup_day < 30,
-                Domain.status == "verified"
+                Domain.warmup_day < 60,
+                Domain.status == "verified",
             ).order_by(Domain.warmup_day)
         )
         domains = result.scalars().all()
@@ -201,13 +201,13 @@ class DomainService:
         return new_score
 
     async def check_warmup_status(self, session: AsyncSession, domain_id: str) -> bool:
-        """Check if domain has completed warmup."""
+        """Graduate domain if warmup_day >= 60."""
         result = await session.execute(
             select(Domain).where(Domain.id == domain_id)
         )
         domain = result.scalar_one_or_none()
 
-        if domain and domain.warmup_day >= 30 and domain.warmup_enabled:
+        if domain and domain.warmup_day >= 60 and domain.warmup_enabled:
             await session.execute(
                 update(Domain).where(Domain.id == domain_id).values(
                     warmup_enabled=False,
@@ -218,6 +218,76 @@ class DomainService:
             return True
 
         return False
+
+    async def reset_all_sent_today(self, session: AsyncSession) -> int:
+        """Midnight reset: zero sent_today for every domain. Returns count updated."""
+        result = await session.execute(
+            update(Domain).values(sent_today=0, updated_at=datetime.utcnow())
+        )
+        await session.commit()
+        return result.rowcount
+
+    async def advance_warmup_days(self, session: AsyncSession) -> int:
+        """Advance warmup_day +1 for all warming domains; graduate at day 60."""
+        # Advance all warmup-enabled domains
+        await session.execute(
+            update(Domain)
+            .where(Domain.warmup_enabled == True, Domain.warmup_day < 60)
+            .values(warmup_day=Domain.warmup_day + 1, updated_at=datetime.utcnow())
+        )
+        # Graduate any that just hit day 60
+        result = await session.execute(
+            update(Domain)
+            .where(Domain.warmup_enabled == True, Domain.warmup_day >= 60)
+            .values(warmup_enabled=False, updated_at=datetime.utcnow())
+        )
+        await session.commit()
+        return result.rowcount
+
+    async def pause_domain(self, session: AsyncSession, domain_id: str, reason: str = "") -> bool:
+        """Auto-pause a domain due to threshold breach."""
+        await session.execute(
+            update(Domain).where(Domain.id == domain_id).values(
+                paused=True,
+                updated_at=datetime.utcnow(),
+            )
+        )
+        await session.commit()
+        return True
+
+    async def update_blacklist_status(
+        self,
+        session: AsyncSession,
+        domain_id: str,
+        blacklisted: bool,
+        hit_count: int,
+        health_penalty: float,
+    ) -> bool:
+        """Update blacklist state and apply health penalty."""
+        result = await session.execute(
+            select(Domain).where(Domain.id == domain_id)
+        )
+        domain = result.scalar_one_or_none()
+        if not domain:
+            return False
+
+        new_score = max(0.0, (domain.health_score or 100.0) - health_penalty)
+        await session.execute(
+            update(Domain).where(Domain.id == domain_id).values(
+                blacklisted=blacklisted,
+                blacklist_hits=hit_count,
+                health_score=new_score,
+                last_health_check=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+            )
+        )
+        await session.commit()
+        return True
+
+    async def get_all_domains(self, session: AsyncSession) -> List[Dict[str, Any]]:
+        """Return every domain regardless of status."""
+        result = await session.execute(select(Domain))
+        return [self._domain_to_dict(d) for d in result.scalars().all()]
 
     async def delete(self, session: AsyncSession, domain_id: str) -> bool:
         """Delete a domain."""
@@ -250,6 +320,10 @@ class DomainService:
             "warmup_day": domain.warmup_day,
             "health_score": domain.health_score,
             "bounce_rate": domain.bounce_rate,
+            "complaint_rate": getattr(domain, "complaint_rate", 0.0),
+            "blacklisted": getattr(domain, "blacklisted", False),
+            "blacklist_hits": getattr(domain, "blacklist_hits", 0),
+            "paused": getattr(domain, "paused", False),
             "cloudflare_zone_id": domain.cloudflare_zone_id,
             "team_id": str(domain.team_id) if domain.team_id else None,
             "created_at": domain.created_at.isoformat() if domain.created_at else None,

@@ -27,7 +27,23 @@ if [ -f "$BACKEND/.env" ]; then
   set -a; source "$BACKEND/.env" 2>/dev/null || true; set +a
 fi
 
-# Use python3 explicitly; fall back to python
-PYTHON=$(command -v python3 2>/dev/null || command -v python)
+# Override Docker-internal hostnames with localhost for host-side CLI
+export POSTGRES_HOST=localhost
+export REDIS_HOST=localhost
+export REDIS_PORT=6380
 
+# Explicitly export key vars parsed directly from .env (avoids bash sourcing edge cases)
+_parse_env() { grep -m1 "^$1=" "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2-; }
+[ -z "${OPENROUTER_API_KEY:-}" ] && export OPENROUTER_API_KEY="$(_parse_env OPENROUTER_API_KEY)"
+[ -z "${JWT_SECRET_KEY:-}" ]     && export JWT_SECRET_KEY="$(_parse_env JWT_SECRET_KEY)"
+[ -z "${EMAIL_ENCRYPTION_KEY:-}" ] && export EMAIL_ENCRYPTION_KEY="$(_parse_env EMAIL_ENCRYPTION_KEY)"
+
+# Use venv python if available, else fall back to python3
+if [ -f "$BACKEND/.venv/bin/python3" ]; then
+  PYTHON="$BACKEND/.venv/bin/python3"
+else
+  PYTHON=$(command -v python3 2>/dev/null || command -v python)
+fi
+
+cd "$SCRIPT_DIR"
 exec "$PYTHON" -m cli.champmail_cli "$@"

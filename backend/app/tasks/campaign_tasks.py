@@ -418,22 +418,31 @@ def schedule_campaign_sends_task(
         )
 
         # --- Enqueue individual sends with Celery ETAs ---
+        import random
+
+        def _jitter(base: int) -> int:
+            """Apply ±30% random jitter to avoid mechanical send patterns."""
+            delta = int(base * 0.30)
+            return base + random.randint(-delta, delta)
+
         cadence = campaign.cadence_seconds or 3600
         now = datetime.now(timezone.utc)
         enqueued = 0
+        cumulative_offset = 0
 
         for i, entry in enumerate(scheduled):
-            # Enforce minimum cadence gap between sends
+            # Each send is cadence ± 30% after the previous
+            cumulative_offset += _jitter(cadence)
+            send_at = now + timedelta(seconds=cumulative_offset)
+
+            # If scheduler provided a specific send_at that is later, respect it
             send_at_str = entry.get("send_at", "")
             try:
-                send_at = datetime.fromisoformat(send_at_str).replace(tzinfo=timezone.utc)
+                scheduler_send_at = datetime.fromisoformat(send_at_str).replace(tzinfo=timezone.utc)
+                if scheduler_send_at > send_at:
+                    send_at = scheduler_send_at
             except (ValueError, TypeError):
-                send_at = now + timedelta(seconds=cadence * (i + 1))
-
-            # Ensure cadence gap from previous send
-            min_send_at = now + timedelta(seconds=cadence * i)
-            if send_at < min_send_at:
-                send_at = min_send_at
+                pass
 
             send_email_task.apply_async(
                 kwargs={
@@ -449,7 +458,7 @@ def schedule_campaign_sends_task(
             enqueued += 1
 
         logger.info(
-            "Enqueued %d sends for campaign %s with %ds cadence",
+            "Enqueued %d sends for campaign %s with ~%ds jittered cadence",
             enqueued, campaign_id, cadence,
         )
 

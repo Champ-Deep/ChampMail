@@ -161,34 +161,65 @@ class CloudflareClient:
         server_ip: str,
         dkim_public_key: str,
         domain: str,
+        dkim_selector: str = "champmail",
+        dmarc_report_email: str = "",
+        tracking_subdomain: str = "track",
     ) -> DNSSetupResult:
+        """Create all required email DNS records for a domain.
+
+        Records created:
+          - A: mail.<domain> → server_ip
+          - A: track.<domain> → server_ip  (open/click tracking pixel)
+          - MX: <domain> → mail.<domain> (pri 10)
+          - TXT: <domain> → SPF using server_ip directly
+          - TXT: <selector>._domainkey.<domain> → DKIM public key
+          - TXT: _dmarc.<domain> → DMARC policy
+        """
         records = []
 
         try:
+            # A records (mail + tracking subdomains)
+            mail_a = await self.create_dns_record(
+                zone_id, "A", f"mail.{domain}", server_ip, ttl=3600, proxied=False
+            )
+            records.append(mail_a)
+
+            track_a = await self.create_dns_record(
+                zone_id, "A", f"{tracking_subdomain}.{domain}", server_ip, ttl=3600, proxied=False
+            )
+            records.append(track_a)
+
+            # MX
             mx_record = await self.create_dns_record(
                 zone_id, "MX", domain, f"mail.{domain}", ttl=3600, priority=10
             )
             records.append(mx_record)
 
+            # SPF — authorize this server's IP directly; -all = hard fail others
             spf_record = await self.create_dns_record(
-                zone_id, "TXT", domain, f"v=spf1 include:_spf.champmail.com ~all", ttl=3600
+                zone_id, "TXT", domain, f"v=spf1 ip4:{server_ip} -all", ttl=3600
             )
             records.append(spf_record)
 
+            # DKIM — selector._domainkey (Cloudflare API takes just the subdomain label,
+            # the zone suffix is appended automatically, so do NOT include domain here)
             dkim_record = await self.create_dns_record(
-                zone_id, "TXT", f"champmail._domainkey.{domain}", dkim_public_key, ttl=3600
+                zone_id, "TXT", f"{dkim_selector}._domainkey", dkim_public_key, ttl=3600
             )
             records.append(dkim_record)
 
+            # DMARC
+            rua = f"mailto:{dmarc_report_email}" if dmarc_report_email else ""
+            rua_tag = f"; rua={rua}" if rua else ""
             dmarc_record = await self.create_dns_record(
-                zone_id, "TXT", f"_dmarc.{domain}", "v=DMARC1; p=none; rua=mailto:dmarc@champmail.com", ttl=3600
+                zone_id, "TXT", f"_dmarc", f"v=DMARC1; p=none{rua_tag}", ttl=3600
             )
             records.append(dmarc_record)
 
             return DNSSetupResult(success=True, records=records)
 
         except Exception as e:
-            return DNSSetupResult(success=False, records=[], error=str(e))
+            return DNSSetupResult(success=False, records=records, error=str(e))
 
     async def verify_dns_propagation(self, zone_id: str) -> PropagationStatus:
         records = await self.list_dns_records(zone_id)

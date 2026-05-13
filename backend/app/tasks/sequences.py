@@ -35,9 +35,12 @@ def execute_pending_steps(self):
 
     async def _execute():
         from app.services.sequence_service import sequence_service
-        from app.services.mail_engine_client import mail_engine_client
         from app.services.domain_rotation import domain_rotator
+        from app.services.email_validator import email_validator
+        from app.services.destination_throttle import can_send as throttle_ok
         from app.db.champgraph import graph_db
+        from app.tasks.sending import _build_message, _submit_to_postfix
+        from app.core.config import settings
 
         async with async_session() as session:
             pending_steps = await sequence_service.get_pending_steps(session)
@@ -48,35 +51,67 @@ def execute_pending_steps(self):
                     logger.info("Cadence cap reached (%d), deferring remaining steps", MAX_STEPS_PER_TICK)
                     break
 
+                prospect_email = step.get("prospect_email", "")
                 try:
+                    # Pre-send validation
+                    check = await email_validator.validate(prospect_email, session)
+                    if not check["valid"]:
+                        await sequence_service.mark_step_failed(session, step.get("id"), check["reason"])
+                        continue
+
+                    # Per-destination throttle
+                    if not await throttle_ok(prospect_email):
+                        logger.debug("Throttled sequence step for %s, will retry next tick", prospect_email)
+                        continue
+
                     domain_id = await domain_rotator.select_domain(step.get("team_id"))
+                    if not domain_id:
+                        raise ValueError("No available sending domain")
 
-                    result = await mail_engine_client.send_email(
-                        recipient=step.get("prospect_email"),
-                        recipient_name=step.get("prospect_name"),
-                        subject=step.get("subject"),
-                        html_body=step.get("body"),
-                        domain_id=domain_id or "",
-                        track_opens=True,
-                        track_clicks=True,
+                    from app.services.domain_service import domain_service
+                    domain = await domain_service.get_by_id(session, domain_id)
+                    domain_name = domain["domain_name"]
+                    from_email = f"outreach@{domain_name}"
+
+                    bounce_host = settings.bounce_domain or settings.mail_hostname
+                    prospect_id = step.get("prospect_id", "unknown")
+                    bounce_address = f"bounce+{prospect_id}@{bounce_host}"
+
+                    subject = step.get("subject", "")
+                    html_body = step.get("body", "")
+                    import re as _re
+                    body_text = _re.sub(r"<[^>]+>", "", html_body).strip() or subject
+
+                    msg = _build_message(
+                        from_email=from_email,
+                        from_name=settings.app_name,
+                        to_email=prospect_email,
+                        subject=subject,
+                        body_text=body_text,
+                        html_body=html_body,
+                        bounce_address=bounce_address,
                     )
+                    message_id = _submit_to_postfix(from_email, prospect_email, bounce_address, msg)
 
-                    await sequence_service.mark_step_sent(session, step.get("id"), result.message_id)
+                    await domain_service.increment_sent_count(session, domain_id)
+                    await sequence_service.mark_step_sent(session, step.get("id"), message_id)
                     sent_count += 1
 
-                    # Record in ChampGraph for relationship intelligence
-                    await graph_db.record_email_sent(
-                        prospect_email=step.get("prospect_email", ""),
-                        sequence_id=int(step.get("sequence_id", 0)) if str(step.get("sequence_id", "")).isdigit() else 0,
-                        step_number=step.get("step_order", 0),
-                        subject=step.get("subject", ""),
-                        body_hash=str(hash(step.get("body", ""))),
-                    )
+                    try:
+                        await graph_db.record_email_sent(
+                            prospect_email=prospect_email,
+                            sequence_id=int(step.get("sequence_id", 0)) if str(step.get("sequence_id", "")).isdigit() else 0,
+                            step_number=step.get("step_order", 0),
+                            subject=subject,
+                            body_hash=str(hash(html_body)),
+                        )
+                    except Exception:
+                        pass
 
                     await sequence_service.schedule_next_step(
                         session,
                         step.get("sequence_id"),
-                        step.get("prospect_id"),
+                        prospect_id,
                         step.get("step_order") + 1,
                     )
 
@@ -114,26 +149,83 @@ def check_replies_and_pause(self):
 
     async def _check():
         from app.services.sequence_service import sequence_service
-        from app.services.mail_engine_client import mail_engine_client
+        from app.core.config import settings
+
+        imap_host = settings.imap_host
+        imap_port = settings.imap_port
+        imap_user = settings.imap_username
+        imap_pass = settings.imap_password
+
+        if not imap_user or not imap_pass or imap_host == "localhost":
+            logger.debug("IMAP not configured — skipping reply detection")
+            return
 
         async with async_session() as session:
             active_sequences = await sequence_service.get_active_sequences(session)
+            if not active_sequences:
+                return
 
+        # Collect all prospect emails enrolled in active sequences
+        prospect_email_to_seq: dict[str, list[tuple[str, str]]] = {}
+        async with async_session() as session:
             for seq in active_sequences:
-                prospect_ids = await sequence_service.get_enrolled_prospect_ids(session, seq.get("id"))
+                seq_id = seq.get("id")
+                prospect_ids = await sequence_service.get_enrolled_prospect_ids(session, seq_id)
+                for pid in prospect_ids:
+                    p_email = seq.get("prospect_email", "")  # best-effort; service may not populate
+                    if p_email:
+                        prospect_email_to_seq.setdefault(p_email.lower(), []).append((seq_id, pid))
 
-                for prospect_id in prospect_ids:
-                    try:
-                        has_replied = await mail_engine_client.check_for_replies(
-                            prospect_email=seq.get("prospect_email", "")
-                        )
+        if not prospect_email_to_seq:
+            return
 
-                        if has_replied:
-                            await sequence_service.pause(
-                                session, seq.get("id"), prospect_id, reason="reply_detected"
-                            )
-                    except Exception:
-                        pass  # Best effort reply detection
+        # Single IMAP connection — search for In-Reply-To / References headers
+        try:
+            ctx = ssl.create_default_context() if settings.imap_use_ssl else None
+            if ctx and imap_host in {"localhost", "127.0.0.1", "imap"}:
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+
+            if settings.imap_use_ssl:
+                imap = imaplib.IMAP4_SSL(imap_host, imap_port, ssl_context=ctx)
+            else:
+                imap = imaplib.IMAP4(imap_host, imap_port)
+
+            imap.login(imap_user, imap_pass)
+            imap.select("INBOX")
+
+            _, data = imap.search(None, "UNSEEN")
+            msg_ids = data[0].split() if data[0] else []
+
+            replied_emails: set[str] = set()
+            for mid in msg_ids:
+                _, msg_data = imap.fetch(mid, "(BODY[HEADER.FIELDS (FROM IN-REPLY-TO)])")
+                raw = msg_data[0][1] if msg_data and msg_data[0] else b""
+                parsed = email_lib.message_from_bytes(raw)
+                from_addr = parsed.get("From", "").lower()
+                in_reply = parsed.get("In-Reply-To", "")
+                if in_reply:  # only count actual replies
+                    for addr in prospect_email_to_seq:
+                        if addr in from_addr:
+                            replied_emails.add(addr)
+
+            imap.close()
+            imap.logout()
+
+            if replied_emails:
+                async with async_session() as session:
+                    for p_email in replied_emails:
+                        for seq_id, prospect_id in prospect_email_to_seq[p_email]:
+                            try:
+                                await sequence_service.pause(
+                                    session, seq_id, prospect_id, reason="reply_detected"
+                                )
+                                logger.info("Paused sequence %s for reply from %s", seq_id, p_email)
+                            except Exception:
+                                pass
+
+        except Exception as exc:
+            logger.debug("Reply detection IMAP scan failed: %s", exc)
 
     asyncio.run(_check())
 

@@ -250,9 +250,10 @@ class EmailService:
         if isinstance(config, dict):
             return config  # error dict
 
-        if not config.host or not config.username:
-            return {"success": False, "error": "SMTP settings incomplete"}
-        if not config.password:
+        if not config.host:
+            return {"success": False, "error": "SMTP host not configured"}
+        # Allow empty username/password for unauthenticated local relays (e.g. MailHog)
+        if config.username and not config.password:
             return {"success": False, "error": "SMTP password not configured"}
 
         try:
@@ -300,16 +301,32 @@ class EmailService:
             )
 
             # --- SMTP transport ---
-            context = ssl.create_default_context()
+            # use_tls=True  → STARTTLS (port 587)
+            # use_tls=False, username set  → SMTP_SSL (port 465)
+            # use_tls=False, no username   → plain SMTP, no auth (local relay / MailHog)
+            _local_hosts = {"localhost", "127.0.0.1", "smtp", "mailhog", "postfix"}
+            is_local_relay = not config.username or config.host in _local_hosts
 
-            if config.use_tls:
+            context = ssl.create_default_context()
+            if is_local_relay:
+                # Local/dev relays (Postfix container, MailHog) use self-signed certs
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+
+            if is_local_relay:
                 server = smtplib.SMTP(config.host, config.port, timeout=30)
+                server.ehlo()
+            elif config.use_tls:
+                server = smtplib.SMTP(config.host, config.port, timeout=30)
+                server.ehlo()
                 server.starttls(context=context)
+                server.ehlo()
             else:
                 server = smtplib.SMTP_SSL(config.host, config.port, context=context, timeout=30)
 
-            server.login(config.username, config.password)
-            server.sendmail(config.from_email, to_email, msg.as_string())
+            if not is_local_relay:
+                server.login(config.username, config.password)
+            server.sendmail(config.from_email or "noreply@champmail.local", to_email, msg.as_string())
             server.quit()
             logger.info("Email sent successfully to %s", to_email)
 
@@ -535,6 +552,50 @@ class EmailService:
                 "priority": msg.get("X-Priority", "normal"),
             },
         }
+
+
+    def send_warmup_email(
+        self,
+        to_email: str,
+        from_email: str,
+        domain_name: str,
+    ) -> dict:
+        """
+        Send a warmup seed email directly via local Postfix — no DB session needed.
+        Uses unauthenticated SMTP to the local Postfix container on port 587.
+        """
+        import os
+        smtp_host = os.getenv("SMTP_HOST", "smtp")
+        smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+        subjects = [
+            "Quick update from the team",
+            "Following up on our conversation",
+            "Checking in",
+            "A quick note",
+            "Hello from the team",
+        ]
+        import random
+        subject = random.choice(subjects)
+        body = (
+            "Hi there,\n\nJust reaching out to stay in touch.\n\n"
+            "Best regards,\nThe Team"
+        )
+
+        msg = self._header_builder.build_message(
+            sender_email=from_email,
+            sender_name="The Team",
+            to_email=to_email,
+            subject=subject,
+            body=body,
+        )
+
+        server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+        server.ehlo()
+        server.sendmail(from_email, to_email, msg.as_string())
+        server.quit()
+
+        return {"success": True, "to": to_email, "from": from_email}
 
 
 # Singleton instance

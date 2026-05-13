@@ -70,26 +70,68 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8025/health"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8025/health"]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
       - champmail-network
 
-  # Postfix SMTP Server
+  # OpenDKIM — DKIM signing milter (sits between app and Postfix)
+  opendkim:
+    build:
+      context: ./mail-engine/opendkim
+      dockerfile: Dockerfile
+    container_name: champmail-opendkim
+    restart: unless-stopped
+    volumes:
+      - opendkim_keys:/etc/opendkim/keys
+      - opendkim_config:/etc/opendkim
+    networks:
+      - champmail-network
+
+  # Postfix — direct delivery MTA (no TurboSMTP relay)
   smtp:
     build:
       context: ./mail-engine/postfix
       dockerfile: Dockerfile
     container_name: champmail-smtp
     restart: unless-stopped
+    environment:
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.championsmail.com}
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-championsmail.com}
+      # Leave RELAY_HOST empty for direct delivery; set only if you want a smarthost
+      RELAY_HOST: ${SMTP_RELAY_HOST:-}
+      RELAY_PORT: ${SMTP_RELAY_PORT:-587}
+      RELAY_USER: ${SMTP_RELAY_USER:-}
+      RELAY_PASS: ${SMTP_RELAY_PASS:-}
+      OPENDKIM_HOST: opendkim
+      OPENDKIM_PORT: 8891
     ports:
       - "25:25"
-      - "465:465"
       - "587:587"
     volumes:
       - smtp_data:/var/spool/postfix
+      - letsencrypt_certs:/etc/letsencrypt:ro
+    depends_on:
+      - opendkim
+    networks:
+      - champmail-network
+
+  # Certbot — Let's Encrypt TLS cert auto-renewal
+  certbot:
+    image: certbot/certbot:latest
+    container_name: champmail-certbot
+    restart: unless-stopped
+    volumes:
+      - letsencrypt_certs:/etc/letsencrypt
+      - certbot_webroot:/var/www/certbot
+    entrypoint: >
+      sh -c "trap exit TERM;
+             while :; do
+               certbot renew --webroot -w /var/www/certbot --quiet;
+               sleep 12h & wait $${!};
+             done"
     networks:
       - champmail-network
 
@@ -126,11 +168,43 @@ services:
 
       MAIL_ENGINE_URL: http://mail-engine:8025
 
+      # ── SMTP — points to local Postfix container (direct delivery) ──────────
       SMTP_HOST: smtp
       SMTP_PORT: 587
       SMTP_USERNAME: ""
-      SMTP_PASSWORD: Champ@123456
-      SMTP_USE_TLS: "true"
+      SMTP_PASSWORD: ""
+      SMTP_USE_TLS: "false"
+
+      # ── Infrastructure ───────────────────────────────────────────────────────
+      VPS_PUBLIC_IP: ${VPS_PUBLIC_IP:-}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.championsmail.com}
+      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:-}
+      TRACKING_DOMAIN: ${TRACKING_DOMAIN:-}
+      BOUNCE_DOMAIN: ${BOUNCE_DOMAIN:-}
+
+      # ── Email compliance ─────────────────────────────────────────────────────
+      DMARC_REPORT_EMAIL: ${DMARC_REPORT_EMAIL:-}
+      ADMIN_ALERT_EMAIL: ${ADMIN_ALERT_EMAIL:-}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+      UNSUBSCRIBE_BASE_URL: ${UNSUBSCRIBE_BASE_URL:-}
+
+      # ── DKIM ─────────────────────────────────────────────────────────────────
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-champmail}
+      DKIM_KEYS_PATH: /etc/opendkim/keys
+
+      # ── Warmup ───────────────────────────────────────────────────────────────
+      WARMUP_SEED_EMAILS: ${WARMUP_SEED_EMAILS:-}
+
+      # ── Seed inbox accounts (pre-campaign placement testing) ─────────────────
+      SEED_GMAIL_EMAIL: ${SEED_GMAIL_EMAIL:-}
+      SEED_GMAIL_PASSWORD: ${SEED_GMAIL_PASSWORD:-}
+      SEED_OUTLOOK_EMAIL: ${SEED_OUTLOOK_EMAIL:-}
+      SEED_OUTLOOK_PASSWORD: ${SEED_OUTLOOK_PASSWORD:-}
+      SEED_YAHOO_EMAIL: ${SEED_YAHOO_EMAIL:-}
+      SEED_YAHOO_PASSWORD: ${SEED_YAHOO_PASSWORD:-}
+
+      # ── Campaign sending ─────────────────────────────────────────────────────
+      CAMPAIGN_CADENCE_SECONDS: ${CAMPAIGN_CADENCE_SECONDS:-3600}
 
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
 
@@ -142,6 +216,10 @@ services:
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
 
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+      FRONTEND_URL: ${FRONTEND_URL:-http://103.170.162.2:3001}
+      EXTRA_CORS_ORIGINS: ${EXTRA_CORS_ORIGINS:-https://champiq-production.up.railway.app,http://103.170.162.2:3001,http://localhost:3001,http://localhost:5173}
+    volumes:
+      - opendkim_keys:/etc/opendkim/keys
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
@@ -182,6 +260,46 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+
+      SMTP_HOST: smtp
+      SMTP_PORT: 587
+      SMTP_USERNAME: ""
+      SMTP_PASSWORD: ""
+      SMTP_USE_TLS: "false"
+
+      VPS_PUBLIC_IP: ${VPS_PUBLIC_IP:-}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.championsmail.com}
+      PRIMARY_DOMAIN: ${PRIMARY_DOMAIN:-}
+      BOUNCE_DOMAIN: ${BOUNCE_DOMAIN:-}
+      TRACKING_DOMAIN: ${TRACKING_DOMAIN:-}
+      UNSUBSCRIBE_BASE_URL: ${UNSUBSCRIBE_BASE_URL:-}
+
+      DKIM_SELECTOR: ${DKIM_SELECTOR:-champmail}
+      DKIM_KEYS_PATH: /etc/opendkim/keys
+
+      DMARC_REPORT_EMAIL: ${DMARC_REPORT_EMAIL:-}
+      ADMIN_ALERT_EMAIL: ${ADMIN_ALERT_EMAIL:-}
+
+      WARMUP_SEED_EMAILS: ${WARMUP_SEED_EMAILS:-}
+      SEED_GMAIL_EMAIL: ${SEED_GMAIL_EMAIL:-}
+      SEED_GMAIL_PASSWORD: ${SEED_GMAIL_PASSWORD:-}
+      SEED_OUTLOOK_EMAIL: ${SEED_OUTLOOK_EMAIL:-}
+      SEED_OUTLOOK_PASSWORD: ${SEED_OUTLOOK_PASSWORD:-}
+      SEED_YAHOO_EMAIL: ${SEED_YAHOO_EMAIL:-}
+      SEED_YAHOO_PASSWORD: ${SEED_YAHOO_PASSWORD:-}
+
+      CAMPAIGN_CADENCE_SECONDS: ${CAMPAIGN_CADENCE_SECONDS:-3600}
+
+      NAMECHEAP_API_KEY: ${NAMECHEAP_API_KEY:-}
+      NAMECHEAP_API_USER: ${NAMECHEAP_API_USER:-}
+      NAMECHEAP_IP: ${NAMECHEAP_IP:-}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
+
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-champmail-jwt-secret-dev-key-change-me}
+      EMAIL_ENCRYPTION_KEY: ${EMAIL_ENCRYPTION_KEY:-}
+    volumes:
+      - opendkim_keys:/etc/opendkim/keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -210,6 +328,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cat /proc/1/cmdline | tr '\\0' ' ' | grep -q beat"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
     networks:
       - champmail-network
 
@@ -229,6 +353,18 @@ services:
     networks:
       - champmail-network
 
+  # MailHog — local SMTP catcher for testing (no TLS, no auth)
+  # Web UI: http://<host>:8026   SMTP: mailhog:1025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: champmail-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8026:8025"   # Web UI (8025 is taken by mail-engine)
+    networks:
+      - champmail-network
+
   # React Frontend with Nginx
   frontend:
     build:
@@ -244,7 +380,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      test: ["CMD", "curl", "-sf", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -257,6 +393,14 @@ volumes:
   redis_data:
     driver: local
   smtp_data:
+    driver: local
+  opendkim_keys:
+    driver: local
+  opendkim_config:
+    driver: local
+  letsencrypt_certs:
+    driver: local
+  certbot_webroot:
     driver: local
 
 networks:

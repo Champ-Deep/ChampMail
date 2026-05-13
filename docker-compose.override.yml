@@ -1,10 +1,20 @@
-# Local dev override - disables smtp/postfix and flower for faster startup
-# mail-engine is kept for API completeness but not required for core features
+# Local dev override
+# Postfix runs in dev mode (self-signed cert, no relay configured by default)
+# Flower is optional — enable with: docker compose --profile optional up
 
 services:
   smtp:
+    environment:
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-mail.localhost}
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-localhost}
+      RELAY_HOST: ${SMTP_RELAY_HOST:-}
+      RELAY_PORT: ${SMTP_RELAY_PORT:-587}
+      RELAY_USER: ${SMTP_RELAY_USER:-}
+      RELAY_PASS: ${SMTP_RELAY_PASS:-}
+
+  certbot:
     profiles:
-      - optional
+      - production   # Don't run certbot in dev — no real domain
 
   flower:
     profiles:

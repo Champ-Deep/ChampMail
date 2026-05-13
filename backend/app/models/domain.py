@@ -48,7 +48,15 @@ class Domain(Base):
     # Deliverability
     health_score = Column(Float, default=100.0)
     bounce_rate = Column(Float, default=0.0)
+    complaint_rate = Column(Float, default=0.0)
     last_health_check = Column(DateTime, nullable=True)
+
+    # Blacklist state (updated every 6 hours by Celery)
+    blacklisted = Column(Boolean, default=False)
+    blacklist_hits = Column(Integer, default=0)
+
+    # Auto-pause flag — set by bounce/complaint/blacklist threshold enforcement
+    paused = Column(Boolean, default=False)
 
     # Team association
     team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id"), nullable=True)
