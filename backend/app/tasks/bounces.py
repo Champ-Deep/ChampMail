@@ -15,6 +15,8 @@ def process_bounce_queue(self):
         from app.services.prospect_service import prospect_service
         from app.services.domain_service import domain_service
 
+        from app.services.suppression_service import suppression_service
+
         async with async_session() as session:
             bounces = await mail_engine_client.get_bounces(limit=100)
 
@@ -24,7 +26,27 @@ def process_bounce_queue(self):
                         session, bounce["email"], bounce["type"]
                     )
 
+                    # Hard bounces and complaints permanently suppress the address
+                    # across all of the team's campaigns.
+                    btype = (bounce.get("type") or "").lower()
+                    if btype in ("hard", "complaint", "spam_complaint"):
+                        await suppression_service.add(
+                            session, bounce.get("team_id"), bounce["email"],
+                            reason=("complaint" if "complaint" in btype else "bounce_hard"),
+                            source="bounce_processor",
+                        )
+
                     await domain_service.update_bounce_count(session, bounce["domain_id"])
+
+                    try:
+                        from app.services.events import EmailEventType, emit
+                        evt = (EmailEventType.COMPLAINED if "complaint" in btype
+                               else EmailEventType.BOUNCED)
+                        await emit(evt, email=bounce["email"],
+                                   team_id=str(bounce.get("team_id") or ""),
+                                   payload={"type": btype})
+                    except Exception:
+                        pass
 
                     await mail_engine_client.acknowledge_bounce(bounce["id"])
 

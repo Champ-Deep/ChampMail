@@ -129,6 +129,13 @@ class Prospect(Base):
     last_name = Column(String(255), nullable=True)
     full_name = Column(String(255), nullable=True)
 
+    # Identity spine (suite-global): person_id/account_id are stable across
+    # job-changes and sources; external_ids maps to the rest of the suite
+    # ({lake_id, linkedin_urn, clerk_id, champutm_visitor_id, email_sha256, domain}).
+    person_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    account_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    external_ids = Column(JSON, default=dict)
+
     # Company information
     company_name = Column(String(255), nullable=True)
     company_domain = Column(String(255), nullable=True)

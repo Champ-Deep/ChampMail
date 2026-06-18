@@ -97,14 +97,31 @@ class GraphDatabase:
         title: str = "",
         phone: str = "",
         linkedin_url: str = "",
+        person_id: str = "",
+        account_id: str = "",
         **extra_fields,
     ) -> dict:
         """
         Create a Prospect node in the graph.
 
+        The node carries the suite identity-spine ids (person_id/account_id) so
+        the local graph is a projection keyed by person_id, joinable with
+        ChampGraph/Graphiti and the rest of the suite — not an email-keyed island.
+
         Returns:
             Created prospect data
         """
+        # Derive identity ids if not supplied, so the node always has a stable key.
+        if not person_id or not account_id:
+            try:
+                from app.services.identity_service import resolve_identity
+                ident = resolve_identity(email=email, linkedin_url=linkedin_url,
+                                         company_domain=extra_fields.get("company_domain", ""))
+                person_id = person_id or ident["person_id"]
+                account_id = account_id or ident["account_id"]
+            except Exception:
+                pass
+
         # Build properties dynamically
         props = {
             'email': email.lower(),
@@ -113,6 +130,8 @@ class GraphDatabase:
             'title': title,
             'phone': phone,
             'linkedin_url': linkedin_url,
+            'person_id': person_id,
+            'account_id': account_id,
             'created_at': 'datetime()',
         }
         props.update(extra_fields)
