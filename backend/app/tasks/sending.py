@@ -20,6 +20,13 @@ async def _inject_tracking(html_body: str, campaign_id: str, prospect_id: str) -
     return html
 
 
+async def _list_unsubscribe(campaign_id: str, prospect_id: str) -> str:
+    """Return the one-click unsubscribe URL for the RFC 8058 List-Unsubscribe
+    header. Reuses the same signed tracking URL the HTML link uses."""
+    urls = await tracking_service.generate_tracking_urls(campaign_id, prospect_id)
+    return urls.get("unsubscribe_url", "")
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_email_task(self, prospect_id: str, template_id: str, subject: str, html_body: str, domain_id: str = None, campaign_id: str = None):
     try:
@@ -35,17 +42,49 @@ def send_email_task(self, prospect_id: str, template_id: str, subject: str, html
                 to_email = prospect.get("email")
                 to_name = prospect.get("name", "")
 
+                # Suppression gate — never email an opted-out / bounced address,
+                # regardless of which campaign first suppressed it.
+                from app.services.suppression_service import suppression_service
+                if await suppression_service.is_suppressed(
+                    session, prospect.get("team_id"), to_email
+                ):
+                    return {"status": "skipped", "reason": "suppressed", "email": to_email}
+
                 selected_domain = domain_id
                 if not selected_domain:
                     selected_domain = await domain_rotator.select_domain(prospect.get("team_id"))
 
                 # Inject tracking: wrap links, add pixel, add unsubscribe
                 final_html = html_body
+                list_unsub = ""
                 if campaign_id:
                     try:
                         final_html = await _inject_tracking(final_html, campaign_id, prospect_id)
+                        list_unsub = await _list_unsubscribe(campaign_id, prospect_id)
                     except Exception:
                         pass  # Send even if tracking setup fails
+
+                # Pre-send gate (InboxLint): stop a spammy / non-compliant email before it
+                # burns the owned-reseller inbox reputation (the Vision's deliverability moat).
+                # block → don't send; warn/pass → proceed. Fail-open: a linter error never
+                # blocks a legitimate send.
+                try:
+                    from app.services.inboxlint import lint as _inbox_lint
+                    _report = _inbox_lint(
+                        subject, final_html,
+                        has_unsubscribe=bool(list_unsub),
+                        has_physical_address=True,
+                        is_cold=True,
+                    )
+                    if _report.level == "block":
+                        return {
+                            "status": "blocked",
+                            "reason": "inboxlint",
+                            "email": to_email,
+                            "issues": _report.to_dict()["issues"],
+                        }
+                except Exception:
+                    pass
 
                 result = await mail_engine_client.send_email(
                     recipient=to_email,
@@ -55,9 +94,25 @@ def send_email_task(self, prospect_id: str, template_id: str, subject: str, html
                     domain_id=selected_domain,
                     track_opens=True,
                     track_clicks=True,
+                    list_unsubscribe=list_unsub,
                 )
 
                 await prospect_service.update_send_status(session, prospect_id, result.message_id)
+
+                # Publish to the suite event bus (best-effort).
+                try:
+                    from app.services.events import EmailEventType, emit
+                    await emit(
+                        EmailEventType.SENT,
+                        person_id=prospect.get("person_id"),
+                        account_id=prospect.get("account_id"),
+                        campaign_id=campaign_id,
+                        send_log_id=result.message_id,
+                        team_id=str(prospect.get("team_id") or ""),
+                        email=to_email,
+                    )
+                except Exception:
+                    pass
 
                 return result.__dict__
 

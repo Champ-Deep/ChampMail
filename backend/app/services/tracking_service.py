@@ -725,6 +725,30 @@ class TrackingService:
             prospect.status = "unsubscribed"
             prospect.updated_at = datetime.utcnow()
 
+            # Add to the centralized suppression list so this address is excluded
+            # from EVERY future campaign for the team (not just this one).
+            try:
+                from app.services.suppression_service import suppression_service
+                await suppression_service.add(
+                    session, getattr(prospect, "team_id", None), prospect.email,
+                    reason="unsubscribe", source=f"campaign:{campaign_id}",
+                )
+            except Exception:
+                pass  # suppression is best-effort; never block the opt-out
+
+            try:
+                from app.services.events import EmailEventType, emit
+                await emit(
+                    EmailEventType.UNSUBSCRIBED,
+                    person_id=str(getattr(prospect, "person_id", "") or ""),
+                    account_id=str(getattr(prospect, "account_id", "") or ""),
+                    campaign_id=str(campaign_id),
+                    team_id=str(getattr(prospect, "team_id", "") or ""),
+                    email=prospect.email,
+                )
+            except Exception:
+                pass
+
             # Update campaign prospect enrollment
             await session.execute(
                 update(CampaignProspect)

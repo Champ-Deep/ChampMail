@@ -78,6 +78,19 @@ class RedisClient:
         """Serialize and set JSON value."""
         await self.set(key, json.dumps(value), ex=ex)
 
+    async def xadd(self, stream: str, fields: dict, maxlen: Optional[int] = 100_000) -> str:
+        """Append an entry to a Redis Stream (the suite event bus transport).
+
+        Values are flattened to strings; complex values are JSON-encoded. maxlen
+        caps the stream length (approximate trim) so it can't grow unbounded.
+        """
+        client = await self._get_client()
+        flat = {
+            k: (v if isinstance(v, (str, bytes, int, float)) else json.dumps(v))
+            for k, v in fields.items()
+        }
+        return await client.xadd(stream, flat, maxlen=maxlen, approximate=True)
+
     async def close(self):
         """Close the Redis connection."""
         if self._client:

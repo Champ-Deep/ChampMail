@@ -98,6 +98,7 @@ class MailEngineClient:
         domain_id: str = "",
         track_opens: bool = True,
         track_clicks: bool = True,
+        list_unsubscribe: str = "",
     ) -> SendResult:
         data = {
             "to": recipient,
@@ -111,6 +112,13 @@ class MailEngineClient:
             "track_opens": track_opens,
             "track_clicks": track_clicks,
         }
+        # RFC 8058 one-click unsubscribe — required by Gmail/Yahoo for bulk
+        # senders. The mail-engine emits these as outbound message headers.
+        if list_unsubscribe:
+            data["headers"] = {
+                "List-Unsubscribe": f"<{list_unsubscribe}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            }
 
         result = await self._request("POST", "/send", data)
 
