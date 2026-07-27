@@ -2,7 +2,7 @@ import logging
 
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ def execute_warmup_sends(self):
         from app.services.domain_service import domain_service
         from app.services.mail_engine_client import mail_engine_client
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domains = await domain_service.get_domains_with_warmup(session)
 
             for domain in domains:
@@ -55,7 +55,7 @@ def update_warmup_status(self, domain_id: str):
     async def _update():
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await domain_service.check_warmup_status(session, domain_id)
 
     asyncio.run(_update())

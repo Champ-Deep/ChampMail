@@ -514,7 +514,7 @@ class TrackingService:
                 send_log.bounced_at = datetime.utcnow()
                 send_log.bounce_type = classification["bounce_type"]
                 send_log.bounce_reason = classification["description"]
-                send_log.smtp_response = webhook_data.get("smtp_response", "")[:500]
+                send_log.error_message = webhook_data.get("smtp_response", "")[:500]
                 actions_taken.append("updated_send_log")
 
                 # Update CampaignProspect
@@ -615,9 +615,9 @@ class TrackingService:
                     func.count(SendLog.id).label("total_sent"),
                     func.count(SendLog.delivered_at).label("total_delivered"),
                     func.sum(SendLog.open_count).label("total_opens"),
-                    func.count(SendLog.first_open_at).label("unique_opens"),
+                    func.count(SendLog.first_opened_at).label("unique_opens"),
                     func.sum(SendLog.click_count).label("total_clicks"),
-                    func.count(SendLog.first_click_at).label("unique_clicks"),
+                    func.count(SendLog.first_clicked_at).label("unique_clicks"),
                     func.count(SendLog.bounced_at).label("total_bounces"),
                     func.count(SendLog.replied_at).label("total_replies"),
                 )
@@ -778,9 +778,9 @@ class TrackingService:
                 update(SendLog)
                 .where(SendLog.campaign_id == campaign_id)
                 .where(SendLog.prospect_id == prospect_id)
-                .where(SendLog.first_open_at.is_(None))
+                .where(SendLog.first_opened_at.is_(None))
                 .values(
-                    first_open_at=opened_at,
+                    first_opened_at=opened_at,
                     opened_at=opened_at,
                     open_count=SendLog.open_count + 1,
                     status="opened",
@@ -792,7 +792,7 @@ class TrackingService:
                 update(SendLog)
                 .where(SendLog.campaign_id == campaign_id)
                 .where(SendLog.prospect_id == prospect_id)
-                .where(SendLog.first_open_at.isnot(None))
+                .where(SendLog.first_opened_at.isnot(None))
                 .values(
                     opened_at=opened_at,
                     open_count=SendLog.open_count + 1,
@@ -833,9 +833,9 @@ class TrackingService:
                 update(SendLog)
                 .where(SendLog.campaign_id == campaign_id)
                 .where(SendLog.prospect_id == prospect_id)
-                .where(SendLog.first_click_at.is_(None))
+                .where(SendLog.first_clicked_at.is_(None))
                 .values(
-                    first_click_at=clicked_at,
+                    first_clicked_at=clicked_at,
                     clicked_at=clicked_at,
                     click_count=SendLog.click_count + 1,
                     status="clicked",
@@ -847,7 +847,7 @@ class TrackingService:
                 update(SendLog)
                 .where(SendLog.campaign_id == campaign_id)
                 .where(SendLog.prospect_id == prospect_id)
-                .where(SendLog.first_click_at.isnot(None))
+                .where(SendLog.first_clicked_at.isnot(None))
                 .values(
                     clicked_at=clicked_at,
                     click_count=SendLog.click_count + 1,

@@ -2,7 +2,7 @@ import logging
 
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -15,7 +15,7 @@ def process_bounce_queue(self):
         from app.services.prospect_service import prospect_service
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             bounces = await mail_engine_client.get_bounces(limit=100)
 
             for bounce in bounces:
@@ -39,7 +39,7 @@ def update_bounce_reputation(self, domain_id: str):
     async def _update():
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await domain_service.recalculate_reputation(session, domain_id)
 
     asyncio.run(_update())

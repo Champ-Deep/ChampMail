@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, Float
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Text, Float, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -16,51 +16,66 @@ from app.db.postgres import Base
 
 
 class SendLog(Base):
-    """Individual email send record for tracking and analytics."""
+    """Individual email send record for tracking and analytics.
+
+    Canonical shape = Alembic 004 (+009 team_id, +011 prospect_id). This model
+    used to describe a third, incompatible shape (recipient_email, from_address,
+    first_open_at); it now mirrors the migrations the Go mail-engine writes
+    against. Callers were updated in the same pass (from_address -> from_email,
+    first_open_at -> first_opened_at, first_click_at -> first_clicked_at).
+    """
 
     __tablename__ = "send_logs"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    message_id = Column(String(255), unique=True, nullable=False, index=True)
+
+    # References
     domain_id = Column(UUID(as_uuid=True), ForeignKey("domains.id"), nullable=True)
+    email_account_id = Column(UUID(as_uuid=True), ForeignKey("email_accounts.id"), nullable=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     campaign_id = Column(UUID(as_uuid=True), ForeignKey("campaigns.id"), nullable=True)
-    prospect_id = Column(UUID(as_uuid=True), ForeignKey("prospects.id"), nullable=True)
-    sequence_enrollment_id = Column(UUID(as_uuid=True), ForeignKey("sequence_enrollments.id"), nullable=True)
+    prospect_id = Column(UUID(as_uuid=True), ForeignKey("prospects.id"), nullable=True)  # * via migration 011
+    sequence_id = Column(Integer, nullable=True)
+    step_number = Column(Integer, nullable=True)
+    team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id"), nullable=True)
 
     # Email details
-    message_id = Column(String(255), unique=True, nullable=False, index=True)
-    recipient_email = Column(String(255), nullable=False, index=True)
-    from_address = Column(String(255), nullable=True)
-    subject = Column(Text, nullable=True)
+    from_email = Column(String(255), nullable=False, index=True)
+    from_name = Column(String(255), nullable=True)
+    to_email = Column(String(255), nullable=False, index=True)
+    to_name = Column(String(255), nullable=True)
+    subject = Column(String(500), nullable=False)
+    body_text = Column(Text, nullable=True)
+    body_html = Column(Text, nullable=True)
 
     # Status
-    status = Column(String(50), default="pending")  # pending, sent, delivered, opened, clicked, bounced, failed
+    status = Column(String(50), default="sent", nullable=False, index=True)  # sent, delivered, opened, clicked, bounced, failed
 
     # Tracking
+    sent_at = Column(DateTime, server_default=func.now(), nullable=False, index=True)
+    delivered_at = Column(DateTime, nullable=True)
     opened_at = Column(DateTime, nullable=True)
-    first_open_at = Column(DateTime, nullable=True)
-    open_count = Column(Integer, default=0)
-
+    first_opened_at = Column(DateTime, nullable=True)
     clicked_at = Column(DateTime, nullable=True)
-    first_click_at = Column(DateTime, nullable=True)
-    click_count = Column(Integer, default=0)
+    first_clicked_at = Column(DateTime, nullable=True)
+    bounced_at = Column(DateTime, nullable=True)
+    replied_at = Column(DateTime, nullable=True)
+    open_count = Column(Integer, default=0, server_default="0", nullable=False)
+    click_count = Column(Integer, default=0, server_default="0", nullable=False)
+
+    # Bounce/Error details
+    bounce_type = Column(String(50), nullable=True)  # hard, soft, complaint
+    bounce_reason = Column(Text, nullable=True)
+    error_message = Column(Text, nullable=True)
+
+    # Click tracking
     clicked_urls = Column(JSON, nullable=True)
 
-    # Bounce handling
-    bounced_at = Column(DateTime, nullable=True)
-    bounce_type = Column(String(50), nullable=True)
-    bounce_reason = Column(Text, nullable=True)
-    smtp_response = Column(Text, nullable=True)
-
-    # Reply tracking
-    replied_at = Column(DateTime, nullable=True)
-    reply_text = Column(Text, nullable=True)
-
-    # Timing
-    sent_at = Column(DateTime, default=datetime.utcnow)
-    delivered_at = Column(DateTime, nullable=True)
-
-    # Team association
-    team_id = Column(UUID(as_uuid=True), ForeignKey("teams.id"), nullable=True)
+    # Metadata
+    extra_metadata = Column("metadata", JSON, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
     domain = relationship("Domain", back_populates="send_logs")

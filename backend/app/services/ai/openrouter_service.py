@@ -547,9 +547,67 @@ Output the complete HTML only, starting with <!DOCTYPE html>."""
         return html.strip()
 
 
+class ReplyClassificationService(OpenRouterClient):
+    """Classify inbound sequence replies for cadence pause + graph write-back."""
+
+    CATEGORIES = ("positive", "neutral", "negative", "ooo", "unsubscribe", "bounce")
+
+    def __init__(self):
+        super().__init__()
+        self.model = settings.general_model
+
+    async def classify_reply(self, subject: str, body: str) -> Dict:
+        """Classify one reply's sentiment/intent.
+
+        Returns {"category": one of CATEGORIES, "confidence": 0-1, "reasoning": str}.
+        Falls back to a low-confidence "neutral" on any API/parse failure so a
+        classification miss never blocks the pause it's attached to.
+        """
+        system_prompt = (
+            "You classify inbound email replies to B2B cold outreach. "
+            "Respond with valid JSON only."
+        )
+        prompt = f"""Classify this reply into exactly one category:
+- positive: interested, wants to talk/meet, asks for more info
+- neutral: acknowledges but noncommittal, asks unrelated questions
+- negative: explicitly not interested, rejects the pitch
+- ooo: automated out-of-office / vacation autoresponder
+- unsubscribe: asks to stop receiving emails / opt out
+- bounce: delivery failure / mailer-daemon notice, not a human reply
+
+Subject: {subject or "(none)"}
+Body:
+{body or "(empty)"}
+
+Return JSON: {{"category": "...", "confidence": 0.0-1.0, "reasoning": "one sentence"}}"""
+
+        try:
+            content = await self.chat_completion(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=200,
+                temperature=0.1,
+            )
+            result = self._parse_json_response(content)
+            category = result.get("category", "neutral")
+            if category not in self.CATEGORIES:
+                category = "neutral"
+            return {
+                "category": category,
+                "confidence": float(result.get("confidence", 0.5)),
+                "reasoning": result.get("reasoning", ""),
+            }
+        except Exception:
+            return {"category": "neutral", "confidence": 0.0, "reasoning": "classification_failed"}
+
+
 # Singleton instances
 research_service = ResearchService()
 segmentation_service = SegmentationService()
 essence_service = CampaignEssenceService()
 pitch_service = PitchService()
 html_service = HTMLGenerationService()
+reply_classification_service = ReplyClassificationService()

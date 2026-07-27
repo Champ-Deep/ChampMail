@@ -67,22 +67,9 @@ func (db *PostgresDB) createTables() error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE TABLE IF NOT EXISTS send_logs (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			domain_id UUID REFERENCES domains(id),
-			recipient VARCHAR(255) NOT NULL,
-			from_address VARCHAR(255) NOT NULL,
-			subject TEXT,
-			message_id VARCHAR(255) UNIQUE,
-			status VARCHAR(50) DEFAULT 'pending',
-			error_message TEXT,
-			sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			opened_at TIMESTAMP,
-			clicked_at TIMESTAMP,
-			bounced_at TIMESTAMP,
-			bounce_type VARCHAR(50),
-			team_id UUID
-		)`,
+		// # send_logs is intentionally NOT created here. Single-owner rule
+		// # (SUGGESTIONS 1.4): the backend's Alembic migrations own the schema
+		// # (004_send_logs + 009_send_logs_team_id). The engine asserts below.
 		`CREATE TABLE IF NOT EXISTS bounces (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			send_log_id UUID REFERENCES send_logs(id),
@@ -115,9 +102,6 @@ func (db *PostgresDB) createTables() error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(domain_id, date)
 		)`,
-		`CREATE INDEX IF NOT EXISTS idx_send_logs_domain_id ON send_logs(domain_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_send_logs_status ON send_logs(status)`,
-		`CREATE INDEX IF NOT EXISTS idx_send_logs_sent_at ON send_logs(sent_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_bounces_email ON bounces(email)`,
 	}
 
@@ -125,6 +109,15 @@ func (db *PostgresDB) createTables() error {
 		if _, err := db.Exec(query); err != nil {
 			return fmt.Errorf("failed to execute query: %w", err)
 		}
+	}
+
+	// ! assert-only: send_logs must exist with the Alembic-owned shape. Selecting
+	// ! the canonical columns fails loudly on the old engine-created shape
+	// ! (recipient/from_address) or a missing team_id. Run the backend
+	// ! migrations (alembic upgrade head) before starting the engine.
+	var probe string
+	if err := db.QueryRow(`SELECT to_email::text, from_email::text, COALESCE(team_id::text, '') FROM send_logs LIMIT 1`).Scan(&probe, &probe, &probe); err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("send_logs table missing or wrong shape (owned by backend Alembic migrations 004+009): %w", err)
 	}
 
 	return nil

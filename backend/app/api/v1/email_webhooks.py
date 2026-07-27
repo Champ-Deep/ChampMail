@@ -97,41 +97,10 @@ class FetchEmailsResponse(BaseModel):
 # Internal Endpoints (Authenticated - called from app frontend)
 # ============================================================================
 
-@router.post("/send", response_model=SendEmailResponse)
-async def send_email(
-    request: SendEmailRequest,
-    current_user: User = Depends(require_auth),
-    session: AsyncSession = Depends(get_db_session),
-):
-    """
-    Send an email using the authenticated user's SMTP settings.
-
-    This endpoint is for internal app use (authenticated).
-    """
-    # Parse to_email - handle "Name <email>" format
-    to_email = request.to
-    if "<" in to_email:
-        to_email = to_email.split("<")[1].strip(">")
-
-    result = await email_service.send_email(
-        session=session,
-        user_id=str(current_user.id),
-        to_email=to_email,
-        subject=request.subject,
-        body=request.body,
-        from_email=request.from_email,
-        from_name=request.from_name,
-        reply_to=request.reply_to,
-        html_body=request.html_body,
-    )
-
-    return SendEmailResponse(
-        success=result.get("success", False),
-        message=result.get("message", ""),
-        details=result.get("details"),
-        error=result.get("error"),
-    )
-
+# ! the duplicate POST /send that lived here shadowed send.py's canonical route
+# ! (FastAPI registration order) with a different request model. send.py is the
+# ! single owner of the send surface (SUGGESTIONS 1.1). The models stay:
+# ! /send-draft still uses SendEmailRequest/SendEmailResponse.
 
 @router.post("/fetch", response_model=FetchEmailsResponse)
 async def fetch_emails(

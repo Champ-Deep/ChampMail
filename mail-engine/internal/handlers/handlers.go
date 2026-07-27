@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"fmt"
 	"log"
 	"math"
@@ -236,15 +237,25 @@ func (h *SendHandler) createSendRecord(ctx context.Context, domainID string, req
 		fromAddress = fmt.Sprintf("noreply@%s", domainID)
 	}
 
+	// # send_logs is owned by the backend's Alembic migrations (004 + 009):
+	// # columns are to_email/from_email (not recipient/from_address) and team_id
+	// # is a nullable uuid added by 009 (SUGGESTIONS 1.3/1.4)
 	query := `
-		INSERT INTO send_logs (id, domain_id, recipient, from_address, subject, message_id, status, sent_at, team_id)
+		INSERT INTO send_logs (id, domain_id, to_email, from_email, subject, message_id, status, sent_at, team_id)
 		VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW(), $7)
 		RETURNING id, sent_at
 	`
 
+	// ! bind NULL, not "": Postgres rejects an empty string for uuid columns,
+	// ! which used to kill every send-log insert
+	var teamID sql.NullString
+	if req.TeamID != "" {
+		teamID = sql.NullString{String: req.TeamID, Valid: true}
+	}
+
 	var sendLog db.SendLog
 	err := h.db.QueryRowContext(ctx, query,
-		messageID, domainID, req.To, fromAddress, req.Subject, messageID, "",
+		messageID, domainID, req.To, fromAddress, req.Subject, messageID, teamID,
 	).Scan(&sendLog.ID, &sendLog.SentAt)
 
 	if err != nil {
@@ -278,7 +289,7 @@ func (h *SendHandler) processSend(sendLog db.SendLog, req models.SendEmailReques
 
 func (h *SendHandler) getSendLog(ctx context.Context, messageID string) (*db.SendLog, error) {
 	query := `
-		SELECT id, domain_id, recipient, from_address, subject, message_id, status, 
+		SELECT id, domain_id, to_email, from_email, subject, message_id, status,
 		       sent_at, opened_at, clicked_at, bounced_at, bounce_type
 		FROM send_logs WHERE id = $1
 	`

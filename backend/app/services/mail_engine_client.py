@@ -63,6 +63,14 @@ class BounceRecord:
     domain_id: str
 
 
+@dataclass
+class ReplyCheckResult:
+    has_replied: bool
+    reply_subject: str = ""
+    reply_body: str = ""
+    replied_at: Optional[str] = None
+
+
 class MailEngineClient:
     def __init__(self):
         self.base_url = os.getenv("MAIL_ENGINE_URL", "http://localhost:8025")
@@ -208,9 +216,14 @@ class MailEngineClient:
     async def acknowledge_bounce(self, bounce_id: str) -> Dict[str, Any]:
         return await self._request("POST", f"/bounces/{bounce_id}/acknowledge")
 
-    async def check_for_replies(self, prospect_email: str) -> bool:
+    async def check_for_replies(self, prospect_email: str) -> ReplyCheckResult:
         result = await self._request("GET", f"/replies/check?email={prospect_email}")
-        return result.get("has_replied", False)
+        return ReplyCheckResult(
+            has_replied=result.get("has_replied", False),
+            reply_subject=result.get("reply_subject") or result.get("subject") or "",
+            reply_body=result.get("reply_body") or result.get("body") or "",
+            replied_at=result.get("replied_at"),
+        )
 
 
 mail_engine_client = MailEngineClient()

@@ -133,10 +133,10 @@ async def delete_domain(
     current_user = Depends(get_current_user),
 ):
     try:
-        from app.db.postgres import async_session
+        from app.db.postgres import async_session_maker
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await domain_service.delete(session, domain_id)
 
         return {"message": "Domain deleted successfully"}
@@ -171,10 +171,10 @@ async def get_dns_records(
     try:
         records = await mail_engine_client.get_dns_records(domain_id)
 
-        from app.db.postgres import async_session
+        from app.db.postgres import async_session_maker
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domain = await domain_service.get_by_id(session, domain_id)
             domain_name = domain.get("domain_name", "") if domain else ""
 

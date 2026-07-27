@@ -155,6 +155,11 @@ services:
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID:-}
 
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
+
+      # ChampIQ event egress (SUGGESTIONS 2.2 pattern; 2026-07-23 fix #7) —
+      # empty = eventing off, a real send never blocks on this.
+      CHAMPIQ_URL: ${CHAMPIQ_URL:-http://host.docker.internal:8000}
+      CHAMPIQ_WEBHOOK_SECRET: ${CHAMPIQ_WEBHOOK_SECRET:-e2e-local-shared-secret}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:
