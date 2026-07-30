@@ -54,6 +54,17 @@ class Settings(BaseSettings):
     harbinger_url: str = ""
     harbinger_api_key: str = ""
 
+    # * InboxKit mailbox infrastructure (ChampMail Build Spec §1, the IAL).
+    # * api.inboxkit.com — domain/mailbox purchase, warmup, webhook events.
+    # * Empty api_key = InboxKit disabled; Stalwart is the default provider.
+    # * The webhook signature is a STATIC SHA-256 of the team API key (not
+    # * HMAC); every webhook is a hint, never a fact — the handler re-fetches
+    # * authoritative state via the authenticated REST API before mutating.
+    inboxkit_api_key: str = ""
+    inboxkit_workspace_id: str = ""
+    inboxkit_base_url: str = "https://api.inboxkit.com"
+    inboxkit_webhook_enabled: bool = True  # handler live at POST /api/v1/webhooks/inboxkit
+
     # Redis Cache
     redis_host: str = "localhost"
     redis_port: int = 6380

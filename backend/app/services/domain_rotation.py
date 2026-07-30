@@ -20,7 +20,7 @@ class DomainRotator:
                 lowest_utilization = float("inf")
 
                 for domain in domains:
-                    utilization = domain.sent_today / domain.daily_send_limit
+                    utilization = domain["sent_today"] / domain["daily_send_limit"]
 
                     if utilization < lowest_utilization:
                         lowest_utilization = utilization
@@ -32,7 +32,7 @@ class DomainRotator:
                 if selected_domain is None:
                     raise ValueError("All domains have reached their daily limit")
 
-                return selected_domain.id
+                return selected_domain["id"]
 
         return await _select()
 
@@ -43,16 +43,16 @@ class DomainRotator:
 
                 candidates = []
                 for domain in domains:
-                    remaining_capacity = domain.daily_send_limit - domain.sent_today
+                    remaining_capacity = domain["daily_send_limit"] - domain["sent_today"]
                     if remaining_capacity >= prospect_count:
-                        utilization = domain.sent_today / domain.daily_send_limit
+                        utilization = domain["sent_today"] / domain["daily_send_limit"]
                         candidates.append((domain, utilization))
 
                 if not candidates:
                     return await self.select_domain(team_id)
 
                 candidates.sort(key=lambda x: x[1])
-                return candidates[0][0].id
+                return candidates[0][0]["id"]
 
         return await _get()
 

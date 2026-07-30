@@ -4,7 +4,7 @@ Domain service for managing sending domains.
 
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_, and_
 from sqlalchemy.orm import selectinload
 from uuid import uuid4
 from datetime import datetime
@@ -51,8 +51,24 @@ class DomainService:
     async def get_verified_domains(
         self, session: AsyncSession, team_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get all verified domains available for sending."""
-        query = select(Domain).where(Domain.status == "verified")
+        """Get all domains available for sending.
+
+        "Available" means either the legacy Stalwart "verified" status, or
+        an InboxKit-provisioned domain whose logical state (stored in the
+        same `status` column by the webhook handler, see
+        inboxkit/states.py) is Ready/Warming/Sending. The column holds two
+        different vocabularies depending on `infra_provider` — this is the
+        one place both are reconciled for the sender's domain pool.
+        """
+        query = select(Domain).where(
+            or_(
+                Domain.status == "verified",
+                and_(
+                    Domain.infra_provider == "inboxkit",
+                    Domain.status.in_(("ready", "warming", "sending")),
+                ),
+            )
+        )
         if team_id:
             query = query.where(Domain.team_id == team_id)
 
@@ -61,12 +77,19 @@ class DomainService:
         return [self._domain_to_dict(d) for d in domains]
 
     async def get_domains_with_warmup(self, session: AsyncSession) -> List[Dict[str, Any]]:
-        """Get domains that need warmup sends."""
+        """Get domains that need warmup sends (see get_verified_domains for
+        why both status vocabularies are matched)."""
         result = await session.execute(
             select(Domain).where(
                 Domain.warmup_enabled == True,
                 Domain.warmup_day < 30,
-                Domain.status == "verified"
+                or_(
+                    Domain.status == "verified",
+                    and_(
+                        Domain.infra_provider == "inboxkit",
+                        Domain.status.in_(("ready", "warming", "sending")),
+                    ),
+                ),
             ).order_by(Domain.warmup_day)
         )
         domains = result.scalars().all()
@@ -251,6 +274,9 @@ class DomainService:
             "health_score": domain.health_score,
             "bounce_rate": domain.bounce_rate,
             "cloudflare_zone_id": domain.cloudflare_zone_id,
+            "infra_provider": domain.infra_provider,
+            "inboxkit_domain_uid": domain.inboxkit_domain_uid,
+            "inboxkit_native_status": domain.inboxkit_native_status,
             "team_id": str(domain.team_id) if domain.team_id else None,
             "created_at": domain.created_at.isoformat() if domain.created_at else None,
             "updated_at": domain.updated_at.isoformat() if domain.updated_at else None,

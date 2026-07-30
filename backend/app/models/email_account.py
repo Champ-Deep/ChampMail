@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Optional
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -54,6 +54,35 @@ class EmailAccount(Base):
     # Sending Identity
     from_name = Column(String(255), nullable=True)
     reply_to_email = Column(String(255), nullable=True)
+
+    # * InboxKit IAL linkage (ChampMail Build Spec §1). inboxkit_uid is the
+    # * provider-native mailbox handle; credentials_persisted is set True
+    # * once the authenticated GET /mailboxes/show-credentials call has
+    # * succeeded and the (encrypted) creds are on this row — never trust
+    # * creds arriving in the webhook payload itself.
+    inboxkit_uid = Column(String(255), nullable=True, index=True)
+    inboxkit_workspace_uid = Column(String(255), nullable=True)
+    platform = Column(String(32), nullable=True)  # google | microsoft | azure | smtp
+    credentials_persisted = Column(Boolean, default=False)
+
+    # * Owning domain (the mailbox lives on this domain). Needed to scope
+    # * "give me a ready mailbox on domain X" queries — without it, a
+    # * multi-domain InboxKit setup can't tell mailboxes on different
+    # * domains apart. NULL for legacy rows created before this column
+    # * existed; backfilled by the InboxKit webhook handler going forward.
+    domain_id = Column(UUID(as_uuid=True), ForeignKey("domains.id"), nullable=True, index=True)
+
+    # * Per-mailbox send accounting (migration 015). Deliverability is governed
+    # * per mailbox, not per domain — InboxKit puts N mailboxes on one domain,
+    # * so the domain-level cap both under-used paid capacity and let one
+    # * mailbox absorb all of it. 25/day is the safe cold-outreach ceiling.
+    # * `sent_today_date` makes the daily reset self-healing: a date that isn't
+    # * today means "treat sent_today as 0", so a missed beat schedule cannot
+    # * silently freeze a mailbox at its cap.
+    daily_send_limit = Column(Integer, nullable=False, default=25)
+    sent_today = Column(Integer, nullable=False, default=0)
+    sent_today_date = Column(Date, nullable=True)
+    last_send_at = Column(DateTime, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
