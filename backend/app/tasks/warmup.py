@@ -2,7 +2,7 @@ import logging
 
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -14,17 +14,25 @@ def execute_warmup_sends(self):
         from app.services.domain_service import domain_service
         from app.services.mail_engine_client import mail_engine_client
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domains = await domain_service.get_domains_with_warmup(session)
 
             for domain in domains:
-                if domain.warmup_enabled and domain.warmup_day < 30:
-                    daily_limit = get_warmup_limit(domain.warmup_day)
-
-                    if domain.sent_today >= daily_limit:
+                if domain["warmup_enabled"] and domain["warmup_day"] < 30:
+                    # InboxKit-provisioned domains delegate warmup to the
+                    # provider's API (/v1/api/warmup/*) — the internal
+                    # seed-address loop is Stalwart-only.
+                    infra = domain.get("infra_provider", "stalwart") or "stalwart"
+                    if infra == "inboxkit":
+                        await _delegate_warmup_to_inboxkit(session, domain)
                         continue
 
-                    remaining = daily_limit - domain.sent_today
+                    daily_limit = get_warmup_limit(domain["warmup_day"])
+
+                    if domain["sent_today"] >= daily_limit:
+                        continue
+
+                    remaining = daily_limit - domain["sent_today"]
 
                     warmup_emails = await get_warmup_emails(remaining)
 
@@ -34,18 +42,18 @@ def execute_warmup_sends(self):
                                 recipient=email_data["to"],
                                 subject=email_data["subject"],
                                 html_body=email_data["body"],
-                                domain_id=domain.id,
+                                domain_id=domain["id"],
                                 track_opens=True,
                                 track_clicks=False,
                             )
 
-                            await domain_service.increment_sent_count(session, domain.id)
+                            await domain_service.increment_sent_count(session, domain["id"])
 
                         except Exception as e:
-                            logger.error("Warmup send failed for %s: %s", domain.domain_name, e)
+                            logger.error("Warmup send failed for %s: %s", domain["domain_name"], e)
 
-                    if domain.sent_today >= daily_limit:
-                        await domain_service.increment_warmup_day(session, domain.id)
+                    if domain["sent_today"] >= daily_limit:
+                        await domain_service.increment_warmup_day(session, domain["id"])
 
     asyncio.run(_execute())
 
@@ -55,7 +63,7 @@ def update_warmup_status(self, domain_id: str):
     async def _update():
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await domain_service.check_warmup_status(session, domain_id)
 
     asyncio.run(_update())
@@ -86,3 +94,49 @@ async def get_warmup_emails(count: int) -> list[dict]:
         })
 
     return emails
+
+
+async def _delegate_warmup_to_inboxkit(session, domain) -> None:
+    """Hand warmup for an InboxKit domain to the provider's API.
+
+    InboxKit's warmup is a paid subscription ($3/mailbox/month) that runs
+    on their infrastructure; we don't send seed emails ourselves for
+    InboxKit-provisioned mailboxes. This collects the InboxKit mailbox UIDs
+    on the domain and calls /v1/api/warmup/add once per fresh mailbox,
+    idempotently — the API itself dedupes active subscriptions.
+    """
+    from app.services.mail_infra import get_provider
+    from app.models.email_account import EmailAccount
+    from sqlalchemy import select
+
+    try:
+        provider = get_provider("inboxkit")
+    except RuntimeError as e:
+        logger.error("InboxKit warmup skipped for %s: %s", domain["domain_name"], e)
+        return
+
+    # Scoped to this domain only — an unscoped query would hand another
+    # domain's mailboxes to add_warmup.
+    stmt = select(EmailAccount).where(
+        EmailAccount.inboxkit_uid.isnot(None),
+        EmailAccount.domain_id == domain["id"],
+    )
+    result = await session.execute(stmt)
+    mailboxes = result.scalars().all()
+    uids = [m.inboxkit_uid for m in mailboxes if m.inboxkit_uid]
+    if not uids:
+        logger.info("InboxKit warmup: no mailboxes on %s yet; skipping",
+                    domain["domain_name"])
+        return
+
+    ok = await provider.start_warmup(uids)
+    if ok:
+        # InboxKit manages the ramp; mark the local day counter so the task
+        # doesn't keep re-issuing add_warmup every tick. Real warmup_day
+        # progression comes from the provider's statistics endpoint later.
+        from app.services.domain_service import domain_service
+        await domain_service.increment_warmup_day(session, domain["id"])
+        logger.info("InboxKit warmup started for %d mailbox(es) on %s",
+                    len(uids), domain["domain_name"])
+    else:
+        logger.error("InboxKit warmup add failed for %s", domain["domain_name"])

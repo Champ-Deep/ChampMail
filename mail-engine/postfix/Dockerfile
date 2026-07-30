@@ -1,6 +1,6 @@
 FROM alpine:latest
 
-RUN apk --no-cache add postfix postfix-pcre cyrus-sasl cyrus-sasl-plain
+RUN apk --no-cache add postfix postfix-pcre cyrus-sasl
 
 RUN postconf -e "myhostname = mail.champmail.com" && \
     postconf -e "mydomain = champmail.com" && \

@@ -34,6 +34,37 @@ class Settings(BaseSettings):
     falkordb_password: str = ""
     falkordb_database: str = "champions_email_engine"
 
+    # * Cham_Graph (the suite's single graph, SUGGESTIONS 4.4). The /api/v1/graph
+    # * router proxies here; FalkorDB above remains only for legacy prospect/
+    # * sequence paths pending their migration.
+    champgraph_url: str = "http://localhost:8080"
+    champgraph_api_key: str = ""
+
+    # * ChampIQ event egress (SUGGESTIONS 2.2 pattern, mirrors Harbinger's
+    # * emit.ts). Empty URL = eventing off; a real send never blocks on this.
+    champiq_url: str = ""
+    champiq_webhook_secret: str = ""
+
+    # * ChampHarbinger contact-verification waterfall (POST /api/v1/enrich/
+    # * waterfall). Auth is a per-workspace `chh_` bearer key validated
+    # * against Harbinger's own userApiKeys table (src/lib/api/validate-api-key.ts)
+    # * - there is no shared secret to derive one from; ops must provision a
+    # * real key via Harbinger's key-management UI. Empty URL/key = off; the
+    # * campaign pipeline never blocks a run on this (same pattern as champiq_url).
+    harbinger_url: str = ""
+    harbinger_api_key: str = ""
+
+    # * InboxKit mailbox infrastructure (ChampMail Build Spec §1, the IAL).
+    # * api.inboxkit.com — domain/mailbox purchase, warmup, webhook events.
+    # * Empty api_key = InboxKit disabled; Stalwart is the default provider.
+    # * The webhook signature is a STATIC SHA-256 of the team API key (not
+    # * HMAC); every webhook is a hint, never a fact — the handler re-fetches
+    # * authoritative state via the authenticated REST API before mutating.
+    inboxkit_api_key: str = ""
+    inboxkit_workspace_id: str = ""
+    inboxkit_base_url: str = "https://api.inboxkit.com"
+    inboxkit_webhook_enabled: bool = True  # handler live at POST /api/v1/webhooks/inboxkit
+
     # Redis Cache
     redis_host: str = "localhost"
     redis_port: int = 6380

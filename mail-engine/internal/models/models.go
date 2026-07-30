@@ -16,6 +16,8 @@ type SendEmailRequest struct {
 	TrackOpens  bool              `json:"track_opens"`
 	TrackClicks bool              `json:"track_clicks"`
 	ScheduledAt *time.Time        `json:"scheduled_at"`
+	// * tenant id; bound as NULL when empty (uuid column, SUGGESTIONS 1.3)
+	TeamID      string            `json:"team_id,omitempty"`
 }
 
 type Attachment struct {

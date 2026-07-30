@@ -23,7 +23,8 @@ from app.middleware.rate_limit import setup_rate_limiting
 
 # Import routers
 from app.api.v1 import auth, prospects, sequences, webhooks, graph, templates, campaigns, email_settings, email_accounts, teams, workflows, email_webhooks, health
-from app.api.v1 import send, domains, tracking, analytics_api, utm, c1_chat
+from app.api.v1 import send, domains, tracking, analytics_api, utm, c1_chat, suppressions
+from app.api.v1 import inboxkit_webhooks
 from app.api.v1.admin import router as admin_router
 
 
@@ -77,6 +78,17 @@ async def lifespan(app: FastAPI):
         logger.info("Thesys C1 API key configured - Generative UI enabled")
     else:
         logger.info("THESYS_API_KEY not set - AI Assistant will be disabled")
+
+    # InboxKit IAL (ChampMail Build Spec §1)
+    if settings.inboxkit_api_key and settings.inboxkit_workspace_id:
+        logger.info("InboxKit configured (workspace=%s) - IAL provider available",
+                    settings.inboxkit_workspace_id)
+        if settings.inboxkit_webhook_enabled:
+            logger.info("InboxKit webhook ingress: POST /api/v1/webhooks/inboxkit")
+        else:
+            logger.warning("INBOXKIT_WEBHOOK_ENABLED is False - webhook ingress disabled")
+    else:
+        logger.info("InboxKit not configured - Stalwart is the default IAL provider")
 
     yield
 
@@ -174,11 +186,13 @@ app.include_router(workflows.router, prefix=settings.api_v1_prefix)
 app.include_router(email_webhooks.router, prefix=settings.api_v1_prefix, tags=["Email Webhooks"])
 app.include_router(graph.router, prefix=settings.api_v1_prefix)
 app.include_router(send.router, prefix=settings.api_v1_prefix, tags=["Send"])
+app.include_router(suppressions.router, prefix=settings.api_v1_prefix, tags=["Suppressions"])
 app.include_router(domains.router, prefix=settings.api_v1_prefix, tags=["Domains"])
 app.include_router(tracking.router, prefix=settings.api_v1_prefix, tags=["Tracking"])
 app.include_router(analytics_api.router, prefix=settings.api_v1_prefix, tags=["Analytics"])
 app.include_router(utm.router, prefix=settings.api_v1_prefix, tags=["UTM"])
 app.include_router(c1_chat.router, prefix=settings.api_v1_prefix, tags=["C1 Chat"])
+app.include_router(inboxkit_webhooks.router, prefix=settings.api_v1_prefix)
 app.include_router(admin_router, prefix=settings.api_v1_prefix)
 
 

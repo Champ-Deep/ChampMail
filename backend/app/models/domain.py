@@ -45,6 +45,16 @@ class Domain(Base):
     namecheap_domain_id = Column(String(255), nullable=True)
     cloudflare_zone_id = Column(String(255), nullable=True)
 
+    # * InboxKit IAL (ChampMail Build Spec §1). infra_provider selects which
+    # * MailInfraProvider implementation owns this domain's mailboxes:
+    # * "stalwart" (default, legacy self-hosted) or "inboxkit". The two UID
+    # * columns are the InboxKit-native handles; native_status is the raw
+    # * status string InboxKit emits (e.g. "configuring_dkim") for debugging.
+    infra_provider = Column(String(32), default="stalwart", nullable=False)
+    inboxkit_domain_uid = Column(String(255), nullable=True, index=True)
+    inboxkit_workspace_uid = Column(String(255), nullable=True)
+    inboxkit_native_status = Column(String(64), nullable=True)
+
     # Deliverability
     health_score = Column(Float, default=100.0)
     bounce_rate = Column(Float, default=0.0)

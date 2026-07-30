@@ -2,11 +2,26 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.mail_engine_client import mail_engine_client
-from app.core.security import get_current_user
+from app.services.champiq_emit import emit_email_event
+from app.core.security import require_auth
+from app.db.postgres import get_db_session
+from app.models.suppression import Suppression
 
 
 router = APIRouter()
+
+
+async def _suppressed_emails(session: AsyncSession, emails: list[str]) -> set[str]:
+    """Lowercased lookup of suppressed recipients (SUGGESTIONS 4.6)."""
+    if not emails:
+        return set()
+    rows = await session.execute(
+        select(Suppression.email).where(Suppression.email.in_([e.lower() for e in emails]))
+    )
+    return {r[0] for r in rows.all()}
 
 
 class SendEmailRequest(BaseModel):
@@ -58,8 +73,12 @@ class SendStatsResponse(BaseModel):
 async def send_email(
     request: SendEmailRequest,
     x_api_key: Optional[str] = Header(None),
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
+    # ! suppression is checked before EVERY touch, no exceptions (4.6)
+    if str(request.to).lower() in await _suppressed_emails(session, [str(request.to)]):
+        raise HTTPException(status_code=422, detail=f"Recipient {request.to} is suppressed")
     try:
         result = await mail_engine_client.send_email(
             recipient=request.to,
@@ -72,6 +91,16 @@ async def send_email(
             domain_id=request.domain_id,
             track_opens=request.track_opens,
             track_clicks=request.track_clicks,
+        )
+
+        await emit_email_event(
+            "email.sent",
+            to_email=str(request.to),
+            from_email=request.from_address or "",
+            subject=request.subject,
+            body=request.text_body or request.html_body,
+            message_id=result.message_id,
+            occurred_at=result.sent_at,
         )
 
         return SendEmailResponse(
@@ -88,9 +117,16 @@ async def send_email(
 @router.post("/send/batch", response_model=BatchSendResponse)
 async def send_batch(
     request: BatchSendRequest,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_auth),
+    session: AsyncSession = Depends(get_db_session),
 ):
     try:
+        # ! suppressed recipients are filtered out BEFORE dispatch and reported,
+        # ! never sent (SUGGESTIONS 4.6 — CAN-SPAM/GDPR line)
+        suppressed = await _suppressed_emails(session, [str(e.to) for e in request.emails])
+        allowed = [e for e in request.emails if str(e.to).lower() not in suppressed]
+        blocked = [e for e in request.emails if str(e.to).lower() in suppressed]
+
         emails = [
             {
                 "to": email.to,
@@ -101,15 +137,45 @@ async def send_batch(
                 "track_opens": email.track_opens,
                 "track_clicks": email.track_clicks,
             }
-            for email in request.emails
+            for email in allowed
         ]
+
+        blocked_results = [
+            SendEmailResponse(
+                message_id="",
+                status="suppressed",
+                domain_id="",
+                sent_at=datetime.utcnow(),
+            )
+            for _ in blocked
+        ]
+
+        if not emails:
+            return BatchSendResponse(
+                total=len(request.emails),
+                successful=0,
+                failed=len(blocked),
+                results=blocked_results,
+            )
 
         result = await mail_engine_client.send_batch(emails=emails, domain_id=request.domain_id)
 
+        for sent, r in zip(allowed, result.results):
+            if r.status not in ("failed", "suppressed"):
+                await emit_email_event(
+                    "email.sent",
+                    to_email=str(sent.to),
+                    from_email=sent.from_address or "",
+                    subject=sent.subject,
+                    body=sent.text_body or sent.html_body,
+                    message_id=r.message_id,
+                    occurred_at=r.sent_at,
+                )
+
         return BatchSendResponse(
-            total=result.total,
+            total=len(request.emails),
             successful=result.successful,
-            failed=result.failed,
+            failed=result.failed + len(blocked),
             results=[
                 SendEmailResponse(
                     message_id=r.message_id,
@@ -118,7 +184,7 @@ async def send_batch(
                     sent_at=r.sent_at,
                 )
                 for r in result.results
-            ],
+            ] + blocked_results,
         )
 
     except Exception as e:
@@ -128,7 +194,7 @@ async def send_batch(
 @router.get("/send/status/{message_id}")
 async def get_send_status(
     message_id: str,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_auth),
 ):
     try:
         status = await mail_engine_client.get_send_status(message_id)
@@ -140,7 +206,7 @@ async def get_send_status(
 @router.get("/send/stats", response_model=SendStatsResponse)
 async def get_send_stats(
     domain_id: Optional[str] = None,
-    current_user = Depends(get_current_user),
+    current_user = Depends(require_auth),
 ):
     try:
         stats = await mail_engine_client.get_send_stats(domain_id)

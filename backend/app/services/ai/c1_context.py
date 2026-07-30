@@ -107,8 +107,8 @@ class C1ContextBuilder:
             agg = await session.execute(
                 select(
                     func.count(SendLog.id).label("total"),
-                    func.count(SendLog.first_open_at).label("opens"),
-                    func.count(SendLog.first_click_at).label("clicks"),
+                    func.count(SendLog.first_opened_at).label("opens"),
+                    func.count(SendLog.first_clicked_at).label("clicks"),
                     func.count(SendLog.bounced_at).label("bounces"),
                     func.count(SendLog.replied_at).label("replies"),
                 ).where(SendLog.sent_at >= thirty_days_ago)
@@ -147,8 +147,8 @@ class C1ContextBuilder:
             agg = await session.execute(
                 select(
                     func.count(SendLog.id).label("total"),
-                    func.count(SendLog.first_open_at).label("opens"),
-                    func.count(SendLog.first_click_at).label("clicks"),
+                    func.count(SendLog.first_opened_at).label("opens"),
+                    func.count(SendLog.first_clicked_at).label("clicks"),
                 ).where(SendLog.sent_at >= thirty_days_ago)
             )
             row = agg.one()

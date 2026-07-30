@@ -149,6 +149,11 @@ class Prospect(Base):
     # Status
     status = Column(String(50), default="active")  # active, bounced, unsubscribed, do_not_contact
 
+    # Contact verification (ChampHarbinger enrichment waterfall)
+    verification_status = Column(String(50), nullable=True)  # verified, unverified, exhausted, failed, unknown
+    verification_confidence = Column(Float, nullable=True)
+    verification_checked_at = Column(DateTime, nullable=True)
+
     # Source
     source = Column(String(100), nullable=True)
     import_batch_id = Column(String(100), nullable=True)

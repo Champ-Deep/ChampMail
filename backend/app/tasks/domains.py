@@ -2,7 +2,7 @@ import logging
 
 from celery import shared_task
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.postgres import async_session
+from app.db.postgres import async_session_maker
 import asyncio
 
 logger = logging.getLogger(__name__)
@@ -14,7 +14,7 @@ def check_all_domain_health(self):
         from app.services.domain_service import domain_service
         from app.services.cloudflare_client import cloudflare_client
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domains = await domain_service.get_all_domains(session)
 
             for domain in domains:
@@ -39,7 +39,7 @@ def verify_domain_dns(self, domain_id: str):
         from app.services.domain_service import domain_service
         from app.services.cloudflare_client import cloudflare_client
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domain = await domain_service.get_by_id(session, domain_id)
 
             if not domain:
@@ -74,7 +74,7 @@ def provision_new_domain(self, domain_name: str, team_id: str):
         from app.services.namecheap_client import namecheap_client
         from app.services.mail_engine_client import mail_engine_client
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             available = await namecheap_client.check_availability([domain_name])
             if not available.get(domain_name):
                 raise ValueError(f"Domain {domain_name} is not available")
