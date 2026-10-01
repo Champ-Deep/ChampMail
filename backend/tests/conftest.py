@@ -13,7 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 # Set environment variables before importing app modules
 import os
 os.environ["TESTING"] = "true"
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://champmail:champmail_dev@localhost:5432/champmail"
+# Only default the database URL when the environment has not supplied one. A hard
+# assignment here silently overrode POSTGRES_*/DATABASE_URL from CI, so the
+# health-route test (which runs a real "SELECT 1") failed on every runner while
+# passing on any developer machine that happened to have Postgres on 5432.
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://champmail:champmail_dev@localhost:5432/champmail",
+)
 os.environ["REDIS_URL"] = "redis://localhost:6379/15"
 os.environ["CHAMPGRAPH_URL"] = "http://localhost:8080"
 os.environ["CHAMPGRAPH_API_KEY"] = ""

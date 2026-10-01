@@ -22,6 +22,35 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # tests/api/test_endpoints.py::test_health_check_success asserts the health
+    # route returns 200, and that route runs a real "SELECT 1" against Postgres
+    # and returns 503 when it fails. The old setup pointed DATABASE_URL at a dead
+    # localhost:5432, so that single test failed on every runner while passing on
+    # any developer machine that happened to have Postgres. A real service makes
+    # the test environment-independent and keeps its assertion honest.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: champmail
+          POSTGRES_PASSWORD: champmail
+          POSTGRES_DB: champmail
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The app prefers DATABASE_URL over the individual POSTGRES_* settings, and
+      # conftest.py only defaults it, so set it explicitly here.
+      DATABASE_URL: postgresql+asyncpg://champmail:champmail@localhost:5432/champmail
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: champmail
+      POSTGRES_PASSWORD: champmail
+      POSTGRES_DB: champmail
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +66,9 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-asyncio pytest-cov
 
-      # The suite is offline by contract: no DB, no Redis, no SMTP, no network.
-      # conftest.py points DATABASE_URL/REDIS_URL at localhost so any accidental
-      # live connection fails fast rather than silently succeeding.
+      # The suite needs no SMTP and no network, but it does need a reachable
+      # Postgres for the health-route assertion above. conftest.py still pins
+      # REDIS_URL at localhost so an accidental live cache connection fails fast.
       - name: Import every module
         run: python import_smoke.py
 
