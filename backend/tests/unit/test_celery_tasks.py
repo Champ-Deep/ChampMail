@@ -67,11 +67,14 @@ class TestSequenceTasks:
         from datetime import timedelta
 
         delay_hours = 48
-        scheduled_for = datetime.utcnow() + timedelta(hours=delay_hours)
+        # One clock read only. Two separate utcnow() calls straddle the
+        # microsecond boundary, so the difference is 48h minus a few
+        # microseconds and floor-divides to 47.
+        now = datetime.utcnow()
+        scheduled_for = now + timedelta(hours=delay_hours)
 
-        # Verify delay is approximately 48 hours
-        time_diff = scheduled_for - datetime.utcnow()
-        assert time_diff.seconds // 3600 == 48
+        time_diff = scheduled_for - now
+        assert int(time_diff.total_seconds() // 3600) == 48
 
     def test_enrollment_status_transitions(self):
         """Test enrollment status transition logic."""

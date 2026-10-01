@@ -7,6 +7,28 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from fastapi.testclient import TestClient
 
 
+def _auth_headers() -> dict:
+    """Build a genuinely signed bearer token.
+
+    These endpoints are behind require_auth, which calls decode_token and
+    verifies the JWT signature against settings.jwt_secret_key. A literal
+    "Bearer test-token" string is not a JWT, so the request returns 401 before
+    the route body ever runs. Minting a real token keeps the assertion
+    meaningful: a 200 here proves the service was mocked correctly.
+    """
+    from app.core.security import create_access_token
+
+    token = create_access_token(
+        {
+            "user_id": "00000000-0000-0000-0000-000000000001",
+            "email": "test@example.com",
+            "role": "admin",
+            "team_id": "00000000-0000-0000-0000-0000000000ff",
+        }
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
 class TestHealthEndpoints:
     """Test cases for health check endpoints."""
 
@@ -50,13 +72,18 @@ class TestDomainEndpoints:
 
     @pytest.fixture
     def mock_domain_service(self):
-        """Create mock domain service."""
-        with patch('app.api.v1.domains.domainsApi') as mock_api, \
-             patch('app.api.v1.domains.domain_service') as mock_service, \
+        """Create mock domain service.
+
+        Patches domain_service directly. There is no `domainsApi` symbol: the
+        router module imports the domain_service singleton directly, so patching
+        the module attribute is what actually intercepts the call.
+        """
+        with patch('app.api.v1.domains.domain_service') as mock_service, \
              patch('app.api.v1.domains.cloudflare_client') as mock_cf, \
              patch('app.api.v1.domains.namecheap_client') as mock_nc:
+            mock_service.get_all_domains = AsyncMock(return_value=[])
+            mock_service.get_by_id = AsyncMock(return_value=None)
             yield {
-                "api": mock_api,
                 "service": mock_service,
                 "cloudflare": mock_cf,
                 "namecheap": mock_nc,
@@ -66,14 +93,12 @@ class TestDomainEndpoints:
         """Test listing domains when none exist."""
         from app.main import app
 
-        mock_domain_service["api"].list_domains = AsyncMock(return_value=[])
-
         with TestClient(app) as client:
-            with patch('app.api.v1.domains.domainsApi') as mock_api:
-                mock_api.list_domains = AsyncMock(return_value=[])
+            with patch('app.api.v1.domains.domain_service') as mock_service:
+                mock_service.get_all_domains = AsyncMock(return_value=[])
                 response = client.get(
                     "/api/v1/domains",
-                    headers={"Authorization": "Bearer test-token"}
+                    headers=_auth_headers()
                 )
 
         assert response.status_code == 200
@@ -81,14 +106,13 @@ class TestDomainEndpoints:
     def test_get_domain_not_found(self, mock_domain_service):
         """Test getting a domain that doesn't exist."""
         from app.main import app
-        from fastapi import HTTPException
 
         with TestClient(app) as client:
-            with patch('app.api.v1.domains.domainsApi') as mock_api:
-                mock_api.list_domains = AsyncMock(return_value=[])
+            with patch('app.api.v1.domains.domain_service') as mock_service:
+                mock_service.get_by_id = AsyncMock(return_value=None)
                 response = client.get(
                     "/api/v1/domains/nonexistent-id",
-                    headers={"Authorization": "Bearer test-token"}
+                    headers=_auth_headers()
                 )
 
         assert response.status_code in [200, 404]
@@ -145,7 +169,8 @@ class TestAuthenticationEndpoints:
 
     def test_login_validation(self):
         """Test login request validation."""
-        from app.schemas.auth import LoginRequest
+        # LoginRequest lives in app.api.v1.auth, not a schemas.auth module.
+        from app.api.v1.auth import LoginRequest
 
         # Valid login
         valid_login = LoginRequest(
@@ -156,15 +181,16 @@ class TestAuthenticationEndpoints:
 
     def test_register_validation(self):
         """Test registration request validation."""
-        from app.schemas.auth import RegisterRequest
+        from app.api.v1.auth import RegisterRequest
 
-        # Valid registration
+        # Valid registration. The field is `name`, not `full_name`.
         valid_register = RegisterRequest(
             email="new@example.com",
             password="securepassword123",
-            full_name="Test User"
+            name="Test User"
         )
         assert valid_register.email == "new@example.com"
+        assert valid_register.role == "user"
 
 
 class TestProspectEndpoints:
@@ -184,11 +210,17 @@ class TestProspectEndpoints:
 
     def test_prospect_search_validation(self):
         """Test prospect search query validation."""
-        from app.api.v1.prospects import ProspectSearchQuery
+        # The router module imports schemas from app.schemas.prospect.
+        from app.schemas.prospect import ProspectSearchParams
 
         # Valid search
-        search = ProspectSearchQuery(q="software engineer")
-        assert "software" in search.q.lower()
+        search = ProspectSearchParams(query="software engineer")
+        assert "software" in search.query.lower()
+        assert search.limit == 50
+
+        # limit is bounded to 1..200 by the schema
+        with pytest.raises(ValueError):
+            ProspectSearchParams(query="x", limit=0)
 
 
 class TestSequenceEndpoints:
@@ -207,18 +239,23 @@ class TestSequenceEndpoints:
 
     def test_sequence_step_validation(self):
         """Test sequence step request validation."""
-        from app.api.v1.sequences import SequenceStepCreate
+        from app.schemas.sequence import SequenceStepCreate, StepType
 
-        # Valid step
+        # Valid step. Fields are step_number / delay_days / delay_hours.
         valid_step = SequenceStepCreate(
-            order=1,
-            name="First Email",
-            subject_template="Hello {{name}}",
-            html_template="<p>Hi {{name}},</p>",
-            delay_hours=24
+            step_number=1,
+            step_type=StepType.EMAIL,
+            subject="Hello {{name}}",
+            body="<p>Hi {{name}},</p>",
+            delay_hours=23,
         )
-        assert valid_step.order == 1
-        assert valid_step.delay_hours == 24
+        assert valid_step.step_number == 1
+        assert valid_step.delay_hours == 23
+        assert valid_step.delay_days == 1
+
+        # delay_hours is bounded to 0..23, so 24 is rejected
+        with pytest.raises(ValueError):
+            SequenceStepCreate(step_number=1, delay_hours=24)
 
 
 class TestTemplateEndpoints:
@@ -228,13 +265,18 @@ class TestTemplateEndpoints:
         """Test template creation request validation."""
         from app.api.v1.templates import TemplateCreate
 
-        # Valid template
+        # Templates carry MJML source, not raw HTML: the field is mjml_content.
         valid_template = TemplateCreate(
             name="Welcome Email",
             subject="Welcome to our service!",
-            html_content="<p>Welcome!</p>"
+            mjml_content="<mjml><mj-body><p>Welcome!</p></mj-body></mjml>"
         )
         assert valid_template.name == "Welcome Email"
+        assert valid_template.compile_html is True
+
+        # empty MJML violates min_length=1
+        with pytest.raises(ValueError):
+            TemplateCreate(name="x", subject="y", mjml_content="")
 
 
 class TestWebhookEndpoints:
@@ -258,15 +300,22 @@ class TestWebhookEndpoints:
 
     def test_n8n_webhook_format(self):
         """Test N8N webhook payload format."""
-        from app.api.v1.webhooks import N8NWebhookPayload
+        # The schema is N8NWorkflowEvent, not N8NWebhookPayload.
+        from app.api.v1.webhooks import N8NWorkflowEvent
 
-        # Valid N8N payload
-        payload = N8NPayload={
-            "event": "email.opened",
-            "data": {
+        event = N8NWorkflowEvent(
+            workflow_id="wf-123",
+            execution_id="exec-456",
+            event="email.opened",
+            data={
                 "message_id": "msg-123",
                 "recipient": "test@example.com",
-                "timestamp": "2024-01-15T10:30:00Z"
-            }
-        }
-        assert payload["event"] == "email.opened"
+                "timestamp": "2024-01-15T10:30:00Z",
+            },
+        )
+        assert event.event == "email.opened"
+        assert event.data["message_id"] == "msg-123"
+
+        # workflow_id and execution_id are required
+        with pytest.raises(ValueError):
+            N8NWorkflowEvent(event="email.opened")

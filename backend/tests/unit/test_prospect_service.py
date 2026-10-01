@@ -299,6 +299,8 @@ class TestProspectValidation:
 
     def test_email_validation(self):
         """Test email format validation."""
+        from email_validator import validate_email, EmailNotValidError
+
         valid_emails = [
             "test@example.com",
             "user.name@domain.co.uk",
@@ -313,10 +315,11 @@ class TestProspectValidation:
         ]
 
         for email in valid_emails:
-            assert "@" in email and "." in email.split("@")[-1]
+            validate_email(email, check_deliverability=False)
 
         for email in invalid_emails:
-            assert not ("@" in email and "." in email.split("@")[-1] if "@" in email else True)
+            with pytest.raises(EmailNotValidError):
+                validate_email(email, check_deliverability=False)
 
     def test_name_concatenation(self):
         """Test full name concatenation."""

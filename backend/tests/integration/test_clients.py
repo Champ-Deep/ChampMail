@@ -110,7 +110,7 @@ class TestCloudflareClientIntegration:
             id="record-123",
             type="MX",
             name="example.com",
-            value="10 mail.example.com",
+            content="10 mail.example.com",
             priority=10,
             ttl=3600,
             proxied=False
@@ -119,6 +119,7 @@ class TestCloudflareClientIntegration:
         assert record.type == "MX"
         assert record.priority == 10
         assert record.ttl == 3600
+        assert record.content == "10 mail.example.com"
 
     def test_dns_setup_result_structure(self):
         """Test DNS setup result data structure."""

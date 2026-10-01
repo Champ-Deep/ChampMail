@@ -4,7 +4,7 @@ Prospect service for managing email recipients.
 
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, text
+from sqlalchemy import select, update, text, and_, or_
 from sqlalchemy.orm import selectinload
 from uuid import uuid4
 from datetime import datetime
