@@ -1,0 +1,36 @@
+ChampMail
+Copyright (c) 2026 Champions Group. All rights reserved.
+
+NOTICE: This license has not been reviewed or approved by legal counsel.
+It was added during repository consolidation and is a placeholder pending
+confirmation of the intended license by the repository owner. See
+CONSOLIDATION-REPORT.md, "Open questions for Deep".
+
+This software and its source code, documentation, configuration, and
+associated assets are the confidential and proprietary property of
+Champions Group.
+
+Permission to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of this software is NOT granted except pursuant to a
+written agreement with Champions Group.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+--------------------------------------------------------------------------------
+
+THIRD-PARTY COMPONENTS
+
+This repository incorporates or has incorporated third-party components.
+Those components remain under their own licenses, reproduced in their
+respective directories or as noted in their source headers. Notably:
+
+  - browser-use/jev-ultrafast (MIT), from which the JEV browser agent
+    referenced by the OAuth/JEV agent plan derives.
+
+Third-party licenses are unaffected by the notice above.
