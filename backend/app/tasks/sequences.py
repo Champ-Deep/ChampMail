@@ -9,6 +9,7 @@ Each task follows Single Responsibility:
 """
 
 from celery import shared_task
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session_maker as async_session
 from datetime import datetime, timedelta
 import asyncio
@@ -42,7 +43,7 @@ def execute_pending_steps(self):
         from app.tasks.sending import _build_message, _submit_to_postfix
         from app.core.config import settings
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             pending_steps = await sequence_service.get_pending_steps(session)
 
             sent_count = 0
@@ -126,7 +127,7 @@ def pause_sequence(self, sequence_id: str, prospect_id: str = None, reason: str 
     async def _pause():
         from app.services.sequence_service import sequence_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await sequence_service.pause(session, sequence_id, prospect_id, reason)
 
     asyncio.run(_pause())
@@ -137,7 +138,7 @@ def resume_sequence(self, sequence_id: str, prospect_id: str = None):
     async def _resume():
         from app.services.sequence_service import sequence_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await sequence_service.resume(session, sequence_id, prospect_id)
 
     asyncio.run(_resume())
@@ -148,8 +149,14 @@ def check_replies_and_pause(self):
     """Scan for replies via mail-engine and pause sequences for responders."""
 
     async def _check():
+        from sqlalchemy import select
+        from app.models import Prospect
         from app.services.sequence_service import sequence_service
         from app.core.config import settings
+        # PR #5: classify each detected reply and write the REPLIED edge back
+        # to Cham_Graph. Detection itself stays on the IMAP path below.
+        from app.services.ai.openrouter_service import reply_classification_service
+        from app.services.champiq_emit import emit_email_event
 
         imap_host = settings.imap_host
         imap_port = settings.imap_port
@@ -157,10 +164,13 @@ def check_replies_and_pause(self):
         imap_pass = settings.imap_password
 
         if not imap_user or not imap_pass or imap_host == "localhost":
-            logger.debug("IMAP not configured — skipping reply detection")
+            logger.debug("IMAP not configured - skipping reply detection")
             return
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
+            # get_active_sequences returns plain dicts (_sequence_to_dict), not
+            # ORM rows, and has no per-enrollment prospect_email - look up each
+            # enrolled prospect's own address instead of the sequence's.
             active_sequences = await sequence_service.get_active_sequences(session)
             if not active_sequences:
                 return
@@ -179,7 +189,7 @@ def check_replies_and_pause(self):
         if not prospect_email_to_seq:
             return
 
-        # Single IMAP connection — search for In-Reply-To / References headers
+        # Single IMAP connection - search for In-Reply-To / References headers
         try:
             ctx = ssl.create_default_context() if settings.imap_use_ssl else None
             if ctx and imap_host in {"localhost", "127.0.0.1", "imap"}:

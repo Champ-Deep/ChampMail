@@ -23,6 +23,140 @@ from app.db.postgres import async_session_maker as async_session
 from app.services.domain_rotation import domain_rotator
 from app.services.tracking_service import tracking_service
 
+
+async def _emit_sent(result, *, to_email: str, subject: str, body: str,
+                     campaign_id: str | None = None,
+                     prospect_id: str | None = None) -> None:
+    """Publish one `email.sent` event for a send made from a Celery task.
+
+    Fire-and-forget by contract (see champiq_emit): a down or unset ChampIQ must
+    never fail a send that already went out. The `extra` fields carry the
+    identifiers the orchestrator needs to correlate the event back to a campaign
+    and a specific mailbox. Ported from PR #5.
+    """
+    from app.services.champiq_emit import emit_email_event
+
+    extra: dict = {}
+    if campaign_id:
+        extra["campaign_id"] = str(campaign_id)
+    if prospect_id:
+        extra["prospect_id"] = str(prospect_id)
+    for attr in ("domain_id", "mailbox_id"):
+        value = getattr(result, attr, None)
+        if value:
+            extra[attr] = str(value)
+
+    try:
+        await emit_email_event(
+            "email.sent",
+            to_email=to_email,
+            from_email=getattr(result, "from_email", "") or "",
+            subject=subject,
+            body=body,
+            message_id=getattr(result, "message_id", None),
+            occurred_at=getattr(result, "sent_at", None),
+            extra=extra or None,
+        )
+    except Exception:
+        logger.exception("champiq emit failed for send to %s", to_email)
+
+
+async def _domain_uses_inboxkit(session, domain_id: str) -> bool:
+    """True if the selected domain is InboxKit-provisioned.
+
+    InboxKit domains authenticate per mailbox at send time (creds pulled from
+    the IAL and never cached in plaintext), so they bypass the internal Postfix
+    submission path that self-hosted domains use. Ported from PR #5.
+    """
+    if not domain_id:
+        return False
+    from app.models.domain import Domain
+    from sqlalchemy import select
+
+    result = await session.execute(select(Domain).where(Domain.id == domain_id))
+    d = result.scalar_one_or_none()
+    if d is None:
+        return False
+    return (getattr(d, "infra_provider", "stalwart") or "stalwart") == "inboxkit"
+
+
+async def _send_via_inboxkit(session, domain_id: str, *, to_email: str, to_name: str,
+                             subject: str, html_body: str, text_body: str = "",
+                             from_name: str = "ChampMail") -> dict:
+    """Send one email through an InboxKit-provisioned mailbox.
+
+    Rotates across the domain's mailboxes (least-recently-used, under daily cap),
+    pulls that mailbox's SMTP creds via the authenticated IAL call (re-fetch,
+    never cached plaintext), and sends over authenticated SMTP.
+
+    Message-ID is generated before submission. Reading it back off the message
+    after handing it to smtplib always returned None, so the stored id never
+    matched what went on the wire and bounces could not be correlated.
+    """
+    from app.services.mail_infra import get_provider
+    from app.services.mailbox_rotation import mailbox_rotator
+    from app.models.domain import Domain
+    from sqlalchemy import select
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.utils import make_msgid
+    from datetime import datetime as _dt
+
+    result = await session.execute(select(Domain).where(Domain.id == domain_id))
+    domain = result.scalar_one_or_none()
+    if domain is None or not domain.inboxkit_domain_uid:
+        raise RuntimeError(f"domain {domain_id} is not InboxKit-provisioned")
+
+    # Rotation, not a single unordered row: otherwise N provisioned mailboxes
+    # still send everything through one of them.
+    mailbox = await mailbox_rotator.select_mailbox(session, domain.id)
+
+    provider = get_provider("inboxkit")
+    creds = await provider.get_credentials(mailbox.inboxkit_uid)
+
+    message_id = make_msgid(domain=creds.email.split("@")[-1])
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{from_name} <{creds.email}>"
+    msg["To"] = to_email
+    msg["Message-ID"] = message_id
+    msg["Date"] = formatdate(localtime=False)
+    if text_body:
+        msg.attach(MIMEText(text_body, "plain", "utf-8"))
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    def _send_sync():
+        with smtplib.SMTP(creds.smtp_host, creds.smtp_port, timeout=30) as server:
+            server.starttls()
+            server.login(creds.email, creds.password)
+            server.send_message(msg)
+
+    await asyncio.get_event_loop().run_in_executor(None, _send_sync)
+
+    # Count before returning so a caller that forgets cannot leave the daily
+    # cap unenforced.
+    await mailbox_rotator.record_send(session, mailbox.id, domain_id=domain.id)
+
+    return {
+        "message_id": message_id,
+        "status": "sent",
+        "domain_id": str(domain.id),
+        "mailbox_id": str(mailbox.id),
+        "from_email": creds.email,
+        "sent_at": _dt.utcnow(),
+    }
+
+
+class _ResultShim:
+    """Attribute access over the InboxKit result dict, matching the shape the
+    rest of this task expects from a transport result."""
+
+    def __init__(self, d: dict):
+        self.__dict__.update(d)
+
+
 logger = logging.getLogger(__name__)
 
 _SMTP_HOST = os.getenv("SMTP_HOST", "smtp")
@@ -217,18 +351,43 @@ def send_email_task(
             import re
             body_text = re.sub(r"<[^>]+>", "", final_html).strip() or subject
 
-            msg = _build_message(
-                from_email=from_email,
-                from_name=from_name,
-                to_email=to_email,
-                subject=subject,
-                body_text=body_text,
-                html_body=final_html,
-                bounce_address=bounce_address,
-                tracking_id=tracking_id,
-                unsubscribe_url=unsubscribe_url,
-            )
-            message_id = _submit_to_postfix(from_email, to_email, bounce_address, msg)
+            # Transport branch (ported from PR #5):
+            #   InboxKit-provisioned domain -> authenticated per-mailbox SMTP,
+            #     creds pulled from the IAL at send time, rotation across
+            #     mailboxes, per-mailbox accounting.
+            #   everything else -> the internal Postfix submission path with
+            #     the VERP envelope.
+            if await _domain_uses_inboxkit(session, selected_domain_id):
+                result = _ResultShim(await _send_via_inboxkit(
+                    session, selected_domain_id,
+                    to_email=to_email, to_name=to_name,
+                    subject=subject, html_body=final_html,
+                    text_body=body_text, from_name=from_name,
+                ))
+                message_id = result.message_id
+                # VERP is not used on this path: bounces are correlated by the
+                # in-repository Message-ID that _send_via_inboxkit generated.
+                bounce_address = None
+            else:
+                msg = _build_message(
+                    from_email=from_email,
+                    from_name=from_name,
+                    to_email=to_email,
+                    subject=subject,
+                    body_text=body_text,
+                    html_body=final_html,
+                    bounce_address=bounce_address,
+                    tracking_id=tracking_id,
+                    unsubscribe_url=unsubscribe_url,
+                )
+                message_id = _submit_to_postfix(from_email, to_email, bounce_address, msg)
+                result = _ResultShim({
+                    "message_id": message_id,
+                    "status": "sent",
+                    "domain_id": str(selected_domain_id),
+                    "from_email": from_email,
+                    "sent_at": None,
+                })
 
             # ── 6. Post-send accounting ───────────────────────────────────
             await domain_service.increment_sent_count(session, selected_domain_id)
@@ -249,8 +408,24 @@ def send_email_task(
             except Exception:
                 logger.debug("Event bus emit failed after send", exc_info=True)
 
+            # ChampIQ egress (PR #5). Separate from the suite event bus above:
+            # one is the internal Redis bus, the other the external orchestrator.
+            await _emit_sent(
+                result,
+                to_email=to_email,
+                subject=subject,
+                body=final_html,
+                campaign_id=campaign_id,
+                prospect_id=prospect_id,
+            )
+
             logger.info("Sent to %s via %s (msg=%s)", to_email, domain_name, message_id)
-            return {"success": True, "message_id": message_id, "domain": domain_name}
+            return {
+                "success": True,
+                "message_id": message_id,
+                "domain": domain_name,
+                "mailbox_id": getattr(result, "mailbox_id", None),
+            }
 
     try:
         return asyncio.run(_send())

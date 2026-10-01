@@ -19,6 +19,7 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.postgres import async_session_maker
 from app.db.redis import redis_client
 from app.models.campaign import Campaign, CampaignProspect, Prospect
@@ -29,6 +30,7 @@ from app.services.ai.openrouter_service import (
     research_service,
     segmentation_service,
 )
+from app.services.harbinger_client import verify_contact
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +45,11 @@ STEP_ESSENCE = "extract_essence"
 STEP_RESEARCH = "research_prospects"
 STEP_SEGMENT = "segment_prospects"
 STEP_PITCH = "generate_pitches"
+STEP_VERIFY = "verify_contacts"
 STEP_PERSONALIZE = "personalize_emails"
 STEP_HTML = "generate_html"
 
-ALL_STEPS = [STEP_ESSENCE, STEP_RESEARCH, STEP_SEGMENT, STEP_PITCH, STEP_PERSONALIZE, STEP_HTML]
+ALL_STEPS = [STEP_ESSENCE, STEP_RESEARCH, STEP_SEGMENT, STEP_PITCH, STEP_VERIFY, STEP_PERSONALIZE, STEP_HTML]
 
 # Redis key TTL: 24 hours for pipeline data
 PIPELINE_TTL = 86400
@@ -184,6 +187,13 @@ class CampaignPipeline:
             # --- Step 4: Generate pitches per segment ---
             pitches = await self.generate_pitches(segments, essence, research_results)
             await self._store_step_result(campaign_id, STEP_PITCH, pitches)
+            await self._set_status(campaign_id, PIPELINE_STATUS_RUNNING, step=STEP_VERIFY, progress=58)
+
+            # --- Step 4.5: Verify contacts via Harbinger waterfall ---
+            verifications = await self.verify_contacts(prospect_dicts)
+            await self._store_step_result(campaign_id, STEP_VERIFY, verifications)
+            if verifications:
+                await self._persist_verifications(verifications)
             await self._set_status(campaign_id, PIPELINE_STATUS_RUNNING, step=STEP_PERSONALIZE, progress=65)
 
             # --- Step 5: Personalize for each prospect ---
@@ -390,6 +400,30 @@ class CampaignPipeline:
         logger.info("Pitches generated for %d segments", len(pitches))
         return pitches
 
+    async def verify_contacts(self, prospects: list) -> dict:
+        """Step 4.5: Run each prospect through Harbinger's contact-verification
+        waterfall before personalization.
+
+        No-op (returns {}) when HARBINGER_URL/HARBINGER_API_KEY are unset -
+        verification is additive and never blocks the pipeline.
+        """
+        if not settings.harbinger_url or not settings.harbinger_api_key:
+            return {}
+
+        logger.info("Verifying %d contacts via Harbinger waterfall", len(prospects))
+        semaphore = asyncio.Semaphore(5)
+        results: Dict[str, Any] = {}
+
+        async def _verify_one(prospect: dict) -> None:
+            async with semaphore:
+                result = await verify_contact(prospect)
+                if result:
+                    results[prospect["id"]] = result
+
+        await asyncio.gather(*(_verify_one(p) for p in prospects))
+        logger.info("Verification complete: %d/%d contacts checked", len(results), len(prospects))
+        return results
+
     async def personalize_emails(
         self,
         pitches: dict,
@@ -577,6 +611,24 @@ class CampaignPipeline:
             await session.commit()
 
         logger.info("Persisted %d personalized emails to database", len(html_emails))
+
+    async def _persist_verifications(self, verifications: dict) -> None:
+        """Write Harbinger's waterfall status/confidence back onto Prospect rows."""
+        async with async_session_maker() as session:
+            for prospect_id, result in verifications.items():
+                email_field = (result.get("fields") or {}).get("email") or {}
+                status = "verified" if email_field.get("verified") else result.get("status", "unknown")
+                await session.execute(
+                    update(Prospect)
+                    .where(Prospect.id == prospect_id)
+                    .values(
+                        verification_status=status,
+                        verification_confidence=result.get("confidenceScore"),
+                        verification_checked_at=datetime.utcnow(),
+                    )
+                )
+            await session.commit()
+        logger.info("Persisted verification results for %d prospects", len(verifications))
 
     async def _update_campaign_status(self, campaign_id: str, status: str) -> None:
         """Update the Campaign row's status in PostgreSQL."""

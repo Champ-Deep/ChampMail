@@ -7,6 +7,8 @@ import asyncio
 import base64
 
 from celery import shared_task
+import asyncio
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.postgres import async_session_maker as async_session
 
 logger = logging.getLogger(__name__)
@@ -85,7 +87,7 @@ def check_all_domain_health(self):
         from app.services.ip_blacklist import blacklist_checker
         from app.core.config import settings
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domains = await domain_service.get_all_domains(session)
             vps_ip = settings.vps_public_ip or await blacklist_checker.get_vps_ip()
 
@@ -135,7 +137,7 @@ def verify_domain_dns(self, domain_id: str):
         from app.services.domain_service import domain_service
         from app.services.cloudflare_client import cloudflare_client
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             domain = await domain_service.get_by_id(session, domain_id)
             if not domain:
                 raise ValueError(f"Domain {domain_id} not found")
@@ -169,7 +171,7 @@ def provision_new_domain(self, domain_name: str, team_id: str):
         from app.services.namecheap_client import namecheap_client
         from app.core.config import settings
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             available = await namecheap_client.check_availability([domain_name])
             if not available.get(domain_name):
                 raise ValueError(f"Domain {domain_name} is not available")

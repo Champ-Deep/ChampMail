@@ -34,3 +34,4 @@ redis-data/
 .vscode/
 .idea/
 .claude/
+docker-compose.override.yml

@@ -218,6 +218,11 @@ services:
       PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8000}
       FRONTEND_URL: ${FRONTEND_URL:-http://103.170.162.2:3001}
       EXTRA_CORS_ORIGINS: ${EXTRA_CORS_ORIGINS:-https://champiq-production.up.railway.app,http://103.170.162.2:3001,http://localhost:3001,http://localhost:5173}
+
+      # ChampIQ event egress (PR #5). Empty = eventing off; a real send never
+      # blocks on this.
+      CHAMPIQ_URL: ${CHAMPIQ_URL:-http://host.docker.internal:8000}
+      CHAMPIQ_WEBHOOK_SECRET: ${CHAMPIQ_WEBHOOK_SECRET:-}
     volumes:
       - opendkim_keys:/etc/opendkim/keys
     ports:

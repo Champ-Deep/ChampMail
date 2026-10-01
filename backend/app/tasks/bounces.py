@@ -61,7 +61,7 @@ def update_bounce_reputation(self, domain_id: str):
     async def _update():
         from app.services.domain_service import domain_service
 
-        async with async_session() as session:
+        async with async_session_maker() as session:
             await domain_service.recalculate_reputation(session, domain_id)
 
     asyncio.run(_update())

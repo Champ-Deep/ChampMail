@@ -7,14 +7,27 @@ import uuid
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.postgres import get_db_session
 from app.core.security import require_auth, TokenData
 from app.services.email_service import email_service
+from app.services.champiq_emit import emit_email_event
+from app.models.suppression import Suppression
 
 
 router = APIRouter()
+
+
+async def _suppressed_emails(session: AsyncSession, emails: list[str]) -> set[str]:
+    """Lowercased lookup of suppressed recipients (SUGGESTIONS 4.6)."""
+    if not emails:
+        return set()
+    rows = await session.execute(
+        select(Suppression.email).where(Suppression.email.in_([e.lower() for e in emails]))
+    )
+    return {r[0] for r in rows.all()}
 
 
 class SendEmailRequest(BaseModel):
@@ -83,6 +96,11 @@ async def send_email(
     user: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db_session),
 ):
+    # Suppression is checked before every dispatch, with no exceptions
+    # (ported from PR #5). Bounce, complaint or opt-out means never send.
+    if str(request.to).lower() in await _suppressed_emails(session, [str(request.to)]):
+        raise HTTPException(status_code=422, detail=f"Recipient {request.to} is suppressed")
+
     # Pre-send quality score (non-blocking; logs, never blocks a send).
     q_score, q_grade = _score_message(request.subject, request.html_body, request.text_body)
     if q_grade == "F":
@@ -132,7 +150,20 @@ async def send_batch(
     successful = 0
     failed = 0
 
+    # Suppressed recipients are filtered out BEFORE dispatch and reported as
+    # failures, never sent (ported from PR #5).
+    suppressed = await _suppressed_emails(session, [str(e.to) for e in request.emails])
     for email_req in request.emails:
+        if str(email_req.to).lower() in suppressed:
+            failed += 1
+            results.append(SendEmailResponse(
+                message_id="",
+                status="suppressed",
+                domain_id=request.domain_id or "",
+                sent_at=datetime.utcnow(),
+            ))
+            continue
+
         result = await email_service.send_email(
             session=session,
             user_id=str(user.user_id),

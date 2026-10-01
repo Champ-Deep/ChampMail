@@ -79,10 +79,100 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-      - key: NAMECHEAP_API_KEY
-        sync: false
       - key: CLOUDFLARE_API_TOKEN
         sync: false
+
+      # InboxKit mailbox infrastructure. These were missing entirely — this
+      # blueprint still listed NAMECHEAP_API_KEY from the pre-InboxKit era, so
+      # `inboxkit_api_key` defaulted to "" and the provider reported itself
+      # unconfigured while the app looked healthy.
+      #
+      # Note INBOXKIT_API_KEY is also what verifies inbound webhooks: the
+      # signature is a static SHA-256 of the team API key, not an HMAC over the
+      # body, so no separate webhook secret exists to generate.
+      - key: INBOXKIT_API_KEY
+        sync: false
+      - key: INBOXKIT_WORKSPACE_ID
+        sync: false
+
+      # Event egress to the orchestrator. Unset means emit_email_event() is a
+      # no-op and sends never reach ChampIQ's bus, Cham_Graph or the ledger.
+      - key: CHAMPIQ_URL
+        sync: false
+      - key: CHAMPIQ_WEBHOOK_SECRET
+        sync: false
+
+  # ─── Celery worker ────────────────────────────────────────────────────────
+  # Every background task in ChampMail is a Celery task. Without this service a
+  # deploy runs the API only: campaigns get accepted, tasks get enqueued, and
+  # nothing ever sends. This blueprint previously defined no worker at all.
+  - type: worker
+    name: champmail-worker
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter
+    dockerCommand: celery -A app.celery_app worker --loglevel=info --concurrency=4 -Q default,warmup,sending,sequences
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: champmail-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: champmail-redis
+          property: connectionString
+      # Must be the SAME values as the web service — the worker decrypts
+      # mailbox credentials at send time with EMAIL_ENCRYPTION_KEY.
+      - key: JWT_SECRET_KEY
+        fromService:
+          type: web
+          name: champmail-backend
+          envVarKey: JWT_SECRET_KEY
+      - key: EMAIL_ENCRYPTION_KEY
+        sync: false
+      - key: INBOXKIT_API_KEY
+        sync: false
+      - key: INBOXKIT_WORKSPACE_ID
+        sync: false
+      - key: CHAMPIQ_URL
+        sync: false
+      - key: CHAMPIQ_WEBHOOK_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+  # ─── Celery beat (scheduler) ──────────────────────────────────────────────
+  # Fires the recurring schedule in app/celery_app.py: sequence steps every 5
+  # minutes, warmup at 09:00, domain health every 6h, bounce processing every
+  # 10 minutes, daily stats at 23:55. The worker only drains what something
+  # else enqueues — beat is what enqueues it.
+  #
+  # ! Keep this at a single instance. Two beat replicas double-fire every
+  # ! scheduled task, which for warmup means double the send volume through the
+  # ! same mailboxes. Scale champmail-worker instead.
+  - type: worker
+    name: champmail-beat
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: starter
+    dockerCommand: celery -A app.celery_app beat --loglevel=info
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: champmail-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: champmail-redis
+          property: connectionString
 
   # Frontend Static Site
   - type: web

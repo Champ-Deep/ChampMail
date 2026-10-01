@@ -268,6 +268,8 @@ async def verify_domain(domain_id: str, current_user=Depends(get_current_user)):
 async def get_dns_records(domain_id: str, current_user=Depends(get_current_user)):
     """Return the DNS records this domain needs configured."""
     try:
+        records = await mail_engine_client.get_dns_records(domain_id)
+
         async with async_session() as session:
             domain = await domain_service.get_by_id(session, domain_id)
         if not domain:

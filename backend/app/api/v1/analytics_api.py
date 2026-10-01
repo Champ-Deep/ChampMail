@@ -135,8 +135,8 @@ async def get_overview(
     agg = await session.execute(
         select(
             func.count(SendLog.id).label("total"),
-            func.count(SendLog.first_open_at).label("opens"),
-            func.count(SendLog.first_click_at).label("clicks"),
+            func.count(SendLog.first_opened_at).label("opens"),
+            func.count(SendLog.first_clicked_at).label("clicks"),
             func.count(SendLog.bounced_at).label("bounces"),
             func.count(SendLog.replied_at).label("replies"),
         )
@@ -148,14 +148,14 @@ async def get_overview(
     # Top performing domain (by open rate, min 10 sends)
     domain_stats = await session.execute(
         select(
-            SendLog.from_address,
+            SendLog.from_email,
             func.count(SendLog.id).label("cnt"),
-            func.count(SendLog.first_open_at).label("opens"),
+            func.count(SendLog.first_opened_at).label("opens"),
         )
         .where(SendLog.sent_at >= thirty_days_ago)
-        .group_by(SendLog.from_address)
+        .group_by(SendLog.from_email)
         .having(func.count(SendLog.id) >= 10)
-        .order_by((func.count(SendLog.first_open_at) * 100.0 / func.count(SendLog.id)).desc())
+        .order_by((func.count(SendLog.first_opened_at) * 100.0 / func.count(SendLog.id)).desc())
         .limit(1)
     )
     top_domain_row = domain_stats.first()
@@ -245,8 +245,8 @@ async def get_daily_stats(
         select(
             func.date(SendLog.sent_at).label("day"),
             func.count(SendLog.id).label("sent"),
-            func.count(SendLog.first_open_at).label("opened"),
-            func.count(SendLog.first_click_at).label("clicked"),
+            func.count(SendLog.first_opened_at).label("opened"),
+            func.count(SendLog.first_clicked_at).label("clicked"),
             func.count(SendLog.bounced_at).label("bounced"),
             func.count(SendLog.replied_at).label("replied"),
         )
@@ -286,14 +286,14 @@ async def get_domain_stats(
 
     result = await session.execute(
         select(
-            SendLog.from_address,
+            SendLog.from_email,
             func.count(SendLog.id).label("total_sent"),
-            func.count(SendLog.first_open_at).label("total_opened"),
-            func.count(SendLog.first_click_at).label("total_clicked"),
+            func.count(SendLog.first_opened_at).label("total_opened"),
+            func.count(SendLog.first_clicked_at).label("total_clicked"),
             func.count(SendLog.bounced_at).label("total_bounced"),
         )
         .where(SendLog.sent_at >= start_date)
-        .group_by(SendLog.from_address)
+        .group_by(SendLog.from_email)
         .order_by(func.count(SendLog.id).desc())
     )
 
@@ -348,8 +348,8 @@ async def get_team_stats(
     agg = await session.execute(
         select(
             func.count(SendLog.id).label("total_sent"),
-            func.count(SendLog.first_open_at).label("total_opened"),
-            func.count(SendLog.first_click_at).label("total_clicked"),
+            func.count(SendLog.first_opened_at).label("total_opened"),
+            func.count(SendLog.first_clicked_at).label("total_clicked"),
             func.count(SendLog.bounced_at).label("total_bounced"),
             func.count(SendLog.replied_at).label("total_replied"),
         )
