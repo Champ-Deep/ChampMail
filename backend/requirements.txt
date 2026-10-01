@@ -47,6 +47,9 @@ cloudflare>=4.0.0
 # Email parsing
 email-validator>=2.0.0
 
+# DNS BL lookups (services/deliverability/blacklist_checker.py)
+dnspython>=2.6.0
+
 # Rate limiting
 slowapi>=0.1.0
 

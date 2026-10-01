@@ -20,6 +20,9 @@ celery_app = Celery(
         "app.tasks.analytics",
         "app.tasks.campaign_tasks",
         "app.tasks.dmarc",
+        # Ported from the `simplified` branch: reputation gate maintenance
+        # (suppression sync, bounce-rate alerts, DNSBL checks).
+        "app.tasks.deliverability",
     ],
 )
 

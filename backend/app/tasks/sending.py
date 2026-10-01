@@ -280,7 +280,26 @@ def send_email_task(
                 prospect.get("team_id")
             )
             if not selected_domain_id:
-                raise ValueError("No available sending domain — all at warmup limit or paused")
+                raise ValueError(f"No available sending domain - all at warmup limit or paused")
+
+            # ── 2b. Reputation send gate ──────────────────────────────────
+            # Ported from `simplified`: Redis-cached suppression, spam-trap,
+            # rate-limit, domain-status and DNSBL checks in one call. Runs after
+            # domain selection so it can key on the real sending domain, and is
+            # complementary to the DB suppression gate above (which stays the
+            # authoritative record; this is the fast path). Fail-open by design:
+            # an unavailable Redis must not block a legitimate send.
+            try:
+                from app.services.deliverability.send_gate import send_gate
+                _allowed, _reason = await send_gate.check(
+                    str(selected_domain_id), to_email,
+                )
+                if not _allowed:
+                    logger.warning("Send gate blocked %s: %s", to_email, _reason)
+                    return {"status": "blocked", "reason": f"send_gate:{_reason}",
+                            "email": to_email}
+            except Exception:
+                logger.debug("Send gate unavailable, failing open", exc_info=True)
 
             domain = await domain_service.get_by_id(session, selected_domain_id)
             if not domain:
