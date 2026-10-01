@@ -85,6 +85,13 @@ def _jitter(base_seconds: int) -> int:
     return base_seconds + random.randint(-delta, delta)
 
 
+async def _list_unsubscribe(campaign_id: str, prospect_id: str) -> str:
+    """Return the one-click unsubscribe URL for the RFC 8058 List-Unsubscribe
+    header. Reuses the same signed tracking URL the HTML link uses."""
+    urls = await tracking_service.generate_tracking_urls(campaign_id, prospect_id)
+    return urls.get("unsubscribe_url", "")
+
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def send_email_task(
     self,
@@ -115,7 +122,18 @@ def send_email_task(
                 logger.warning("Skipping %s: %s", to_email, check["reason"])
                 return {"skipped": True, "reason": check["reason"]}
 
-            # ── 1b. Per-destination throttle ──────────────────────────────
+            # ── 1b. Suppression gate ──────────────────────────────────────
+            # Never email an opted-out / hard-bounced address, regardless of
+            # which campaign first suppressed it. Team-scoped and
+            # person-aware (ported from PR #1/#3 onto this Postfix path).
+            from app.services.suppression_service import suppression_service
+            if await suppression_service.is_suppressed(
+                session, prospect.get("team_id"), to_email,
+                person_id=prospect.get("person_id"),
+            ):
+                return {"status": "skipped", "reason": "suppressed", "email": to_email}
+
+            # ── 1c. Per-destination throttle ──────────────────────────────
             from app.services.destination_throttle import can_send as _throttle_ok
             if not await _throttle_ok(to_email):
                 raise self.retry(
@@ -167,6 +185,33 @@ def send_email_task(
                 except Exception:
                     logger.debug("Tracking setup failed, sending without tracking", exc_info=True)
 
+            # ── 4b. InboxLint pre-send gate ───────────────────────────────
+            # Runs AFTER tracking injection so the linter sees the real body
+            # (links wrapped, unsubscribe appended). block -> do not send;
+            # warn/pass -> proceed. Fail-open by design: a linter error never
+            # blocks a legitimate send, it only logs.
+            try:
+                from app.services.inboxlint import lint as _inbox_lint
+                _report = _inbox_lint(
+                    subject, final_html,
+                    has_unsubscribe=bool(unsubscribe_url),
+                    has_physical_address=True,
+                    is_cold=True,
+                )
+                if _report.level == "block":
+                    logger.warning(
+                        "InboxLint blocked send to %s: %s",
+                        to_email, _report.to_dict().get("issues"),
+                    )
+                    return {
+                        "status": "blocked",
+                        "reason": "inboxlint",
+                        "email": to_email,
+                        "issues": _report.to_dict()["issues"],
+                    }
+            except Exception:
+                logger.debug("InboxLint gate errored, failing open", exc_info=True)
+
             # ── 5. Build + submit ─────────────────────────────────────────
             # Strip HTML tags for plain-text fallback
             import re
@@ -188,6 +233,21 @@ def send_email_task(
             # ── 6. Post-send accounting ───────────────────────────────────
             await domain_service.increment_sent_count(session, selected_domain_id)
             await prospect_service.update_send_status(session, prospect_id, message_id)
+
+            # Publish to the suite event bus (best-effort, never fail a send).
+            try:
+                from app.services.events import EmailEventType, emit
+                await emit(
+                    EmailEventType.SENT,
+                    person_id=prospect.get("person_id"),
+                    account_id=prospect.get("account_id"),
+                    campaign_id=campaign_id,
+                    send_log_id=message_id,
+                    team_id=str(prospect.get("team_id") or ""),
+                    email=to_email,
+                )
+            except Exception:
+                logger.debug("Event bus emit failed after send", exc_info=True)
 
             logger.info("Sent to %s via %s (msg=%s)", to_email, domain_name, message_id)
             return {"success": True, "message_id": message_id, "domain": domain_name}

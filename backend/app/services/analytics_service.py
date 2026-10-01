@@ -2,7 +2,7 @@
 Analytics service for tracking and aggregating email metrics.
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from datetime import datetime, timedelta

@@ -56,6 +56,9 @@ aiofiles>=23.0.0
 # CSV processing
 pandas>=2.0.0
 
+# Date parsing in analytics_service (imported directly, not only via pandas)
+python-dateutil>=2.8.2
+
 # Timezone detection
 pytz>=2024.1
 timezonefinder>=6.0.0

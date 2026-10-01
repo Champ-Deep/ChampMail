@@ -13,6 +13,7 @@ import (
 
 	"github.com/champmail/mail-engine/internal/config"
 	"github.com/champmail/mail-engine/internal/db"
+	"github.com/champmail/mail-engine/internal/mailer"
 	"github.com/champmail/mail-engine/internal/models"
 	"github.com/gin-gonic/gin"
 )
@@ -265,15 +266,55 @@ func (h *SendHandler) processSend(sendLog db.SendLog, req models.SendEmailReques
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	updateQuery := `
-		UPDATE send_logs SET status = $1, sent_at = NOW() WHERE id = $2
-	`
-	h.db.ExecContext(ctx, updateQuery, "sent", sendLog.ID)
+	// Fetch the sending domain's DKIM material so the message (incl. the
+	// List-Unsubscribe one-click headers) is signed under d=<domain>.
+	var domainName, selector, privateKey string
+	_ = h.db.QueryRowContext(ctx,
+		"SELECT domain_name, dkim_selector, dkim_private_key FROM domains WHERE id = $1",
+		sendLog.DomainID,
+	).Scan(&domainName, &selector, &privateKey)
 
-	stats := db.NewDomainStats(h.redis)
-	stats.IncrementSent(ctx, sendLog.DomainID)
+	from := sendLog.FromAddress
+	if from == "" && domainName != "" {
+		from = "noreply@" + domainName
+	}
 
-	log.Printf("Email sent to %s (message_id: %s)", sendLog.Recipient, sendLog.MessageID)
+	msg := &mailer.Message{
+		From:         from,
+		To:           req.To,
+		Subject:      req.Subject,
+		HTMLBody:     req.HTMLBody,
+		TextBody:     req.TextBody,
+		ReplyTo:      req.ReplyTo,
+		MessageID:    sendLog.MessageID,
+		Domain:       domainName,
+		ExtraHeaders: req.Headers, // carries List-Unsubscribe + List-Unsubscribe-Post
+	}
+
+	raw, err := mailer.BuildAndSign(msg, selector, privateKey)
+	if err != nil {
+		log.Printf("build/sign failed for %s: %v", sendLog.MessageID, err)
+		h.db.ExecContext(ctx, `UPDATE send_logs SET status = 'failed' WHERE id = $1`, sendLog.ID)
+		return
+	}
+
+	res := mailer.Deliver(h.cfg.SMTPRelayAddr, from, req.To, raw)
+	status := "sent"
+	switch {
+	case res.Err != nil:
+		status = "failed"
+		log.Printf("delivery failed for %s: %v", sendLog.MessageID, res.Err)
+	case res.DryRun:
+		log.Printf("DRY-RUN (no relay): built+DKIM-signed %d-byte message to %s (message_id: %s); set CHAMPMAIL_SMTP_RELAY to deliver",
+			len(raw), req.To, sendLog.MessageID)
+	default:
+		log.Printf("Email relayed to %s (message_id: %s)", req.To, sendLog.MessageID)
+	}
+
+	h.db.ExecContext(ctx, `UPDATE send_logs SET status = $1, sent_at = NOW() WHERE id = $2`, status, sendLog.ID)
+	if status == "sent" {
+		db.NewDomainStats(h.redis).IncrementSent(ctx, sendLog.DomainID)
+	}
 }
 
 func (h *SendHandler) getSendLog(ctx context.Context, messageID string) (*db.SendLog, error) {

@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from typing import Optional, List
 from pydantic import BaseModel, EmailStr
 from datetime import datetime
+import logging
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +35,20 @@ class SendEmailResponse(BaseModel):
     status: str
     domain_id: str
     sent_at: datetime
+    quality_score: Optional[float] = None   # Lavender-style pre-send score 0..1
+    quality_grade: Optional[str] = None     # A..F
+
+
+def _score_message(subject: str, html_body: str, text_body: Optional[str]):
+    """Non-blocking pre-send quality score. Returns (score, grade) or (None, None)."""
+    try:
+        from app.services.message_scorer import score_email
+        import re as _re
+        body = text_body or _re.sub(r"<[^>]+>", " ", html_body or "")
+        s = score_email(subject or "", body)
+        return s.score, s.grade
+    except Exception:
+        return None, None
 
 
 class BatchSendRequest(BaseModel):
@@ -66,6 +83,14 @@ async def send_email(
     user: TokenData = Depends(require_auth),
     session: AsyncSession = Depends(get_db_session),
 ):
+    # Pre-send quality score (non-blocking; logs, never blocks a send).
+    q_score, q_grade = _score_message(request.subject, request.html_body, request.text_body)
+    if q_grade == "F":
+        logger.warning(
+            "Low-quality send (grade F, score %.2f) to %s (subject=%r)",
+            q_score or 0.0, request.to, request.subject,
+        )
+
     result = await email_service.send_email(
         session=session,
         user_id=str(user.user_id),
@@ -92,6 +117,8 @@ async def send_email(
         status="sent",
         domain_id=request.domain_id or "",
         sent_at=datetime.utcnow(),
+        quality_score=q_score,
+        quality_grade=q_grade,
     )
 
 

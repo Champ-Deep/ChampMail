@@ -84,7 +84,12 @@ class EmailValidator:
         if session:
             try:
                 from app.services.suppression_service import suppression_service
-                if await suppression_service.is_suppressed(session, email):
+                # team_id=None restricts the check to GLOBAL suppressions only.
+                # The merged service signature is (session, team_id, email,
+                # person_id=None); the old 2-arg call raised TypeError and was
+                # swallowed by the except below, so the suppression check never
+                # actually ran here.
+                if await suppression_service.is_suppressed(session, None, email):
                     return {"valid": False, "reason": "on suppression list"}
             except Exception:
                 pass  # Don't block if suppression service unavailable

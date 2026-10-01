@@ -30,6 +30,11 @@ type Config struct {
 	DKIMDomain         string
 	DKIMPrivateKeyPath string
 
+	// SMTPRelayAddr is the submission relay (Stalwart/Postfix) the engine hands
+	// signed messages to, e.g. "127.0.0.1:587". Empty = dry-run (dev, no MTA):
+	// messages are built + DKIM-signed but not relayed.
+	SMTPRelayAddr string
+
 	DailySendLimit      int
 	RateLimitPerSecond  int
 	BounceCheckInterval time.Duration
@@ -61,6 +66,7 @@ func Load() (*Config, error) {
 		DKIMSelector:       getEnv("DKIM_SELECTOR", "champmail"),
 		DKIMDomain:         getEnv("DKIM_DOMAIN", "champmail.com"),
 		DKIMPrivateKeyPath: getEnv("DKIM_PRIVATE_KEY_PATH", "/etc/champmail/dkim/private.pem"),
+		SMTPRelayAddr:      getEnv("CHAMPMAIL_SMTP_RELAY", ""),
 
 		DailySendLimit:      getEnvAsInt("DAILY_SEND_LIMIT", 1000),
 		RateLimitPerSecond:  getEnvAsInt("RATE_LIMIT_PER_SECOND", 10),

@@ -40,6 +40,9 @@ class Domain(Base):
     sent_today = Column(Integer, default=0)
     warmup_enabled = Column(Boolean, default=True)
     warmup_day = Column(Integer, default=0)
+    # Dedicated sending IP — reputation is owned per-IP, so the ramp-governor keys
+    # on this, not only the domain (plan H).
+    sending_ip = Column(String(45), nullable=True)  # 45 = max IPv6 textual length
 
     # External integrations
     namecheap_domain_id = Column(String(255), nullable=True)
