@@ -78,6 +78,7 @@ def _eligible(now: datetime, today: date):
         or_(EmailAccount.next_send_at.is_(None), EmailAccount.next_send_at <= now),
         Domain.paused.is_not(True),
         Domain.blacklisted.is_not(True),
+        Domain.send_status == "active",
         Domain.status.not_in(("paused", "retired")),
         func.coalesce(Domain.tracking_subdomain, "") != "",
     )
@@ -230,6 +231,8 @@ async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
     for box, dom in rows:
         if box.status in ("paused", "retired") or not box.is_active:
             r = (0, SendRefused(409, f"mailbox_{box.status}", f"mailbox is {box.status if box.is_active else 'inactive'}"))
+        elif dom.send_status != "active":
+            r = (0, SendRefused(409, f"domain_{dom.send_status}", f"domain is {dom.send_status}"))
         elif dom.paused or dom.blacklisted or dom.status in ("paused", "retired"):
             why = "blacklisted" if dom.blacklisted else (dom.status if dom.status in ("paused", "retired") else "paused")
             r = (0, SendRefused(409, f"domain_{why}", f"domain is {why}"))

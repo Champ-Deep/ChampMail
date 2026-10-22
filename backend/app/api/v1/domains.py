@@ -190,7 +190,7 @@ async def patch_domain(domain_id: str, body: StatusPatch, session: AsyncSession 
         raise HTTPException(404, "domain not found")
     if d.send_status == "retired" and body.status != "retired":
         raise HTTPException(409, "retired is terminal")
-    # The send path reads the mailbox's own status, so the domain gate is pushed down to it.
+    # Cascade for mailbox consumers; the atomic send claim also enforces the domain gate.
     # Re-activating only releases mailboxes this gate itself held (same reason), not ones
     # paused or quarantined for another cause.
     q = update(EmailAccount).where(EmailAccount.domain_id == d.id, EmailAccount.status != "retired")
