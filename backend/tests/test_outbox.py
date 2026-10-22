@@ -6,7 +6,6 @@ before the POST was gone for good. Here the same fault leaves a leased row that 
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 from datetime import datetime, timedelta
 
@@ -135,7 +134,7 @@ def test_transient_failure_persists_backoff_and_retries_after_it(receiver):
 
 
 def test_permanent_4xx_goes_dead_without_retry_and_other_4xx_retries(receiver):
-    rcv = receiver(script=[422, 401])
+    receiver(script=[422, 401])
 
     async def go(Session):
         a, b = await fixture_dispatch(Session), await fixture_dispatch(Session)

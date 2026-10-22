@@ -15,7 +15,6 @@ import app.db.postgres as pg
 from app.api.v1 import inboxkit_webhooks as wh
 from app.api.v1.deps import get_session
 from app.main import app
-from app.models.domain import Domain
 from app.models.email_account import EmailAccount
 
 IK = "https://api.inboxkit.com/v1/api"

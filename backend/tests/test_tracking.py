@@ -5,7 +5,6 @@ the real app, so none of these URLs ever produced an event.
 """
 from __future__ import annotations
 
-import html as htmllib
 import os
 import re
 from urllib.parse import urlsplit

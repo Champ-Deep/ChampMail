@@ -148,7 +148,7 @@ def test_gate5_auth_failure_on_the_real_server_pauses_only_that_mailbox_and_the_
 
     async def go(Session):
         dom, _ = await seed(Session)
-        locked = await add_box(Session, dom, "locked", password="wrong-password")
+        await add_box(Session, dom, "locked", password="wrong-password")
         a3 = await add_box(Session, dom, "a3")
         mid = await add_dispatch(Session, dom, a3, message_id=f"hard-{uuid.uuid4().hex[:8]}@champmail.test")
         deliver("a3", dsn("5.1.1", orig_id=f"<{mid}>"))

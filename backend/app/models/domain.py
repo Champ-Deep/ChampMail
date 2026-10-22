@@ -8,7 +8,6 @@ no teams table, and the DNS checker still lives on the v2 side.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, Float

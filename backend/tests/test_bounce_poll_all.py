@@ -2,7 +2,6 @@
 
 The real-server version of this lives in test_gate5_imap.py.
 """
-import asyncio
 import imaplib
 import os
 import uuid
