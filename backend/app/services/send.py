@@ -5,6 +5,8 @@ plus up to 90s jitter between sends from one mailbox.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import random
 import re
 from dataclasses import dataclass
@@ -17,10 +19,11 @@ from uuid import UUID
 
 import aiosmtplib
 from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import decrypt_secret
-from app.models import Domain, EmailAccount
+from app.models import Domain, EmailAccount, SendDispatch
 
 MIN_GAP_S = 45
 JITTER_S = 90
@@ -32,6 +35,14 @@ class SendRefused(Exception):
     def __init__(self, status: int, code: str, detail: str, retry_after: Optional[int] = None):
         super().__init__(detail)
         self.status, self.code, self.detail, self.retry_after = status, code, detail, retry_after
+
+
+class DuplicateKey(Exception):
+    """The idempotency key (or the failed row being retried) was taken by another request first."""
+
+
+class NotAttempted(Exception):
+    """Failed before any network I/O (e.g. credential decryption), so nothing was submitted."""
 
 
 def _now() -> datetime:
@@ -46,6 +57,8 @@ def random_gap_s() -> float:
 class Claimed:
     mailbox: EmailAccount
     domain: Domain
+    message_id: str = ""
+    dispatch_id: Optional[UUID] = None
 
 
 def _eligible(now: datetime, today: date):
@@ -90,6 +103,9 @@ async def claim_mailbox(
     brand_id: Optional[str] = None,
     domain_id: Optional[UUID] = None,
     gap_s: Callable[[], float] = random_gap_s,
+    idempotency_key: Optional[str] = None,
+    payload_hash: str = "",
+    retry_dispatch_id: Optional[UUID] = None,
 ) -> Claimed:
     """Claim one send slot in a single UPDATE ... WHERE under-cap RETURNING.
 
@@ -97,7 +113,12 @@ async def claim_mailbox(
     picks use SKIP LOCKED so concurrent claimers fan out over different mailboxes;
     a named mailbox waits for the lock and is re-checked, so the cap stays exact. The
     outer UPDATE repeats the eligibility test, so a row that stopped being
-    eligible between pick and write is not claimed. Commits on success.
+    eligible between pick and write is not claimed.
+
+    The slot and the send_dispatches row (message identity, mailbox, domain, key) commit in ONE
+    transaction, before SMTP. A concurrent request with the same idempotency_key loses on the
+    unique index, rolls its slot back and raises DuplicateKey; `retry_dispatch_id` re-uses a
+    `failed` row instead of inserting (DuplicateKey if someone else already retried it).
     """
     now = _now()
     today = now.date()
@@ -127,21 +148,71 @@ async def claim_mailbox(
     if claimed_id is None:
         await session.rollback()
         raise await _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
-    await session.commit()
     box = (await session.execute(select(EmailAccount).where(EmailAccount.id == claimed_id))).scalar_one()
     dom = (await session.execute(select(Domain).where(Domain.id == box.domain_id))).scalar_one()
-    return Claimed(box, dom)
+    message_id = make_msgid(domain=(box.from_email or box.email).rsplit("@", 1)[-1]).strip("<>")
+    try:
+        if retry_dispatch_id:
+            reused = await session.execute(
+                update(SendDispatch)
+                .where(SendDispatch.id == retry_dispatch_id, SendDispatch.status == "failed")
+                .values(message_id=message_id, mailbox_id=box.id, domain_id=dom.id, status="sending",
+                        response=None, updated_at=now)
+                .returning(SendDispatch.id)
+            )
+            if reused.scalar_one_or_none() is None:
+                raise DuplicateKey()
+            dispatch_id = retry_dispatch_id
+        else:
+            row = SendDispatch(message_id=message_id, domain_id=dom.id, mailbox_id=box.id,
+                               idempotency_key=idempotency_key, payload_hash=payload_hash, status="sending")
+            session.add(row)
+            await session.flush()
+            dispatch_id = row.id
+        await session.commit()
+    except (IntegrityError, DuplicateKey) as e:
+        await session.rollback()
+        if isinstance(e, IntegrityError) and not idempotency_key:
+            raise
+        raise DuplicateKey() from None
+    return Claimed(box, dom, message_id, dispatch_id)
 
 
-async def release_claim(session: AsyncSession, mailbox_id: UUID) -> None:
-    """Give the slot back after an SMTP failure; the throttle stays as backoff."""
-    today = _now().date()
+def payload_fingerprint(body: dict) -> str:
+    """Hash of the logical request, for idempotency CONFLICT detection only (never a dedupe key)."""
+    return hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+async def find_dispatch(session: AsyncSession, key: str) -> Optional[SendDispatch]:
+    # Fresh read: the row may have been written by a request that committed after our transaction began.
+    await session.rollback()
+    return (await session.execute(select(SendDispatch).where(SendDispatch.idempotency_key == key))).scalar_one_or_none()
+
+
+async def finish_dispatch(session: AsyncSession, dispatch_id: UUID, status: str, *,
+                          response: Optional[dict] = None, release_mailbox: Optional[UUID] = None) -> None:
+    """Record the SMTP outcome. Only a definite refusal (`failed`) gives the cap slot back."""
     await session.execute(
-        update(EmailAccount)
-        .where(EmailAccount.id == mailbox_id, EmailAccount.sent_today_date == today, EmailAccount.sent_today > 0)
-        .values(sent_today=EmailAccount.sent_today - 1)
+        update(SendDispatch).where(SendDispatch.id == dispatch_id).values(status=status, response=response, updated_at=_now())
     )
+    if release_mailbox:
+        await session.execute(
+            update(EmailAccount)
+            .where(EmailAccount.id == release_mailbox, EmailAccount.sent_today_date == _now().date(), EmailAccount.sent_today > 0)
+            .values(sent_today=EmailAccount.sent_today - 1)
+        )
     await session.commit()
+
+
+def is_definite_refusal(exc: BaseException) -> bool:
+    """True only when the message provably was NOT accepted (safe to retry).
+
+    Connect failures, auth/sender/recipient refusals and explicit 4xx/5xx replies qualify.
+    Timeouts, disconnects and anything unrecognised may have happened after the server took the
+    message, so they are ambiguous: the slot stays spent and nothing is retransmitted.
+    """
+    return isinstance(exc, (NotAttempted, aiosmtplib.SMTPConnectError, aiosmtplib.SMTPResponseException,
+                            aiosmtplib.SMTPRecipientsRefused, aiosmtplib.SMTPNotSupported))
 
 
 async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today) -> SendRefused:
@@ -157,10 +228,10 @@ async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
     best: tuple[int, SendRefused] = (-1, SendRefused(404, "no_mailbox", "no mailbox matches the request"))
     for box, dom in rows:
         if box.status in ("paused", "retired") or not box.is_active:
-            r = (0, SendRefused(403, f"mailbox_{box.status}", f"mailbox is {box.status if box.is_active else 'inactive'}"))
+            r = (0, SendRefused(409, f"mailbox_{box.status}", f"mailbox is {box.status if box.is_active else 'inactive'}"))
         elif dom.paused or dom.blacklisted or dom.status in ("paused", "retired"):
             why = "blacklisted" if dom.blacklisted else (dom.status if dom.status in ("paused", "retired") else "paused")
-            r = (0, SendRefused(403, f"domain_{why}", f"domain is {why}"))
+            r = (0, SendRefused(409, f"domain_{why}", f"domain is {why}"))
         elif not box.smtp_host or not box.smtp_password_encrypted:
             r = (1, SendRefused(409, "no_smtp_credentials", "mailbox has no SMTP credentials"))
         elif not (dom.tracking_subdomain or "").strip():
@@ -199,15 +270,15 @@ def build_message(
     if not host:  # defense in depth; the claim already excludes this
         raise SendRefused(500, "tracking_subdomain_missing", f"domain {dom.domain_name} has no tracking subdomain")
     address = box.from_email or box.email
-    message_id = make_msgid(domain=address.rsplit("@", 1)[-1])
-    token = quote(message_id.strip("<>"), safe="")
+    message_id = claimed.message_id
+    token = quote(message_id, safe="")
 
     msg = EmailMessage()
     msg["From"] = formataddr((from_name or box.from_name or "", address))
     msg["To"] = to
     msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=False)
-    msg["Message-ID"] = message_id
+    msg["Message-ID"] = f"<{message_id}>"
     if reply_to or box.reply_to_email:
         msg["Reply-To"] = reply_to or box.reply_to_email
     if unsubscribe_url:  # RFC 8058 one-click
@@ -222,11 +293,14 @@ def build_message(
         if track_opens:
             html += f'<img src="https://{host}/o/{token}.gif" width="1" height="1" alt="" style="display:none">'
         msg.add_alternative(html, subtype="html")
-    return msg, message_id.strip("<>")
+    return msg, message_id
 
 
 async def submit_smtp(box: EmailAccount, msg: EmailMessage) -> None:
-    password = decrypt_secret(box.smtp_password_encrypted)
+    try:
+        password = decrypt_secret(box.smtp_password_encrypted)
+    except Exception as e:
+        raise NotAttempted(type(e).__name__) from e
     port = box.smtp_port or 587
     await aiosmtplib.send(
         msg,

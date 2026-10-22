@@ -11,3 +11,5 @@ os.environ.setdefault("CHAMPMAIL_ENV", "development")
 os.environ["CHAMPMAIL_API_KEY"] = ""  # keyless unless a test sets its own
 os.environ["INBOXKIT_API_KEY"] = "test-key"
 os.environ["INBOXKIT_WORKSPACE_ID"] = "ws_test"
+# Blank or missing is a startup error now; the stack's value (if any) is kept.
+os.environ["EMAIL_ENCRYPTION_KEY"] = os.environ.get("EMAIL_ENCRYPTION_KEY", "").strip() or "test-encryption-key"

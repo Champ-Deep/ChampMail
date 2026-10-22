@@ -1,6 +1,7 @@
 """Async Redis client (lifted from v2, trimmed to what the webhook ingress needs)."""
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 import redis.asyncio as aioredis
@@ -23,6 +24,10 @@ class RedisClient:
                 retry_on_timeout=True,
             )
         return self._client
+
+    async def ping(self, timeout: float = 3) -> None:
+        """Raises if Redis is unreachable; the send path pauses on it (spec 3.12)."""
+        await asyncio.wait_for((await self._get_client()).ping(), timeout)
 
     async def close(self) -> None:
         if self._client is not None:

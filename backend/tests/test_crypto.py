@@ -1,5 +1,4 @@
 """Credential encryption at rest: key from env only, fail closed, round-trips."""
-import os
 
 import pytest
 
@@ -8,6 +7,12 @@ from app.crypto import decrypt_secret, encrypt_secret
 
 def test_missing_key_fails_closed(monkeypatch):
     monkeypatch.delenv("EMAIL_ENCRYPTION_KEY", raising=False)
+    with pytest.raises(RuntimeError, match="EMAIL_ENCRYPTION_KEY"):
+        encrypt_secret("hunter2")
+
+
+def test_whitespace_key_fails_closed(monkeypatch):
+    monkeypatch.setenv("EMAIL_ENCRYPTION_KEY", "  ")
     with pytest.raises(RuntimeError, match="EMAIL_ENCRYPTION_KEY"):
         encrypt_secret("hunter2")
 

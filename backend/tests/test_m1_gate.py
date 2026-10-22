@@ -17,7 +17,6 @@ import respx
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from app.crypto import encrypt_secret
 
 if os.environ.get("M1_GATE") != "1":
     pytest.skip("live-stack gate, set M1_GATE=1", allow_module_level=True)
@@ -155,7 +154,7 @@ def test_g5_paused_and_retired_are_refused(api):
         assert api.patch(f"/api/v1/mailboxes/{sam}", headers=KEY, json={"status": status, "reason": "gate"}).status_code == 200
         r = send(api, mailbox_id=sam)
         out[f"mailbox {status}"] = (r.status_code, r.json()["code"])
-        assert r.status_code == 403 and r.json()["code"] == f"mailbox_{status}"
+        assert r.status_code == 409 and r.json()["code"] == f"mailbox_{status}"
     # domain level: mailboxes left active, only the domain gate is closed (the path auto-pause takes)
     sql("UPDATE email_accounts SET status='active', daily_send_limit=30")
     dom = sql("SELECT id::text FROM domains WHERE domain_name=:d", d=A)[0][0]
@@ -165,7 +164,7 @@ def test_g5_paused_and_retired_are_refused(api):
         if code:
             r = send(api, domain_id=dom)
             out[f"domain {col}={val}"] = (r.status_code, r.json()["code"])
-            assert r.status_code == 403 and r.json()["code"] == code
+            assert r.status_code == 409 and r.json()["code"] == code
     # operator PATCH on the domain cascades and also refuses
     sql("UPDATE domains SET status='verified' WHERE domain_name=:d", d=A)
     sql("UPDATE email_accounts SET status='active'")
@@ -173,7 +172,7 @@ def test_g5_paused_and_retired_are_refused(api):
     unthrottle()
     r = send(api, domain_id=dom)
     out["PATCH domain paused"] = (r.status_code, r.json()["code"])
-    assert r.status_code == 403
+    assert r.status_code == 409
     print("refusals ->", json.dumps(out, indent=1))
     assert mailpit_count() == before  # nothing reached SMTP
 

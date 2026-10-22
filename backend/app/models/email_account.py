@@ -9,7 +9,6 @@ EMAIL_ENCRYPTION_KEY only).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
 import uuid
 
 from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text
@@ -63,7 +62,8 @@ class EmailAccount(Base):
     # * once the authenticated GET /mailboxes/show-credentials call has
     # * succeeded and the (encrypted) creds are on this row — never trust
     # * creds arriving in the webhook payload itself.
-    inboxkit_uid = Column(String(255), nullable=True, index=True)
+    # Unique (0006): provider mailbox identity, so concurrent webhook imports upsert one row.
+    inboxkit_uid = Column(String(255), nullable=True, unique=True, index=True)
     inboxkit_workspace_uid = Column(String(255), nullable=True)
     platform = Column(String(32), nullable=True)  # google | microsoft | azure | smtp
     credentials_persisted = Column(Boolean, default=False)

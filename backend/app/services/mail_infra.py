@@ -180,8 +180,8 @@ class MailInfraProvider(ABC):
         ...
 
     @abstractmethod
-    async def get_domain(self, uid: str) -> Optional[DomainRecord]:
-        """Fetch authoritative state for one domain."""
+    async def get_domain(self, uid: str, *, strict: bool = False) -> Optional[DomainRecord]:
+        """Fetch authoritative state for one domain. strict=True raises on provider/API failure instead of returning None."""
         ...
 
     # --- Mailbox lifecycle ------------------------------------------------
@@ -194,8 +194,8 @@ class MailInfraProvider(ABC):
         ...
 
     @abstractmethod
-    async def get_mailbox(self, uid: str) -> Optional[MailboxRecord]:
-        """Fetch authoritative state for one mailbox (re-fetch pattern)."""
+    async def get_mailbox(self, uid: str, *, strict: bool = False) -> Optional[MailboxRecord]:
+        """Fetch authoritative state for one mailbox (re-fetch pattern). strict=True raises on provider/API failure instead of returning None."""
         ...
 
     @abstractmethod

@@ -70,13 +70,15 @@ class InboxKitProvider(MailInfraProvider):
             workspace_uid=self._client._workspace_id,
         )
 
-    async def get_domain(self, uid: str) -> Optional[DomainRecord]:
+    async def get_domain(self, uid: str, *, strict: bool = False) -> Optional[DomainRecord]:
         # InboxKit has get-domain-details; we use the status batch endpoint
         # with domain_uids to fetch authoritative state without needing the
         # dedicated path (keeps the client surface small).
         try:
             resp = await self._client.mailbox_status(domain_uids=[uid])
         except InboxKitAPIError as e:
+            if strict:  # webhook re-fetch: an API failure is not "not found", the caller must retry
+                raise
             logger.warning("inboxkit get_domain %s failed: %s", uid, e)
             return None
         domains = resp.get("domains") or []
@@ -125,10 +127,12 @@ class InboxKitProvider(MailInfraProvider):
             workspace_uid=self._client._workspace_id,
         )
 
-    async def get_mailbox(self, uid: str) -> Optional[MailboxRecord]:
+    async def get_mailbox(self, uid: str, *, strict: bool = False) -> Optional[MailboxRecord]:
         try:
             resp = await self._client.mailbox_status(uids=[uid])
         except InboxKitAPIError as e:
+            if strict:
+                raise
             logger.warning("inboxkit get_mailbox %s failed: %s", uid, e)
             return None
         mailboxes = resp.get("mailboxes") or []
@@ -165,7 +169,7 @@ class InboxKitProvider(MailInfraProvider):
         secret = resp.get("secret")
 
         # Fetch the mailbox to learn platform + email.
-        mb = await self.get_mailbox(uid)
+        mb = await self.get_mailbox(uid, strict=True)  # a failed lookup must not silently pick Google's transport
         platform = (mb.platform if mb else "google") or "google"
         email_addr = (mb.email if mb else "") or resp.get("email", "")
 
@@ -178,7 +182,7 @@ class InboxKitProvider(MailInfraProvider):
 
         return MailboxCredentials(
             email=email_addr,
-            username=email_addr or smtp_password,
+            username=email_addr,
             password=smtp_password,
             app_password=app_password,
             secret=secret,

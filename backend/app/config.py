@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     champmail_api_key: str = ""
     champmail_webhook_secret: str = ""
+    # Required in every environment: a process-local key would write credentials nobody can decrypt later.
+    email_encryption_key: str = ""
     # Base URL of the client (Harbinger) that receives POST <url>/api/email/track events.
     champmail_client_url: str = ""
 
@@ -31,6 +33,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def fail_closed_in_production(self):
+        if not self.email_encryption_key.strip():
+            raise ValueError("unset: EMAIL_ENCRYPTION_KEY")
         if self.champmail_env.strip().lower() in ("production", "prod"):
             missing = [
                 n

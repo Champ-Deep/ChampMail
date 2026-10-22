@@ -35,7 +35,6 @@ from pydantic import BaseModel
 from app.config import get_settings
 from app.crypto import encrypt_secret
 from app.db.redis import redis_client
-from app.services.inboxkit.client import InboxKitAPIError
 from app.services.inboxkit.provider import InboxKitProvider
 from app.services.inboxkit.states import to_logical_state, LogicalState
 
@@ -156,9 +155,10 @@ async def inboxkit_webhook(
 ) -> dict:
     """Receive any of the 4 InboxKit webhook events.
 
-    Always returns 2xx within 30s (per InboxKit's contract). Errors are
-    logged, not raised — a 5xx triggers InboxKit's retry loop, which we
-    only want for transient failures we can actually fix by retrying.
+    Permanent problems (bad signature, malformed or stale body) are 4xx and
+    never retried. Anything that failed while re-fetching or persisting is a
+    503: InboxKit retries it, and the dedupe value is only written after commit,
+    so the retry runs the whole import again.
     """
     raw = await request.body()
 
@@ -207,10 +207,8 @@ async def inboxkit_webhook(
     except HTTPException:
         raise
     except Exception as e:
-        # Unexpected error — log and return 200 so InboxKit doesn't retry
-        # forever; the re-fetch on the next event will reconcile state.
-        logger.exception("inboxkit webhook handler crashed for %s: %s", event, e)
-        result = {"status": "error", "detail": str(e)}
+        logger.exception("inboxkit webhook handler failed for %s", event)
+        raise HTTPException(status_code=503, detail="temporary failure, retry") from e
 
     response.status_code = 200
     return {"status": "processed", "event": event, "result": result}
@@ -252,10 +250,10 @@ async def _on_domain_status_changed(data: dict[str, Any]) -> dict[str, Any]:
 
     # RE-FETCH authoritative state — never trust the webhook body.
     provider = InboxKitProvider()
-    record = await provider.get_domain(uid)
+    record = await provider.get_domain(uid, strict=True)  # API failure raises -> 503 -> InboxKit retries
     if record is None:
-        logger.warning("inboxkit re-fetch failed for domain %s; treating webhook as hint only", uid)
-        return {"status": "refetch_failed", "uid": uid}
+        logger.warning("inboxkit has no domain %s; webhook ignored", uid)
+        return {"status": "not_found", "uid": uid}
 
     # Persist the logical state onto the local Domain row.
     await _persist_domain_state(record)
@@ -285,10 +283,10 @@ async def _on_mailbox_status_changed(data: dict[str, Any]) -> dict[str, Any]:
         return {"status": "duplicate", "uid": uid}
 
     provider = InboxKitProvider()
-    record = await provider.get_mailbox(uid)
+    record = await provider.get_mailbox(uid, strict=True)
     if record is None:
-        logger.warning("inboxkit re-fetch failed for mailbox %s; treating webhook as hint only", uid)
-        return {"status": "refetch_failed", "uid": uid}
+        logger.warning("inboxkit has no mailbox %s; webhook ignored", uid)
+        return {"status": "not_found", "uid": uid}
 
     logical = to_logical_state(record.native_status)
 
@@ -296,11 +294,7 @@ async def _on_mailbox_status_changed(data: dict[str, Any]) -> dict[str, Any]:
     # authenticated call and write them with the row, in one transaction.
     creds = None
     if logical == LogicalState.READY:
-        try:
-            creds = await provider.get_credentials(uid)
-        except InboxKitAPIError as e:
-            logger.error("inboxkit credential re-fetch failed for %s: %s", uid, e)
-            return {"status": "credential_refetch_failed", "uid": uid}
+        creds = await provider.get_credentials(uid)  # failure raises -> 503; never imported without them
 
     await _persist_mailbox(record, creds)
     await _mark_seen(key)
@@ -413,23 +407,36 @@ async def _persist_mailbox(record, creds) -> None:
     land on a row that was not committed, and any failure propagates so the
     caller leaves the dedupe value unset and the event stays retryable.
 
+    inboxkit_uid is unique (0006). A concurrent first import loses the insert
+    inside a savepoint and falls through to the update path, so there is
+    exactly one row. A partial provider record never blanks stored values.
+
     The password is encrypted with app.crypto.encrypt_secret (key from env
     only) into smtp_password_encrypted / imap_password_encrypted — never
     stored in plaintext at rest.
     """
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+
     from app.db.postgres import async_session_maker
     from app.models.domain import Domain
     from app.models.email_account import EmailAccount
-    from sqlalchemy import select
+
+    async def existing(session):
+        return (await session.execute(
+            select(EmailAccount).where(EmailAccount.inboxkit_uid == record.uid)
+        )).scalar_one_or_none()
 
     async with async_session_maker() as session:
         domain_id = await _resolve_domain_id(session, record.domain_uid, record.domain_name)
-        stmt = select(EmailAccount).where(EmailAccount.inboxkit_uid == record.uid)
-        acc = (await session.execute(stmt)).scalar_one_or_none()
-        if acc is None:
+        acc = await existing(session)
+        created = acc is None
+        if created:
+            if not record.email:
+                raise ValueError(f"provider record for mailbox {record.uid} has no email")
             # New mailbox. `name` is NOT NULL and the provider record carries
             # no display name, so the address doubles as one.
-            acc = EmailAccount(
+            fresh = EmailAccount(
                 email=record.email,
                 name=record.email,
                 inboxkit_uid=record.uid,
@@ -444,22 +451,36 @@ async def _persist_mailbox(record, creds) -> None:
                     select(Domain.send_status, Domain.send_status_reason).where(Domain.id == domain_id)
                 )).one()
                 if gate.send_status != "active":
-                    acc.status, acc.status_reason = gate.send_status, gate.send_status_reason
-            session.add(acc)
-        else:
+                    fresh.status, fresh.status_reason = gate.send_status, gate.send_status_reason
+            try:
+                async with session.begin_nested():
+                    session.add(fresh)
+                    await session.flush()
+                acc = fresh
+            except IntegrityError:  # a concurrent import of the same mailbox committed first
+                acc, created = await existing(session), False
+                if acc is None:
+                    raise
+        if not created:
             acc.is_active = (record.status == "ready")
             if domain_id is not None:
                 acc.domain_id = domain_id
 
         if creds is not None:
-            token = encrypt_secret(creds.password or "")
-            acc.smtp_host = creds.smtp_host
-            acc.smtp_port = creds.smtp_port
-            acc.imap_host = creds.imap_host
-            acc.imap_port = creds.imap_port
-            acc.smtp_password_encrypted = token
-            acc.imap_password_encrypted = token
-            acc.credentials_persisted = True
+            if creds.password:
+                token = encrypt_secret(creds.password)
+                acc.smtp_password_encrypted = token
+                acc.imap_password_encrypted = token
+                acc.credentials_persisted = True
+            elif not acc.smtp_password_encrypted:
+                raise ValueError(f"provider returned no password for mailbox {record.uid}")
+            # Blank fields from a partial provider record keep what is stored.
+            if creds.smtp_host:
+                acc.smtp_host, acc.smtp_port = creds.smtp_host, creds.smtp_port
+            if creds.imap_host:
+                acc.imap_host, acc.imap_port = creds.imap_host, creds.imap_port
+            if creds.username:
+                acc.smtp_username = acc.imap_username = creds.username
 
         await session.commit()
 

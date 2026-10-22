@@ -10,6 +10,7 @@ import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import aiosmtplib
 import httpx
 import pytest
 from sqlalchemy import select
@@ -27,9 +28,15 @@ URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="TEST_DATABASE_URL not set")
 
 
+class RedisUp:
+    async def ping(self):
+        return True
+
+
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
     monkeypatch.setenv("EMAIL_ENCRYPTION_KEY", "test-encryption-key")
+    monkeypatch.setattr(send_api, "redis_client", RedisUp())  # Redis gate open; its own tests close it
 
 
 def run(coro_fn):
@@ -142,7 +149,7 @@ def test_paused_or_retired_are_refused_by_id_and_by_brand(box_kw, dom_kw, code):
                     await svc.claim_mailbox(s, **kw)
                 out.append((e.value.status, e.value.code))
         return out
-    assert run(go) == [(403, code)] * 2
+    assert run(go) == [(409, code)] * 2
 
 
 def test_missing_tracking_subdomain_is_a_hard_error_not_a_fallback():
@@ -268,7 +275,7 @@ def test_http_paused_mailbox_is_refused_and_smtp_not_called(api_key, monkeypatch
         return await http(Session, sent, headers={"X-API-Key": "secret"}, monkeypatch=monkeypatch,
                           body={**HARBINGER, "mailbox_id": str(mb)})
     r = run(go)
-    assert r.status_code == 403 and r.json()["code"] == "mailbox_paused" and sent == []
+    assert r.status_code == 409 and r.json()["code"] == "mailbox_paused" and sent == []
 
 
 def test_http_throttle_returns_429_with_retry_after_and_smtp_failure_releases_slot(api_key, monkeypatch):
@@ -278,7 +285,7 @@ def test_http_throttle_returns_429_with_retry_after_and_smtp_failure_releases_sl
         _, (mb,) = await seed(Session)
         h = {"X-API-Key": "secret"}
         bad = await http(Session, sent, headers=h, monkeypatch=monkeypatch, body={**HARBINGER, "brand_id": "b1"},
-                         smtp_error=OSError("down"))
+                         smtp_error=aiosmtplib.SMTPConnectError("down"))
         async with Session() as s:
             after_fail = (await s.execute(select(EmailAccount.sent_today))).scalar_one()
         # throttle stays as backoff after a failure, so the retry is told to wait

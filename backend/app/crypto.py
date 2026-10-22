@@ -17,7 +17,7 @@ from cryptography.fernet import Fernet
 
 def _fernet() -> Fernet:
     secret = os.environ.get("EMAIL_ENCRYPTION_KEY", "")
-    if not secret:
+    if not secret.strip():
         # Fail closed: minting a throwaway key here would write rows nobody
         # can decrypt after a restart.
         raise RuntimeError("EMAIL_ENCRYPTION_KEY is not set")

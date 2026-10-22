@@ -65,11 +65,11 @@ def test_webhook_handler(monkeypatch):
 
     class _StubProvider:
         """Stand-in for InboxKitProvider — no network, returns canned records."""
-        async def get_domain(self, uid):
+        async def get_domain(self, uid, strict=False):
             from app.services.mail_infra import DomainRecord
             return DomainRecord(uid=uid, name="sim.com", status="ready",
                                 native_status="active")
-        async def get_mailbox(self, uid):
+        async def get_mailbox(self, uid, strict=False):
             from app.services.mail_infra import MailboxRecord
             return MailboxRecord(uid=uid, email="agent@sim.com", status="ready",
                                  native_status="active", platform="google")
