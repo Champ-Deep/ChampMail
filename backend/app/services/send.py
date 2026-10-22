@@ -6,6 +6,7 @@ plus up to 90s jitter between sends from one mailbox.
 from __future__ import annotations
 
 import hashlib
+import html as htmllib
 import json
 import random
 import re
@@ -14,7 +15,6 @@ from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
 from typing import Callable, Optional
-from urllib.parse import quote
 from uuid import UUID
 
 import aiosmtplib
@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crypto import decrypt_secret
 from app.models import Domain, EmailAccount, SendDispatch
+from app.services import tracking
 
 MIN_GAP_S = 45
 JITTER_S = 90
@@ -271,7 +272,6 @@ def build_message(
         raise SendRefused(500, "tracking_subdomain_missing", f"domain {dom.domain_name} has no tracking subdomain")
     address = box.from_email or box.email
     message_id = claimed.message_id
-    token = quote(message_id, safe="")
 
     msg = EmailMessage()
     msg["From"] = formataddr((from_name or box.from_name or "", address))
@@ -289,9 +289,13 @@ def build_message(
     if html_body:
         html = html_body
         if track_clicks:
-            html = _HREF.sub(lambda m: f'href="https://{host}/c/{token}?u={quote(m.group(1), safe="")}"', html)
+            # The attribute value is HTML-escaped; sign the real URL. Each link gets its own signed token.
+            def wrap(m):
+                url = htmllib.unescape(m.group(1))
+                return f'href="https://{host}/c/{tracking.sign("c", message_id, dom.id, url)}"' if tracking.is_http_url(url) else m.group(0)
+            html = _HREF.sub(wrap, html)
         if track_opens:
-            html += f'<img src="https://{host}/o/{token}.gif" width="1" height="1" alt="" style="display:none">'
+            html += f'<img src="https://{host}/o/{tracking.sign("o", message_id, dom.id)}.gif" width="1" height="1" alt="" style="display:none">'
         msg.add_alternative(html, subtype="html")
     return msg, message_id
 

@@ -13,3 +13,5 @@ os.environ["INBOXKIT_API_KEY"] = "test-key"
 os.environ["INBOXKIT_WORKSPACE_ID"] = "ws_test"
 # Blank or missing is a startup error now; the stack's value (if any) is kept.
 os.environ["EMAIL_ENCRYPTION_KEY"] = os.environ.get("EMAIL_ENCRYPTION_KEY", "").strip() or "test-encryption-key"
+
+os.environ["TRACKING_SECRET"] = os.environ.get("TRACKING_SECRET", "").strip() or "test-tracking-secret"

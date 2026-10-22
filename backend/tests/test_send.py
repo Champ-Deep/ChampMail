@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +24,7 @@ from app.main import app
 from app.models import Domain, EmailAccount
 from app.db.postgres import Base
 from app.services import send as svc
+from app.services import tracking
 
 URL = os.environ.get("TEST_DATABASE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="TEST_DATABASE_URL not set")
@@ -177,7 +179,9 @@ def test_headers_unsubscribe_and_tracking_use_domain_host():
     assert msg["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
     assert msg["Message-ID"] == f"<{mid}>"
     html = msg.get_body(("html",)).get_content()
-    assert 'href="https://trk.acme.io/c/' in html and "https%3A%2F%2Fexample.org%2Fp%3Fa%3D1%26b%3D2" in html
+    assert 'href="https://trk.acme.io/c/' in html
+    token = re.search(r'/c/([^"]+)"', html).group(1)  # the destination is inside the signed token, not a ?u= parameter
+    assert tracking.verify(token, "c")["url"] == "https://example.org/p?a=1&b=2" and "?u=" not in html
     assert 'src="https://trk.acme.io/o/' in html
     plain, _ = svc.build_message(c, unsubscribe_url=None, **kw)
     assert plain["List-Unsubscribe"] is None and plain["List-Unsubscribe-Post"] is None

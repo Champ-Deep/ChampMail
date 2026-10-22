@@ -195,53 +195,70 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def test_g7_events_idempotent_and_bounce_hard_vs_soft():
-    import redis.asyncio as aioredis
+def _mailpit_messages():
+    """(message_id, html) for every message in Mailpit, newest first."""
+    out = []
+    for m in httpx.get(f"{MAILPIT}/messages").json()["messages"]:
+        mid = httpx.get(f"{MAILPIT}/message/{m['ID']}/headers").json()["Message-Id"][0].strip("<>")
+        out.append((mid, httpx.get(f"{MAILPIT}/message/{m['ID']}").json()["HTML"]))
+    return out
+
+
+def test_g7_tracking_events_bounces_live_over_http(api):
+    """Tracking links of a really sent message work on the real app, events are durable and reach a real socket."""
+    import re
+    from urllib.parse import urlsplit
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
     from sqlalchemy.pool import NullPool
     from app.config import get_settings
     from app.services import outbound_events as oe
     from app.services.bounce_poller import process_dsn
+    from tests.helpers import Receiver
     from tests.test_outbound_events_bounces import dsn
 
+    (m1, html), (m2, _) = _mailpit_messages()[:2]
+    pixel = re.search(r'src="(https://[^"]+/o/[^"]+\.gif)"', html).group(1)
+    link = re.search(r'href="(https://[^"]+/c/[^"]+)"', html).group(1)
+    host = urlsplit(pixel).netloc
+    res = {"pixel": [api.get(urlsplit(pixel).path, headers={"Host": host}).status_code for _ in range(2)]}
+    c1 = api.get(urlsplit(link).path, headers={"Host": host}, follow_redirects=False)
+    res["click"] = (c1.status_code, c1.headers["location"])
+    res["wrong_host"] = api.get(urlsplit(pixel).path, headers={"Host": "track." + B}).status_code
+    res["old_format"] = api.get(f"/o/{m1}.gif", headers={"Host": host}).status_code
+    res["delivered"] = [api.post("/api/v1/events", headers=KEY, json={"event_type": "delivered", "message_id": m1}).json()["status"]
+                        for _ in range(2)]
+    res["bounced_refused_on_events_api"] = api.post("/api/v1/events", headers=KEY, json={"event_type": "bounced", "message_id": m1}).status_code
+    print("tracking ->", json.dumps(res, indent=1))
+    assert res["pixel"] == [200, 200] and res["click"] == (302, "https://example.org/x")
+    assert res["wrong_host"] == res["old_format"] == 404 and res["delivered"] == ["queued", "duplicate"]
+    assert res["bounced_refused_on_events_api"] == 422
+
     s = get_settings()
-    s.champmail_client_url, s.champmail_webhook_secret = "https://harbinger.test", "shh"
-    hard_id, soft_id, ev_id = f"hard-{RUN}@gate.test", f"soft-{RUN}@gate.test", f"ev-{RUN}@gate.test"
-    acct = sql("SELECT id FROM email_accounts LIMIT 1")[0][0]
-    hard, soft = dsn("5.1.1", orig_id=f"<{hard_id}>"), dsn("4.2.2", action="delayed", orig_id=f"<{soft_id}>")
+    rcv = Receiver()
+    s.champmail_client_url, s.champmail_webhook_secret = rcv.url, "shh"
+    acct = sql("SELECT mailbox_id FROM send_dispatches WHERE message_id=:m", m=m1)[0][0]
 
     async def go():
-        r = aioredis.from_url(s.redis_url, decode_responses=True)
         eng = create_async_engine(os.environ["DATABASE_URL"], poolclass=NullPool)
         Session = async_sessionmaker(eng, expire_on_commit=False)
-        qlen0 = await r.llen(oe.QUEUE)
         out = {}
-        out["emit1"] = await oe.emit(r, "delivered", ev_id)
-        out["emit2"] = await oe.emit(r, "delivered", ev_id)
-        async with Session() as sess:
-            out["hard"] = await process_dsn(sess, r, acct, hard)
-            out["hard_again"] = await process_dsn(sess, r, acct, hard)
-            out["soft"] = await process_dsn(sess, r, acct, soft)
-        out["queued"] = await r.llen(oe.QUEUE) - qlen0
-        with respx.mock() as m:
-            route = m.post("https://harbinger.test/api/email/track").respond(200, json={})
-            async with httpx.AsyncClient() as c:
-                out["delivered"] = await oe.drain(r, c)
-            out["posts"] = [(json.loads(x.request.content), x.request.headers["x-webhook-secret"]) for x in route.calls]
-        out["emit3_after_send"] = await oe.emit(r, "delivered", ev_id)
-        await r.aclose()
+        for name, raw in (("hard", dsn("5.1.1", orig_id=f"<{m1}>")), ("hard_again", dsn("5.1.1", orig_id=f"<{m1}>")),
+                          ("soft", dsn("4.2.2", action="delayed", orig_id=f"<{m2}>"))):
+            async with Session() as sess:
+                out[name] = await process_dsn(sess, acct, raw)
+        async with httpx.AsyncClient() as c:
+            out["delivered"] = await oe.drain(Session, c)
         await eng.dispose()
         return out
-
-    out = _run(go())
-    print("events ->", json.dumps(out, indent=1))
-    assert (out["emit1"], out["emit2"], out["emit3_after_send"]) == (True, False, False)
-    assert out["hard"] == out["hard_again"] == "hard" and out["soft"] == "soft"
-    assert out["queued"] == 2  # delivered + ONE bounced (hard re-poll and soft added nothing)
-    assert sorted(p[0]["event_type"] for p in out["posts"]) == ["bounced", "delivered"]
-    assert {p[0]["message_id"] for p in out["posts"]} == {ev_id, hard_id}
-    assert all(p[1] == "shh" for p in out["posts"])
-    rows = sql("SELECT kind, status_code, message_id FROM bounces WHERE message_id IN (:h,:s) ORDER BY kind",
-               h=hard_id, s=soft_id)
+    try:
+        out = _run(go())
+    finally:
+        rcv.close()
+    print("events ->", json.dumps(out), "| posts:", [(b["event_type"], b["message_id"]) for _, b in rcv.requests])
+    assert (out["hard"], out["hard_again"], out["soft"]) == ("hard", "hard", "soft")
+    got = sorted((b["event_type"], b["message_id"]) for _, b in rcv.requests)
+    assert got == sorted([("opened", m1), ("clicked", m1), ("delivered", m1), ("bounced", m1)])  # soft posted nothing
+    assert all(h["x-webhook-secret"] == "shh" for h, _ in rcv.requests)
+    rows = sql("SELECT kind, status_code FROM bounces WHERE message_id IN (:a,:b) ORDER BY kind", a=m1, b=m2)
     print("bounces rows ->", rows)
-    assert rows == [("hard", "5.1.1", hard_id), ("soft", "4.2.2", soft_id)]
+    assert rows == [("hard", "5.1.1"), ("soft", "4.2.2")]

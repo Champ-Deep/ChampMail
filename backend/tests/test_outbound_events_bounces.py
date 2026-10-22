@@ -1,59 +1,15 @@
-"""Outbound events + DSN bounce poller: idempotency, backoff, hard/soft classification."""
-import asyncio
-import json
+"""DSN parsing and storage: hard/soft classification, delivery receipts, one transaction per DSN (real Postgres)."""
+import os
 
-import httpx
 import pytest
-import respx
+from sqlalchemy import select
 
-from app.config import get_settings
-from app.services import outbound_events as oe
+from app.models import Bounce
 from app.services.bounce_poller import parse_dsn, process_dsn
+from tests.helpers import add_dispatch, outbox
+from tests.test_send import run, seed
 
-URL = "https://harbinger.test"
-TRACK = f"{URL}/api/email/track"
-
-
-class FakeRedis:
-    def __init__(self):
-        self.kv, self.lists = {}, {}
-
-    async def set(self, k, v, nx=False):
-        if nx and k in self.kv:
-            return None
-        self.kv[k] = v
-        return True
-
-    async def delete(self, k):
-        self.kv.pop(k, None)
-
-    async def rpush(self, k, v):
-        self.lists.setdefault(k, []).append(v)
-
-    async def lpop(self, k):
-        q = self.lists.get(k)
-        return q.pop(0) if q else None
-
-
-class FakeSession:
-    def __init__(self):
-        self.added = []
-
-    async def execute(self, stmt):
-        self.added.append(stmt.compile().params)
-
-    async def commit(self):
-        pass
-
-    async def rollback(self):
-        pass
-
-
-@pytest.fixture(autouse=True)
-def client_env(monkeypatch):
-    s = get_settings()
-    monkeypatch.setattr(s, "champmail_client_url", URL)
-    monkeypatch.setattr(s, "champmail_webhook_secret", "shh")
+pytestmark = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 
 
 def dsn(status: str, action="failed", orig_id="<orig-1@champmail.test>") -> bytes:
@@ -88,102 +44,71 @@ Subject: hi
 """.encode()
 
 
-def run(coro):
-    return asyncio.run(coro)
-
-
-def test_classifies_hard_and_soft():
+def test_classifies_hard_soft_and_delivery_receipt():
     hard = parse_dsn(dsn("5.1.1"))
     soft = parse_dsn(dsn("4.2.2", action="delayed"))
+    ok = parse_dsn(dsn("2.0.0", action="delivered"))
     assert (hard.kind, hard.status, hard.message_id, hard.recipient) == ("hard", "5.1.1", "orig-1@champmail.test", "bob@example.com")
     assert (soft.kind, soft.status) == ("soft", "4.2.2")
-    assert parse_dsn(dsn("2.0.0", action="delivered")) is None
+    assert (ok.kind, ok.status, ok.message_id) == ("delivered", "2.0.0", "orig-1@champmail.test")
+    assert parse_dsn(dsn("2.0.0", action="relayed")) is None  # handed to another MTA: not a delivery fact
 
 
-def test_hard_bounce_stored_and_emitted_once():
-    r, s = FakeRedis(), FakeSession()
-    raw = dsn("5.1.1")
-    assert run(process_dsn(s, r, "acc", raw)) == "hard"
-    assert run(process_dsn(s, r, "acc", raw)) == "hard"  # re-poll of the same DSN
-    assert [b["kind"] for b in s.added] == ["hard", "hard"]  # DB unique constraint dedupes the row
-    queued = [json.loads(x) for x in r.lists[oe.QUEUE]]
-    assert len(queued) == 1 and queued[0]["event_type"] == "bounced"
-    assert queued[0]["message_id"] == "orig-1@champmail.test"
+async def setup(Session, **ids):
+    dom, (mb,) = await seed(Session)
+    mids = {k: await add_dispatch(Session, dom, mb, message_id=v) for k, v in ids.items()}
+    return mb, mids
 
 
-def test_soft_bounce_stored_never_emitted():
-    r, s = FakeRedis(), FakeSession()
-    assert run(process_dsn(s, r, "acc", dsn("4.2.2", action="delayed"))) == "soft"
-    assert [b["kind"] for b in s.added] == ["soft"]
-    assert s.added[0]["status_code"] == "4.2.2"
-    assert oe.QUEUE not in r.lists
+async def bounces(Session):
+    async with Session() as s:
+        return [(b.kind, b.status_code, b.message_id) for b in (await s.execute(select(Bounce).order_by(Bounce.kind))).scalars()]
 
 
-def test_emit_idempotent_per_message_and_type():
-    r = FakeRedis()
-    assert run(oe.emit(r, "opened", "m1")) is True
-    assert run(oe.emit(r, "opened", "m1")) is False
-    assert run(oe.emit(r, "clicked", "m1")) is True  # different type is a different event
-    assert run(oe.emit(r, "opened", "m2")) is True
-    with pytest.raises(ValueError):
-        run(oe.emit(r, "exploded", "m1"))
+def test_hard_bounce_stored_and_queued_once_across_a_replay():
+    async def go(Session):
+        mb, _ = await setup(Session, h="orig-1@champmail.test")
+        raw = dsn("5.1.1")
+        out = []
+        for _ in range(2):  # the second is the re-poll of the same DSN
+            async with Session() as s:
+                out.append(await process_dsn(s, mb, raw))
+        return out, await bounces(Session), await outbox(Session)
+    out, stored, rows = run(go)
+    assert out == ["hard", "hard"] and stored == [("hard", "5.1.1", "orig-1@champmail.test")]
+    assert [(r.event_type, r.message_id, r.status) for r in rows] == [("bounced", "orig-1@champmail.test", "pending")]
 
 
-@respx.mock
-def test_drain_payload_secret_and_no_double_emit():
-    route = respx.post(TRACK).respond(200, json={"updated": 1})
-    r = FakeRedis()
-
-    async def go():
-        await oe.emit(r, "delivered", "m1")
-        await oe.emit(r, "delivered", "m1")
-        async with httpx.AsyncClient() as c:
-            return await oe.drain(r, c)
-
-    assert run(go()) == 1
-    assert route.call_count == 1
-    req = route.calls[0].request
-    assert req.headers["x-webhook-secret"] == "shh"
-    body = json.loads(req.content)
-    assert set(body) == {"event_type", "message_id", "timestamp"} and body["event_type"] == "delivered"
-    # Emitting again after a successful send is still a no-op.
-    assert run(oe.emit(r, "delivered", "m1")) is False
+def test_soft_bounce_is_stored_and_never_queued():
+    async def go(Session):
+        mb, _ = await setup(Session, s="orig-1@champmail.test")
+        async with Session() as s:
+            return await process_dsn(s, mb, dsn("4.2.2", action="delayed")), await bounces(Session), await outbox(Session)
+    kind, stored, rows = run(go)
+    assert kind == "soft" and stored == [("soft", "4.2.2", "orig-1@champmail.test")] and rows == []
 
 
-@respx.mock
-def test_backoff_retry_on_5xx_then_success():
-    route = respx.post(TRACK).mock(side_effect=[httpx.Response(503), httpx.Response(500), httpx.Response(200)])
-    r, delays = FakeRedis(), []
-
-    async def fake_sleep(d):
-        delays.append(d)
-
-    async def go():
-        await oe.emit(r, "bounced", "m1")
-        async with httpx.AsyncClient() as c:
-            return await oe.drain(r, c, sleep=fake_sleep)
-
-    assert run(go()) == 1
-    assert route.call_count == 3
-    assert delays == [1.0, 2.0]
+def test_dsn_for_a_message_we_never_dispatched_is_stored_but_not_forwarded():
+    async def go(Session):
+        mb, _ = await setup(Session)
+        async with Session() as s:
+            a = await process_dsn(s, mb, dsn("5.1.1", orig_id="<forged-by-someone@evil.test>"))
+        async with Session() as s:
+            b = await process_dsn(s, mb, dsn("5.7.1", orig_id="<>"))  # no Message-ID at all
+        return a, b, await bounces(Session), await outbox(Session)
+    a, b, stored, rows = run(go)
+    assert (a, b) == ("hard", "hard") and len(stored) == 2 and rows == []
 
 
-@respx.mock
-def test_gives_up_to_dead_letter_without_reemit_and_4xx_not_retried():
-    r, delays = FakeRedis(), []
-
-    async def fake_sleep(d):
-        delays.append(d)
-
-    async def go(status):
-        respx.post(TRACK).respond(status)
-        await oe.emit(r, "bounced", f"m{status}")
-        async with httpx.AsyncClient() as c:
-            return await oe.drain(r, c, max_attempts=3, sleep=fake_sleep)
-
-    assert run(go(500)) == 0 and delays == [1.0, 2.0]
-    assert len(r.lists[oe.DEAD]) == 1
-    delays.clear()
-    assert run(go(401)) == 0 and delays == []  # permanent failure, no retry
-    assert len(r.lists[oe.DEAD]) == 2
-    assert run(oe.emit(r, "bounced", "m500")) is False
+def test_delivery_receipt_queues_delivered_and_is_not_a_bounce():
+    async def go(Session):
+        mb, _ = await setup(Session, d="orig-1@champmail.test")
+        raw = dsn("2.0.0", action="delivered")
+        for _ in range(2):
+            async with Session() as s:
+                assert await process_dsn(s, mb, raw) == "delivered"
+        async with Session() as s:
+            assert await process_dsn(s, mb, dsn("2.0.0", action="relayed")) is None
+        return await bounces(Session), await outbox(Session)
+    stored, rows = run(go)
+    assert stored == [] and [(r.event_type, r.message_id) for r in rows] == [("delivered", "orig-1@champmail.test")]

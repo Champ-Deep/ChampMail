@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     champmail_webhook_secret: str = ""
     # Required in every environment: a process-local key would write credentials nobody can decrypt later.
     email_encryption_key: str = ""
+    # HMAC key for /o and /c tracking tokens. Required everywhere: a blank or changing key would
+    # silently invalidate every link already sent.
+    tracking_secret: str = ""
     # Base URL of the client (Harbinger) that receives POST <url>/api/email/track events.
     champmail_client_url: str = ""
 
@@ -35,6 +38,8 @@ class Settings(BaseSettings):
     def fail_closed_in_production(self):
         if not self.email_encryption_key.strip():
             raise ValueError("unset: EMAIL_ENCRYPTION_KEY")
+        if not self.tracking_secret.strip():
+            raise ValueError("unset: TRACKING_SECRET")
         if self.champmail_env.strip().lower() in ("production", "prod"):
             missing = [
                 n
