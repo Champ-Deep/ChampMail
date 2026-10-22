@@ -158,10 +158,11 @@ def test_concurrent_same_key_submits_at_most_once(monkeypatch, selector):
         return rs, again, await state(Session)
     rs, again, (rows, sent_today) = run(go)
     codes = sorted(r.status_code for r in rs)
-    assert codes.count(200) == 1 and set(codes) <= {200, 503}, codes
+    assert 200 in codes and set(codes) <= {200, 503}, codes
     assert {r.json()["code"] for r in rs if r.status_code == 503} <= {"dispatch_in_progress"}
     assert len(smtp.sent) == 1 and sent_today == 1 and len(rows) == 1  # losers gave their slots back
     winner = next(r for r in rs if r.status_code == 200)
+    assert all(r.json() == winner.json() for r in rs if r.status_code == 200)
     assert again.status_code == 200 and again.json() == winner.json()
 
 

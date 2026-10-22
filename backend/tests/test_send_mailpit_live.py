@@ -57,7 +57,10 @@ def test_same_key_and_concurrent_requests_deliver_exactly_one_message(monkeypatc
             await redis.close()
     burst, after_burst, replay, changed, final = run(go)
     winners = [r for r in burst if r.status_code == 200]
-    assert len(winners) == 1 and all(r.status_code in (200, 503) for r in burst), [r.status_code for r in burst]
+    # Requests observing the completed dispatch replay 200, without another SMTP submission.
+    assert winners and all(r.status_code in (200, 503) for r in burst), [r.status_code for r in burst]
+    assert all(r.json() == winners[0].json() for r in winners)
+    assert {r.json()["code"] for r in burst if r.status_code == 503} <= {"dispatch_in_progress"}
     assert after_burst == 1 and final == 1  # one real delivery for 8 concurrent + 1 replay + 1 conflicting request
     assert replay.status_code == 200 and replay.json() == winners[0].json()
     assert changed.status_code == 409
