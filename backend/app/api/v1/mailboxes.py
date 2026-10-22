@@ -15,12 +15,15 @@ router = APIRouter(prefix="/mailboxes", tags=["Mailboxes"], dependencies=[Depend
 
 
 def serialize_mailbox(m: EmailAccount, d: Optional[Domain]) -> dict:
+    status, reason = m.status, m.status_reason
+    if status == "active" and d is not None and d.send_status != "active":
+        status, reason = d.send_status, d.send_status_reason
     return {
         "id": str(m.id),
         "email": m.email,
         # A consumer reading only {email, status} must see a gated mailbox as such.
-        "status": m.status if m.status != "active" else ("active" if m.is_active else "pending"),
-        "status_reason": m.status_reason,
+        "status": status if status != "active" else ("active" if m.is_active else "pending"),
+        "status_reason": reason,
         "domain": d.domain_name if d else None,
         # Per-mailbox health is not collected yet (M2): null means unknown, not clean.
         "dnsbl_listed": d.blacklisted if d else None,

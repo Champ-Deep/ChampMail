@@ -30,6 +30,22 @@ Other refusals: Redis unreachable is 503 `redis_unavailable` before any claim or
 Paused/retired mailbox or domain, blacklisted domain, and mailbox without SMTP credentials are 409.
 Authentication is 401. Cap and throttle are 429.
 
+## Independent policy holds
+
+Domain PATCH changes only the domain's `send_status` and reason. Mailbox PATCH changes only that
+mailbox's `status` and reason. The atomic send claim requires both gates to allow sending. Reasons
+are explanatory text, never ownership keys. Domain resume cannot clear a mailbox pause, even when
+the reasons match or the mailbox was paused while the domain was already on hold. Retirement is
+terminal at each level.
+
+Mailbox GET and PATCH responses show the mailbox's own hold first; otherwise they show a domain
+hold, including its reason, before provider availability. InboxKit imports do not copy a domain hold
+into mailbox policy, but the same send gate and response projection apply immediately.
+
+No data migration guesses the source of existing mailbox holds. Holds copied by older builds remain
+closed after domain resume and require explicit mailbox PATCH after operator review. Retired rows
+remain terminal. This is intentionally fail-closed: equal reason strings cannot recover provenance.
+
 ## What is NOT guaranteed
 
 SMTP has no transaction. If the server accepts the message and the acknowledgement is lost, ChampMail

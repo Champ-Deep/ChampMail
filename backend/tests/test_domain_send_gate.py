@@ -56,6 +56,7 @@ def test_domain_hold_survives_mailbox_activation(client, domain_status, selector
             assert r.status_code == 200
             r = await c.patch(f"/api/v1/mailboxes/{mb}", json={"status": "active"})
             assert r.status_code == 200
+            assert (r.json()["status"], r.json()["status_reason"]) == (domain_status, "domain hold")
             assert (await c.get("/api/v1/domains")).json()[0]["send_status"] == domain_status
             body = {**HARBINGER, "brand_id": "b1"}
             if selector == "named":
@@ -108,5 +109,43 @@ def test_domain_resume_releases_only_its_own_mailbox_holds(client, selector):
             async with Session() as s:
                 assert (await s.get(EmailAccount, held)).sent_today == 0
                 assert (await s.get(EmailAccount, ready)).sent_today == 1
+        await client(Session, scenario)
+    run(go)
+
+
+@pytest.mark.parametrize("selector", ["named", "pooled"])
+@pytest.mark.parametrize("mailbox_reason", ["policy", "independent hold"])
+@pytest.mark.parametrize("pause_during_domain_hold", [False, True])
+def test_domain_resume_preserves_independent_pause_with_any_reason(
+    client, selector, mailbox_reason, pause_during_domain_hold,
+):
+    async def go(Session):
+        host, port = SMTP.rsplit(":", 1)
+        dom, (mb,) = await seed(Session, box_kw={"smtp_host": host, "smtp_port": int(port),
+                                               "smtp_use_tls": False, "imap_host": None})
+
+        async def scenario(c):
+            if pause_during_domain_hold:
+                r = await c.patch(f"/api/v1/domains/{dom}", json={"status": "paused", "reason": "policy"})
+                assert r.status_code == 200
+            r = await c.patch(f"/api/v1/mailboxes/{mb}", json={"status": "paused", "reason": mailbox_reason})
+            assert r.status_code == 200
+            for status in ("paused", "active"):
+                r = await c.patch(f"/api/v1/domains/{dom}", json={"status": status, "reason": "policy"})
+                assert r.status_code == 200
+            body = {**HARBINGER, "brand_id": "b1"}
+            if selector == "named":
+                body["mailbox_id"] = str(mb)
+            before = total()
+            r = await c.post("/api/v1/send", json=body)
+            delta = total() - before
+            assert r.status_code == 409, (r.text, delta)
+            assert r.json()["code"] == "mailbox_paused" and delta == 0
+            box = (await c.get("/api/v1/mailboxes")).json()[0]
+            assert (box["status"], box["status_reason"]) == ("paused", mailbox_reason)
+            async with Session() as s:
+                box = await s.get(EmailAccount, mb)
+                assert box.sent_today == 0 and box.next_send_at is None
+                assert not (await s.execute(select(SendDispatch))).all()
         await client(Session, scenario)
     run(go)

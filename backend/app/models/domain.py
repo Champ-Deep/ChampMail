@@ -67,7 +67,7 @@ class Domain(Base):
     # Operator send gate (active|paused|retired) with a reason. Separate from
     # `status` (provider lifecycle) and `paused` (auto-pause) so a webhook can
     # never un-pause it. The atomic send claim enforces it independently of mailbox
-    # status; PATCH cascades it to mailboxes and new imports inherit it.
+    # status; mailbox responses project it without copying it into mailbox policy.
     send_status = Column(String(16), nullable=False, default="active", server_default="active")
     send_status_reason = Column(Text, nullable=True)
     inboxkit_order_uid = Column(String(255), nullable=True)

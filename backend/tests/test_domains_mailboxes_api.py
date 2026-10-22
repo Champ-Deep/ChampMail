@@ -112,7 +112,7 @@ def test_order_then_webhook_imports_two_mailboxes_and_gets_match_harbinger_types
     assert api.get("/api/v1/mailboxes", params={"domain": "other.com"}).json() == []
 
 
-def test_status_patches_persist_and_cascade(api):
+def test_status_patches_keep_independent_holds_and_project_domain_status(api):
     with respx.mock(assert_all_called=False) as mock:
         mock_inboxkit(mock)
         domain_id = order_domain(api).json()["id"]
@@ -132,6 +132,7 @@ def test_status_patches_persist_and_cascade(api):
     r = api.patch(f"/api/v1/domains/{domain_id}", json={"status": "paused", "reason": "dnsbl"})
     assert r.json()["send_status"] == "paused" and r.json()["healthy"] is False
     assert {b["status"] for b in api.get("/api/v1/mailboxes").json()} == {"paused"}
+    assert asyncio.run(stored())[boxes[1]["email"]] == "active"  # domain hold never overwrites mailbox policy
 
     # Mailbox imported later onto the paused domain must not start sending.
     with respx.mock(assert_all_called=False) as mock:
@@ -142,6 +143,7 @@ def test_status_patches_persist_and_cascade(api):
         finally:
             del MAILBOXES["mb_3"]
     assert {b["email"]: b["status"] for b in api.get("/api/v1/mailboxes").json()}["jo@acme-mail.com"] == "paused"
+    assert asyncio.run(stored())["jo@acme-mail.com"] == "active"
 
     # Re-activating releases what the domain held, not the mailbox paused for its own reason.
     api.patch(f"/api/v1/domains/{domain_id}", json={"status": "active"})
@@ -151,6 +153,20 @@ def test_status_patches_persist_and_cascade(api):
     assert api.patch(f"/api/v1/domains/{domain_id}", json={"status": "retired", "reason": "burned"}).status_code == 200
     assert api.patch(f"/api/v1/domains/{domain_id}", json={"status": "active"}).status_code == 409  # terminal
     assert api.patch("/api/v1/domains/not-a-uuid", json={"status": "active"}).status_code == 404
+
+
+def test_mailbox_retirement_survives_domain_pause_and_resume(api):
+    with respx.mock(assert_all_called=False) as mock:
+        mock_inboxkit(mock)
+        domain_id = order_domain(api).json()["id"]
+        import_mailboxes(api)
+    mailbox_id = api.get("/api/v1/mailboxes").json()[0]["id"]
+    assert api.patch(f"/api/v1/mailboxes/{mailbox_id}", json={"status": "retired", "reason": "policy"}).status_code == 200
+    for status in ("paused", "active"):
+        assert api.patch(f"/api/v1/domains/{domain_id}", json={"status": status, "reason": "policy"}).status_code == 200
+    box = api.get("/api/v1/mailboxes").json()[0]
+    assert (box["status"], box["status_reason"]) == ("retired", "policy")
+    assert api.patch(f"/api/v1/mailboxes/{mailbox_id}", json={"status": "active"}).status_code == 409
 
 
 def test_failed_order_leaves_no_row_and_duplicates_conflict(api):

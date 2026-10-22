@@ -4,7 +4,7 @@ Revision ID: 0005
 Revises: 0004
 
 email_accounts.status already exists (0003); this adds its reason, and the
-domain-level gate that PATCH /api/v1/domains/{id} sets and cascades.
+domain-level gate that PATCH /api/v1/domains/{id} sets.
 """
 
 from alembic import op

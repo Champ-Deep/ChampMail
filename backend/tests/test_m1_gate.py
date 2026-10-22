@@ -165,7 +165,7 @@ def test_g5_paused_and_retired_are_refused(api):
             r = send(api, domain_id=dom)
             out[f"domain {col}={val}"] = (r.status_code, r.json()["code"])
             assert r.status_code == 409 and r.json()["code"] == code
-    # operator PATCH on the domain cascades and also refuses
+    # operator PATCH on the domain also refuses
     sql("UPDATE domains SET status='verified' WHERE domain_name=:d", d=A)
     sql("UPDATE email_accounts SET status='active'")
     assert api.patch(f"/api/v1/domains/{dom}", headers=KEY, json={"status": "paused", "reason": "gate"}).status_code == 200

@@ -419,7 +419,6 @@ async def _persist_mailbox(record, creds) -> None:
     from sqlalchemy.exc import IntegrityError
 
     from app.db.postgres import async_session_maker
-    from app.models.domain import Domain
     from app.models.email_account import EmailAccount
 
     async def existing(session):
@@ -445,13 +444,6 @@ async def _persist_mailbox(record, creds) -> None:
                 domain_id=domain_id,
                 is_active=(record.status == "ready"),
             )
-            if domain_id is not None:
-                # A mailbox imported onto a paused/retired domain must not start sending.
-                gate = (await session.execute(
-                    select(Domain.send_status, Domain.send_status_reason).where(Domain.id == domain_id)
-                )).one()
-                if gate.send_status != "active":
-                    fresh.status, fresh.status_reason = gate.send_status, gate.send_status_reason
             try:
                 async with session.begin_nested():
                     session.add(fresh)

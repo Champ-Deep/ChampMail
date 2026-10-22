@@ -9,7 +9,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator, model_validator
-from sqlalchemy import or_, select, update
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -190,14 +190,7 @@ async def patch_domain(domain_id: str, body: StatusPatch, session: AsyncSession 
         raise HTTPException(404, "domain not found")
     if d.send_status == "retired" and body.status != "retired":
         raise HTTPException(409, "retired is terminal")
-    # Cascade for mailbox consumers; the atomic send claim also enforces the domain gate.
-    # Re-activating only releases mailboxes this gate itself held (same reason), not ones
-    # paused or quarantined for another cause.
-    q = update(EmailAccount).where(EmailAccount.domain_id == d.id, EmailAccount.status != "retired")
-    held = EmailAccount.status_reason == d.send_status_reason
-    q = q.where(EmailAccount.status != "active", held) if body.status == "active" \
-        else q.where(or_(EmailAccount.status == "active", held))
-    await session.execute(q.values(status=body.status, status_reason=body.reason))
+    # Domain and mailbox holds are independent; the atomic claim enforces both.
     d.send_status, d.send_status_reason = body.status, body.reason
     await session.commit()
     mailboxes = (await _mailboxes_by_domain(session, [d]))[d.id]
