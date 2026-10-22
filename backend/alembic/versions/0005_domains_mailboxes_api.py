@@ -1,7 +1,7 @@
 """domains/mailboxes API: operator send gate on domains, reasons, order uid
 
-Revision ID: 0004
-Revises: 0003
+Revision ID: 0005
+Revises: 0004
 
 email_accounts.status already exists (0003); this adds its reason, and the
 domain-level gate that PATCH /api/v1/domains/{id} sets and cascades.
@@ -10,8 +10,8 @@ domain-level gate that PATCH /api/v1/domains/{id} sets and cascades.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0004"
-down_revision = "0003"
+revision = "0005"
+down_revision = "0004"
 branch_labels = None
 depends_on = None
 
