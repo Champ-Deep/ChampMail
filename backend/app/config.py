@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     inboxkit_api_key: str = ""
     inboxkit_base_url: str = ""
     inboxkit_webhook_secret: str = ""
+    inboxkit_workspace_id: str = ""
 
     worker_interval_seconds: int = 30
 
