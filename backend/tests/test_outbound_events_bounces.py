@@ -95,7 +95,7 @@ def run(coro):
 def test_classifies_hard_and_soft():
     hard = parse_dsn(dsn("5.1.1"))
     soft = parse_dsn(dsn("4.2.2", action="delayed"))
-    assert (hard.kind, hard.status, hard.message_id, hard.recipient) == ("hard", "5.1.1", "<orig-1@champmail.test>", "bob@example.com")
+    assert (hard.kind, hard.status, hard.message_id, hard.recipient) == ("hard", "5.1.1", "orig-1@champmail.test", "bob@example.com")
     assert (soft.kind, soft.status) == ("soft", "4.2.2")
     assert parse_dsn(dsn("2.0.0", action="delivered")) is None
 
@@ -108,7 +108,7 @@ def test_hard_bounce_stored_and_emitted_once():
     assert [b["kind"] for b in s.added] == ["hard", "hard"]  # DB unique constraint dedupes the row
     queued = [json.loads(x) for x in r.lists[oe.QUEUE]]
     assert len(queued) == 1 and queued[0]["event_type"] == "bounced"
-    assert queued[0]["message_id"] == "<orig-1@champmail.test>"
+    assert queued[0]["message_id"] == "orig-1@champmail.test"
 
 
 def test_soft_bounce_stored_never_emitted():

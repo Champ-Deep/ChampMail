@@ -34,6 +34,11 @@ class Dsn:
     diagnostic: str | None
 
 
+def _bare(mid) -> str | None:
+    # services/send.py returns (and clients store) the id without angle brackets.
+    return str(mid or "").strip().strip("<>") or None
+
+
 def parse_dsn(raw: bytes) -> Dsn | None:
     """Parse an RFC 3464 DSN. Returns None for anything that is not a failed/delayed DSN."""
     msg = email.message_from_bytes(raw, policy=policy.default)
@@ -49,9 +54,9 @@ def parse_dsn(raw: bytes) -> Dsn | None:
                     diagnostic = str(block.get("Diagnostic-Code", "")).strip() or None
                     break
         elif ctype == "message/rfc822" and message_id is None:
-            message_id = (part.get_payload()[0].get("Message-ID") or "").strip() or None
+            message_id = _bare(part.get_payload()[0].get("Message-ID"))
         elif ctype == "text/rfc822-headers" and message_id is None:
-            message_id = (email.message_from_string(part.get_payload()).get("Message-ID") or "").strip() or None
+            message_id = _bare(email.message_from_string(part.get_payload()).get("Message-ID"))
     if status is None or status[0] == "2":  # 2.x.x is a delivery receipt, not a bounce
         return None
     return Dsn(status, "hard" if status[0] == "5" else "soft", message_id, recipient, diagnostic)
