@@ -60,6 +60,11 @@ class Domain(Base):
     inboxkit_workspace_uid = Column(String(255), nullable=True)
     inboxkit_native_status = Column(String(64), nullable=True)
 
+    # Send path (0003): brand selects mailboxes; one tracking host per domain,
+    # never a shared fallback.
+    brand_id = Column(String(64), nullable=True, index=True)
+    tracking_subdomain = Column(String(255), nullable=True)
+
     # Deliverability
     health_score = Column(Float, default=100.0)
     bounce_rate = Column(Float, default=0.0)
