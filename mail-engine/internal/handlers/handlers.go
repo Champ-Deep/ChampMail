@@ -316,6 +316,7 @@ func (h *SendHandler) processSend(sendLog db.SendLog, req models.SendEmailReques
 		status = "failed"
 		log.Printf("delivery failed for %s: %v", sendLog.MessageID, res.Err)
 	case res.DryRun:
+		status = "dry_run"
 		log.Printf("DRY-RUN (no relay): built+DKIM-signed %d-byte message to %s (message_id: %s); set CHAMPMAIL_SMTP_RELAY to deliver",
 			len(raw), req.To, sendLog.MessageID)
 	default:

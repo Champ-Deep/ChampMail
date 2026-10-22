@@ -36,14 +36,10 @@ def execute_pending_steps(self):
 
     async def _execute():
         from app.services.sequence_service import sequence_service
-        from app.services.domain_rotation import domain_rotator
-        from app.services.email_validator import email_validator
-        from app.services.destination_throttle import can_send as throttle_ok
         from app.db.champgraph import graph_db
-        from app.tasks.sending import _build_message, _submit_to_postfix
-        from app.core.config import settings
+        from app.tasks.sending import _send_email
 
-        async with async_session_maker() as session:
+        async with async_session() as session:
             pending_steps = await sequence_service.get_pending_steps(session)
 
             sent_count = 0
@@ -54,48 +50,19 @@ def execute_pending_steps(self):
 
                 prospect_email = step.get("prospect_email", "")
                 try:
-                    # Pre-send validation
-                    check = await email_validator.validate(prospect_email, session)
-                    if not check["valid"]:
-                        await sequence_service.mark_step_failed(session, step.get("id"), check["reason"])
-                        continue
-
-                    # Per-destination throttle
-                    if not await throttle_ok(prospect_email):
-                        logger.debug("Throttled sequence step for %s, will retry next tick", prospect_email)
-                        continue
-
-                    domain_id = await domain_rotator.select_domain(step.get("team_id"))
-                    if not domain_id:
-                        raise ValueError("No available sending domain")
-
-                    from app.services.domain_service import domain_service
-                    domain = await domain_service.get_by_id(session, domain_id)
-                    domain_name = domain["domain_name"]
-                    from_email = f"outreach@{domain_name}"
-
-                    bounce_host = settings.bounce_domain or settings.mail_hostname
                     prospect_id = step.get("prospect_id", "unknown")
-                    bounce_address = f"bounce+{prospect_id}@{bounce_host}"
-
                     subject = step.get("subject", "")
                     html_body = step.get("body", "")
-                    import re as _re
-                    body_text = _re.sub(r"<[^>]+>", "", html_body).strip() or subject
-
-                    msg = _build_message(
-                        from_email=from_email,
-                        from_name=settings.app_name,
-                        to_email=prospect_email,
-                        subject=subject,
-                        body_text=body_text,
-                        html_body=html_body,
-                        bounce_address=bounce_address,
+                    result = await _send_email(
+                        prospect_id=prospect_id, template_id="",
+                        subject=subject, html_body=html_body,
                     )
-                    message_id = _submit_to_postfix(from_email, prospect_email, bounce_address, msg)
-
-                    await domain_service.increment_sent_count(session, domain_id)
-                    await sequence_service.mark_step_sent(session, step.get("id"), message_id)
+                    if result.get("status") == "deferred":
+                        continue
+                    if not result.get("success"):
+                        await sequence_service.mark_step_failed(session, step.get("id"), result["reason"])
+                        continue
+                    await sequence_service.mark_step_sent(session, step.get("id"), result["message_id"])
                     sent_count += 1
 
                     try:
@@ -127,7 +94,7 @@ def pause_sequence(self, sequence_id: str, prospect_id: str = None, reason: str 
     async def _pause():
         from app.services.sequence_service import sequence_service
 
-        async with async_session_maker() as session:
+        async with async_session() as session:
             await sequence_service.pause(session, sequence_id, prospect_id, reason)
 
     asyncio.run(_pause())
@@ -138,7 +105,7 @@ def resume_sequence(self, sequence_id: str, prospect_id: str = None):
     async def _resume():
         from app.services.sequence_service import sequence_service
 
-        async with async_session_maker() as session:
+        async with async_session() as session:
             await sequence_service.resume(session, sequence_id, prospect_id)
 
     asyncio.run(_resume())
@@ -167,7 +134,7 @@ def check_replies_and_pause(self):
             logger.debug("IMAP not configured - skipping reply detection")
             return
 
-        async with async_session_maker() as session:
+        async with async_session() as session:
             # get_active_sequences returns plain dicts (_sequence_to_dict), not
             # ORM rows, and has no per-enrollment prospect_email - look up each
             # enrolled prospect's own address instead of the sequence's.

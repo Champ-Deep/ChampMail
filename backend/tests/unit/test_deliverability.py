@@ -257,7 +257,7 @@ class TestFailOpen:
 
         from app.tasks import sending
 
-        src = inspect.getsource(sending.send_email_task)
+        src = inspect.getsource(sending._send_email)
         assert "send_gate.check(" in src, "send path no longer consults the send gate"
 
         gate_import = src.rindex(

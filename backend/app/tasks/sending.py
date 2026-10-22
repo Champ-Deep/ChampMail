@@ -226,9 +226,7 @@ async def _list_unsubscribe(campaign_id: str, prospect_id: str) -> str:
     return urls.get("unsubscribe_url", "")
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def send_email_task(
-    self,
+async def _send_email(
     prospect_id: str,
     template_id: str,
     subject: str,
@@ -270,10 +268,7 @@ def send_email_task(
             # ── 1c. Per-destination throttle ──────────────────────────────
             from app.services.destination_throttle import can_send as _throttle_ok
             if not await _throttle_ok(to_email):
-                raise self.retry(
-                    exc=ValueError(f"Throttle limit reached for {to_email.split('@')[1]}"),
-                    countdown=_jitter(3600),  # retry in ~1 hour
-                )
+                return {"status": "deferred", "reason": f"Throttle limit reached for {to_email.split('@')[1]}"}
 
             # ── 2. Warmup-gated domain selection ─────────────────────────
             selected_domain_id = domain_id or await domain_rotator.select_domain(
@@ -446,10 +441,21 @@ def send_email_task(
                 "mailbox_id": getattr(result, "mailbox_id", None),
             }
 
+    return await _send()
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def send_email_task(self, prospect_id: str, template_id: str, subject: str,
+                    html_body: str, domain_id: str | None = None, campaign_id: str | None = None):
     try:
-        return asyncio.run(_send())
+        result = asyncio.run(_send_email(
+            prospect_id, template_id, subject, html_body, domain_id, campaign_id,
+        ))
     except Exception as exc:
         raise self.retry(exc=exc)
+    if result.get("status") == "deferred":
+        raise self.retry(exc=ValueError(result["reason"]), countdown=_jitter(3600))
+    return result
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)

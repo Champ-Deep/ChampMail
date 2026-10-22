@@ -62,6 +62,7 @@ services:
       DKIM_DOMAIN: ${DKIM_DOMAIN:-champmail.com}
       DAILY_SEND_LIMIT: ${DAILY_SEND_LIMIT:-1000}
       RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-10}
+      CHAMPMAIL_SMTP_RELAY: ${CHAMPMAIL_SMTP_RELAY:-}
     ports:
       - "8025:8025"
     depends_on:
@@ -240,7 +241,6 @@ services:
       start_period: 30s
     networks:
       - champmail-network
-      - champgraph-network
 
   # Celery Worker
   worker:
@@ -317,7 +317,6 @@ services:
       retries: 3
     networks:
       - champmail-network
-      - champgraph-network
 
   # Celery Beat (Scheduler)
   beat:
@@ -409,9 +408,6 @@ volumes:
     driver: local
 
 networks:
+  # Standalone sends must not require a separately deployed ChampGraph network.
   champmail-network:
     driver: bridge
-  # External network to reach the ChampGraph container
-  champgraph-network:
-    external: true
-    name: graphiti-knowledge-graph_default
