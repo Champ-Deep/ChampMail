@@ -1,0 +1,37 @@
+x-app: &app
+  build: ./backend
+  env_file: .env
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+
+services:
+  api:
+    <<: *app
+    ports: ["127.0.0.1:8010:8000"]
+  worker:
+    <<: *app
+    command: ["python", "-m", "app.worker"]
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: champmail
+      POSTGRES_DB: champmail
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-champmail}
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U champmail"]
+      interval: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+  mailpit:
+    image: axllent/mailpit:latest
+    ports: ["127.0.0.1:8025:8025"]
+
+volumes:
+  pgdata:
