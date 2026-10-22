@@ -89,6 +89,7 @@ class EmailAccount(Base):
     # Send-path gate (0003): active | paused | retired, and the earliest next send.
     status = Column(String(16), nullable=False, default="active")
     next_send_at = Column(DateTime, nullable=True)
+    status_reason = Column(Text, nullable=True)
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)

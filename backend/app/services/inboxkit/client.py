@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 # Verified endpoints (docs.inboxkit.com + live probing, 2026-07-28).
 _DOMAINS_SEARCH     = "/v1/api/domains/search"
 _DOMAINS_REGISTER   = "/v1/api/domains/register"
+_ORDERS             = "/v1/api/orders"               # path per Harbinger's client; not probed live
 _MAILBOXES_BUY      = "/v1/api/mailboxes/buy"
 _MAILBOXES_LIST     = "/v1/api/mailboxes/list"       # POST only (GET 404s)
 _MAILBOXES_STATUS   = "/v1/api/mailboxes/status"
@@ -189,6 +190,29 @@ class InboxKitClient:
         if contact_details:
             body["contact_details"] = contact_details
         return await self._request("POST", _DOMAINS_REGISTER, json=body)
+
+    async def create_order(self, domain_name: str, usernames: list[str],
+                           contact_details: dict, redirect_url: str,
+                           platform: str = "google",
+                           registration_years: int = 1) -> Any:
+        """One combined domain + mailboxes order (same body as Harbinger's createOrder).
+
+        Mailboxes arrive later via the mailbox.status_changed webhook.
+        """
+        body = {"domains": [{
+            "name": domain_name,
+            "redirect_url": redirect_url,
+            "registration_years": registration_years,
+            "contact_details": contact_details,
+            "mailboxes": [{
+                "first_name": contact_details["first_name"],
+                "last_name": contact_details["last_name"],
+                "username": u.lower(),
+                "domain_name": domain_name,
+                "platform": platform,
+            } for u in usernames],
+        }]}
+        return await self._request("POST", _ORDERS, json=body)
 
     # ------------------------------------------------------------------ mailboxes
 

@@ -38,7 +38,7 @@ def _envelope(event: str, data: dict, timestamp: str | None = None) -> bytes:
     }).encode()
 
 
-def test_webhook_handler():
+def test_webhook_handler(monkeypatch):
     """Exercise the handler functions directly (no HTTP server needed)."""
     from app.api.v1 import inboxkit_webhooks as wh
 
@@ -83,7 +83,7 @@ def test_webhook_handler():
     # Monkey-patch the provider + persistence + idempotency so nothing hits
     # the network, Redis, or Postgres. `order` pins that the event is only
     # marked processed AFTER the local write.
-    wh.InboxKitProvider = _StubProvider  # type: ignore[assignment]
+    monkeypatch.setattr(wh, "InboxKitProvider", _StubProvider)
     persisted: dict = {}
     order: list[str] = []
     async def _fake_persist_domain(record):
@@ -98,10 +98,10 @@ def test_webhook_handler():
     async def _fake_mark_seen(key):
         order.append("mark_seen")
         persisted["marked"] = key
-    wh._persist_domain_state = _fake_persist_domain  # type: ignore[assignment]
-    wh._persist_mailbox = _fake_persist_mailbox  # type: ignore[assignment]
-    wh._already_seen = _fake_already_seen  # type: ignore[assignment]
-    wh._mark_seen = _fake_mark_seen  # type: ignore[assignment]
+    monkeypatch.setattr(wh, "_persist_domain_state", _fake_persist_domain)
+    monkeypatch.setattr(wh, "_persist_mailbox", _fake_persist_mailbox)
+    monkeypatch.setattr(wh, "_already_seen", _fake_already_seen)
+    monkeypatch.setattr(wh, "_mark_seen", _fake_mark_seen)
 
     # A mailbox.status_changed payload carrying plaintext creds — the exact
     # shape the docs warn about.
@@ -146,6 +146,3 @@ def test_webhook_handler():
 
     print("\nAll webhook handler simulations passed.")
 
-
-if __name__ == "__main__":
-    test_webhook_handler()

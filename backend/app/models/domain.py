@@ -65,6 +65,14 @@ class Domain(Base):
     brand_id = Column(String(64), nullable=True, index=True)
     tracking_subdomain = Column(String(255), nullable=True)
 
+    # Operator send gate (active|paused|retired) with a reason. Separate from
+    # `status` (provider lifecycle) and `paused` (auto-pause) so a webhook can
+    # never un-pause it. PATCH cascades it onto the domain's mailboxes (whose
+    # `status` the send path reads); new mailboxes inherit it on import.
+    send_status = Column(String(16), nullable=False, default="active", server_default="active")
+    send_status_reason = Column(Text, nullable=True)
+    inboxkit_order_uid = Column(String(255), nullable=True)
+
     # Deliverability
     health_score = Column(Float, default=100.0)
     bounce_rate = Column(Float, default=0.0)

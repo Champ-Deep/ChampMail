@@ -362,6 +362,12 @@ async def _persist_domain_state(record) -> None:
         stmt = select(Domain).where(Domain.inboxkit_domain_uid == record.uid)
         result = await session.execute(stmt)
         d = result.scalar_one_or_none()
+        if d is None and record.name:
+            # POST /api/v1/domains may not know the uid yet (order response
+            # without one): adopt the row by name and backfill it.
+            d = (await session.execute(
+                select(Domain).where(Domain.domain_name == record.name)
+            )).scalar_one_or_none()
         if d is None:
             logger.info("inboxkit: domain %s not in local DB (foreign workspace?) — skipping",
                         record.uid)
@@ -370,27 +376,34 @@ async def _persist_domain_state(record) -> None:
             update(Domain).where(Domain.id == d.id).values(
                 status=record.status,
                 inboxkit_native_status=record.native_status,
+                inboxkit_domain_uid=record.uid,
             )
         )
         await session.commit()
 
 
-async def _resolve_domain_id(session, domain_uid) -> Optional[Any]:
+async def _resolve_domain_id(session, domain_uid, domain_name=None) -> Optional[Any]:
     """Look up the local Domain.id for an InboxKit-native domain uid.
 
     Returns None if the domain isn't in the local DB yet (foreign
     workspace, or the domain webhook hasn't landed before this mailbox
     one) — the caller leaves domain_id NULL rather than guessing.
     """
-    if not domain_uid:
-        return None
     from app.models.domain import Domain
     from sqlalchemy import select
 
-    result = await session.execute(
-        select(Domain.id).where(Domain.inboxkit_domain_uid == domain_uid)
-    )
-    return result.scalar_one_or_none()
+    if domain_uid:
+        found = (await session.execute(
+            select(Domain.id).where(Domain.inboxkit_domain_uid == domain_uid)
+        )).scalar_one_or_none()
+        if found is not None:
+            return found
+    if not domain_name:
+        return None
+    # Name fallback: the mailbox event can land before the domain uid is known.
+    return (await session.execute(
+        select(Domain.id).where(Domain.domain_name == domain_name)
+    )).scalar_one_or_none()
 
 
 async def _persist_mailbox(record, creds) -> None:
@@ -405,11 +418,12 @@ async def _persist_mailbox(record, creds) -> None:
     stored in plaintext at rest.
     """
     from app.db.postgres import async_session_maker
+    from app.models.domain import Domain
     from app.models.email_account import EmailAccount
     from sqlalchemy import select
 
     async with async_session_maker() as session:
-        domain_id = await _resolve_domain_id(session, record.domain_uid)
+        domain_id = await _resolve_domain_id(session, record.domain_uid, record.domain_name)
         stmt = select(EmailAccount).where(EmailAccount.inboxkit_uid == record.uid)
         acc = (await session.execute(stmt)).scalar_one_or_none()
         if acc is None:
@@ -424,6 +438,13 @@ async def _persist_mailbox(record, creds) -> None:
                 domain_id=domain_id,
                 is_active=(record.status == "ready"),
             )
+            if domain_id is not None:
+                # A mailbox imported onto a paused/retired domain must not start sending.
+                gate = (await session.execute(
+                    select(Domain.send_status, Domain.send_status_reason).where(Domain.id == domain_id)
+                )).one()
+                if gate.send_status != "active":
+                    acc.status, acc.status_reason = gate.send_status, gate.send_status_reason
             session.add(acc)
         else:
             acc.is_active = (record.status == "ready")
