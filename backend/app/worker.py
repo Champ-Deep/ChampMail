@@ -1,28 +1,57 @@
-"""No-op worker loop. M1 replaces the body of tick() with dispatch work."""
+"""Worker loop: poll mailboxes for DSN bounces, then drain the outbound event queue."""
+import asyncio
 import logging
 import signal
-import threading
+
+import httpx
 
 from app.config import get_settings
+from app.db.postgres import async_session_maker
+from app.db.redis import redis_client
+from app.services.bounce_poller import poll_all
+from app.services.outbound_events import drain
 
 log = logging.getLogger("champmail.worker")
-stop = threading.Event()
 
 
-def tick() -> None:
-    log.info("worker tick")
+async def tick(client: httpx.AsyncClient) -> None:
+    r = await redis_client._get_client()
+    try:
+        async with async_session_maker() as session:
+            await poll_all(session, r)
+    except Exception:  # a poll failure must not block event delivery
+        log.exception("bounce poll failed")
+    await drain(r, client)
+
+
+async def run(stop: asyncio.Event) -> None:
+    settings = get_settings()
+    log.info("worker started env=%s", settings.champmail_env)
+    async with httpx.AsyncClient(timeout=10) as client:
+        while not stop.is_set():
+            try:
+                await tick(client)
+            except Exception:
+                log.exception("worker tick failed")
+            try:
+                await asyncio.wait_for(stop.wait(), settings.worker_interval_seconds)
+            except asyncio.TimeoutError:
+                pass
+    await redis_client.close()
+    log.info("worker stopped")
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
-    settings = get_settings()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, lambda *_: stop.set())
-    log.info("worker started env=%s", settings.champmail_env)
-    while not stop.is_set():
-        tick()
-        stop.wait(settings.worker_interval_seconds)
-    log.info("worker stopped")
+
+    async def _main() -> None:
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, stop.set)
+        await run(stop)
+
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":

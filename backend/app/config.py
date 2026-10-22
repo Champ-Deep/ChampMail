@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     champmail_api_key: str = ""
     champmail_webhook_secret: str = ""
+    # Base URL of the client (Harbinger) that receives POST <url>/api/email/track events.
+    champmail_client_url: str = ""
 
     smtp_host: str = "mailpit"
     smtp_port: int = 1025
