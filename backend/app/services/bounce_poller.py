@@ -62,15 +62,34 @@ def parse_dsn(raw: bytes) -> Dsn | None:
     return Dsn(status, "hard" if status[0] == "5" else "soft", message_id, recipient, diagnostic)
 
 
-def _connect(acc: EmailAccount) -> imaplib.IMAP4:
-    cls = imaplib.IMAP4_SSL if acc.imap_use_ssl else imaplib.IMAP4
-    conn = cls(acc.imap_host, acc.imap_port or (993 if acc.imap_use_ssl else 143))
-    conn.login(acc.imap_username or acc.email, decrypt_secret(acc.imap_password_encrypted))
-    conn.select(acc.imap_mailbox or "INBOX")
+@dataclass(frozen=True)
+class Mailbox:
+    """Plain copy of the IMAP fields: ORM rows expire on rollback and can't be read after it."""
+    id: object
+    email: str
+    host: str
+    port: int
+    ssl: bool
+    username: str
+    password: str
+    folder: str
+
+
+def _snapshot(acc: EmailAccount) -> Mailbox:
+    ssl = bool(acc.imap_use_ssl)
+    return Mailbox(acc.id, acc.email, acc.imap_host, acc.imap_port or (993 if ssl else 143), ssl,
+                   acc.imap_username or acc.email, decrypt_secret(acc.imap_password_encrypted),
+                   acc.imap_mailbox or "INBOX")
+
+
+def _connect(mb: Mailbox) -> imaplib.IMAP4:
+    conn = (imaplib.IMAP4_SSL if mb.ssl else imaplib.IMAP4)(mb.host, mb.port)
+    conn.login(mb.username, mb.password)
+    conn.select(mb.folder)
     return conn
 
 
-def _fetch_dsns(acc: EmailAccount) -> list[tuple[bytes, bytes]]:
+def _fetch_dsns(acc: Mailbox) -> list[tuple[bytes, bytes]]:
     """Return (uid, raw message) for each unseen DSN. BODY.PEEK leaves them unseen until stored."""
     conn = _connect(acc)
     try:
@@ -84,7 +103,7 @@ def _fetch_dsns(acc: EmailAccount) -> list[tuple[bytes, bytes]]:
         conn.logout()
 
 
-def _mark_seen(acc: EmailAccount, uids: list[bytes]) -> None:
+def _mark_seen(acc: Mailbox, uids: list[bytes]) -> None:
     conn = _connect(acc)
     try:
         for uid in uids:
@@ -114,7 +133,7 @@ async def process_dsn(session, r, account_id, raw: bytes) -> str | None:
     return dsn.kind
 
 
-async def poll_account(session, r, acc: EmailAccount) -> int:
+async def poll_account(session, r, acc: Mailbox) -> int:
     dsns = await asyncio.to_thread(_fetch_dsns, acc)
     for _, raw in dsns:
         await process_dsn(session, r, acc.id, raw)
@@ -131,8 +150,14 @@ async def poll_all(session, r) -> int:
             EmailAccount.imap_password_encrypted.is_not(None),
         )
     )).scalars().all()
-    total = 0
+    boxes = []
     for acc in accounts:
+        try:
+            boxes.append(_snapshot(acc))
+        except Exception:  # e.g. an undecryptable password: skip that mailbox only
+            log.exception("bounce poll skipped %s", acc.email)
+    total = 0
+    for acc in boxes:
         try:
             total += await poll_account(session, r, acc)
         except Exception:  # one broken mailbox must not stop the others
