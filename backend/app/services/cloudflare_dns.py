@@ -9,6 +9,7 @@ returns None and nothing is touched.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Optional
@@ -23,6 +24,7 @@ from app.services import mx_checks as mx
 log = logging.getLogger("champmail.cloudflare")
 API = "https://api.cloudflare.com/client/v4"
 PUBLIC_RESOLVERS = (["1.1.1.1"], ["8.8.8.8"])
+PROPAGATION_ATTEMPTS, PROPAGATION_DELAY = 3, 2.0  # bounds the in-request wait to ~4s; the worker tick keeps retrying after that
 
 
 class CloudflareError(Exception):
@@ -123,6 +125,16 @@ async def propagated(domain: str, lookups=None) -> bool:
         if not spf or dmarc is None or not await look(f"track.{domain}", "A"):
             return False
     return True
+
+
+async def wait_propagated(domain: str, lookups=None) -> bool:
+    """`propagated` with a bounded retry (each lookup is already time-limited by the resolver)."""
+    for i in range(PROPAGATION_ATTEMPTS):
+        if i:
+            await asyncio.sleep(PROPAGATION_DELAY)
+        if await propagated(domain, lookups):
+            return True
+    return False
 
 
 async def promote_pending(Session, lookups=None) -> int:

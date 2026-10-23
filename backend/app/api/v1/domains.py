@@ -204,7 +204,7 @@ async def create_domain(body: DomainCreate, session: AsyncSession = Depends(get_
         raise HTTPException(502, {"error": f"Cloudflare DNS failed and was rolled back: {e}", "order_uid": d.inboxkit_order_uid,
                                   "domain_id": str(d.id)})
     if made is not None:
-        if await cloudflare_dns.propagated(body.domain):
+        if await cloudflare_dns.wait_propagated(body.domain):
             cloudflare_dns.mark_propagated(d)
         else:
             d.dns_status = "pending"  # the worker promotes it to ready once both public resolvers see the records

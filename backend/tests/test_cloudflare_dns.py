@@ -99,24 +99,30 @@ def test_a_failed_worker_route_deletes_all_four_records(api):
     assert deletes == [f"/zones/z1/dns_records/r{i}" for i in (4, 3, 2, 1)]
 
 
-def test_a_rollback_delete_that_fails_does_not_hide_the_original_error(api):
+def test_a_rollback_delete_that_fails_does_not_hide_the_original_error(api, caplog):
     with respx.mock(assert_all_called=False) as mock:
         mock_inboxkit(mock, order_domains=WITH_DKIM)
         cloudflare(mock, fail_post_number=2)
         mock.route(method="DELETE").mock(return_value=httpx.Response(500, json={"success": False, "errors": []}))
         r = order_domain(api)
     assert r.status_code == 502 and "boom" in r.json()["detail"]["error"]
+    assert "rollback could not delete /zones/z1/dns_records/r1" in caplog.text    # logged, not swallowed silently
 
 
 def test_records_not_yet_visible_leave_the_domain_pending_until_the_worker_promotes_it(api, monkeypatch):
+    calls = []
+
     async def not_yet(domain, lookups=None):
+        calls.append(domain)
         return False
+    monkeypatch.setattr(cf, "PROPAGATION_DELAY", 0)
     monkeypatch.setattr(cf, "propagated", not_yet)
     with respx.mock(assert_all_called=False) as mock:
         mock_inboxkit(mock)
         cloudflare(mock)
         r = order_domain(api)
     assert (r.json()["dns_status"], r.json()["status"]) == ("pending", "ordered")
+    assert len(calls) == cf.PROPAGATION_ATTEMPTS                            # retried, bounded, then left to the worker
 
     seen = {"v=spf1 include:_spf.google.com ~all"}
     full = Script({("acme-mail.com", "TXT"): list(seen), ("_dmarc.acme-mail.com", "TXT"): ["v=DMARC1; p=quarantine"], ("track.acme-mail.com", "A"): ["104.16.0.1"]})
