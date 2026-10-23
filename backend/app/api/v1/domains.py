@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_session, require_api_key
 from app.models.domain import Domain
 from app.models.email_account import EmailAccount
+from app.services.send import CANARY_DAILY_CAP
 from app.services.inboxkit.client import InboxKitAPIError, get_client
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,8 @@ def serialize_domain(d: Domain, mailboxes: list[EmailAccount]) -> dict:
         "hard_bounce_rate": d.bounce_rate,
         "sends_today": sum(m.sent_today for m in mailboxes if m.sent_today_date == today),
         "cap": sum(m.daily_send_limit for m in mailboxes),
+        "canary_sends_today": d.canary_sends_today if d.canary_sends_date == today else 0,
+        "canary_cap": CANARY_DAILY_CAP,
     }
     if problem:  # TS `reason?: string`: absent when healthy, never null
         out["reason"] = problem

@@ -1,43 +1,15 @@
 """Operator domain holds survive mailbox activation, with real Postgres, Redis and SMTP."""
 import os
 
-import httpx
 import pytest
 from sqlalchemy import select
 
-from app.api.v1 import deps, send as send_api
-from app.config import get_settings
-from app.db.redis import RedisClient
-from app.main import app
 from app.models import EmailAccount, SendDispatch
 from tests.test_send import HARBINGER, run, seed
 from tests.test_send_mailpit_live import API, SMTP, total
 
 pytestmark = pytest.mark.skipif(not (os.environ.get("TEST_DATABASE_URL") and SMTP and API),
                                 reason="needs TEST_DATABASE_URL, TEST_MAILPIT_SMTP and TEST_MAILPIT_API")
-
-
-@pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setattr(get_settings(), "champmail_api_key", "domain-gate-test-key")
-    monkeypatch.setenv("EMAIL_ENCRYPTION_KEY", "test-encryption-key")
-
-    async def exercise(Session, scenario):
-        async def session_dep():
-            async with Session() as session:
-                yield session
-        app.dependency_overrides[deps.get_session] = session_dep
-        app.dependency_overrides[send_api.get_session] = session_dep
-        redis = RedisClient()
-        monkeypatch.setattr(send_api, "redis_client", redis)
-        try:
-            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test",
-                                         headers={"X-API-Key": "domain-gate-test-key"}) as c:
-                await scenario(c)
-        finally:
-            app.dependency_overrides.clear()
-            await redis.close()
-    return exercise
 
 
 @pytest.mark.parametrize("domain_status", ["paused", "retired"])

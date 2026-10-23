@@ -28,6 +28,8 @@ from app.services import tracking
 
 MIN_GAP_S = 45
 JITTER_S = 90
+CANARY_DAILY_CAP = 6  # per domain per UTC day, separate from every mailbox's campaign cap
+CANARY_DOMAIN_OK = ("active", "paused")  # never retired
 
 
 class SendRefused(Exception):
@@ -84,6 +86,23 @@ def _eligible(now: datetime, today: date):
     )
 
 
+def _canary_eligible(today: date):
+    """A canary may use a paused domain, but not a retired or blacklisted one, nor an inactive,
+    paused or retired mailbox. No mailbox cap and no send gap: those belong to campaign sends."""
+    return and_(
+        EmailAccount.is_active.is_(True),
+        EmailAccount.status == "active",
+        EmailAccount.smtp_host.is_not(None),
+        EmailAccount.smtp_password_encrypted.is_not(None),
+        Domain.blacklisted.is_not(True),
+        Domain.send_status.in_(CANARY_DOMAIN_OK),
+        func.coalesce(Domain.status, "") != "retired",
+        func.coalesce(Domain.tracking_subdomain, "") != "",
+        or_(Domain.canary_sends_date.is_(None), Domain.canary_sends_date != today,
+            Domain.canary_sends_today < CANARY_DAILY_CAP),
+    )
+
+
 def _selector(mailbox_id, email, brand_id, domain_id):
     conds = []
     if mailbox_id:
@@ -108,6 +127,7 @@ async def claim_mailbox(
     idempotency_key: Optional[str] = None,
     payload_hash: str = "",
     retry_dispatch_id: Optional[UUID] = None,
+    canary: bool = False,
 ) -> Claimed:
     """Claim one send slot in a single UPDATE ... WHERE under-cap RETURNING.
 
@@ -124,6 +144,49 @@ async def claim_mailbox(
     """
     now = _now()
     today = now.date()
+    if canary:
+        claimed_id = await _claim_canary_slot(session, today, mailbox_id, email, brand_id, domain_id)
+        if claimed_id is None:
+            await session.rollback()
+            raise await _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today, canary=True)
+    else:
+        claimed_id = await _claim_campaign_slot(session, now, today, gap_s, mailbox_id, email, brand_id, domain_id)
+        if claimed_id is None:
+            await session.rollback()
+            raise await _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
+    return await _record_dispatch(session, claimed_id, now, idempotency_key, payload_hash, retry_dispatch_id, canary)
+
+
+async def _claim_canary_slot(session, today, mailbox_id, email, brand_id, domain_id) -> Optional[UUID]:
+    """Pick any eligible mailbox (shared row lock, so a concurrent retire waits) and take one slot of the
+    domain's canary counter in a single guarded UPDATE: the domain row lock makes the cap exact."""
+    elig = _canary_eligible(today)
+    pick = (
+        select(EmailAccount.id, EmailAccount.domain_id)
+        .join(Domain, Domain.id == EmailAccount.domain_id)
+        .where(elig, *_selector(mailbox_id, email, brand_id, domain_id))
+        .order_by(func.random())
+        .limit(1)
+        .with_for_update(read=True, of=EmailAccount)
+    )
+    picked = (await session.execute(pick)).first()
+    if picked is None:
+        return None
+    took = await session.execute(
+        update(Domain)
+        .where(Domain.id == picked.domain_id, Domain.send_status.in_(CANARY_DOMAIN_OK),
+               func.coalesce(Domain.status, "") != "retired", Domain.blacklisted.is_not(True),
+               or_(Domain.canary_sends_date.is_(None), Domain.canary_sends_date != today,
+                   Domain.canary_sends_today < CANARY_DAILY_CAP))
+        .values(canary_sends_today=case((Domain.canary_sends_date == today, Domain.canary_sends_today + 1), else_=1),
+                canary_sends_date=today)
+        .returning(Domain.id)
+        .execution_options(synchronize_session=False)
+    )
+    return picked.id if took.scalar_one_or_none() is not None else None
+
+
+async def _claim_campaign_slot(session, now, today, gap_s, mailbox_id, email, brand_id, domain_id) -> Optional[UUID]:
     elig = _eligible(now, today)
     pick = (
         select(EmailAccount.id)
@@ -146,10 +209,10 @@ async def claim_mailbox(
         .returning(EmailAccount.id)
         .execution_options(synchronize_session=False)
     )
-    claimed_id = (await session.execute(stmt)).scalar_one_or_none()
-    if claimed_id is None:
-        await session.rollback()
-        raise await _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def _record_dispatch(session, claimed_id, now, idempotency_key, payload_hash, retry_dispatch_id, canary) -> Claimed:
     box = (await session.execute(select(EmailAccount).where(EmailAccount.id == claimed_id))).scalar_one()
     dom = (await session.execute(select(Domain).where(Domain.id == box.domain_id))).scalar_one()
     message_id = make_msgid(domain=(box.from_email or box.email).rsplit("@", 1)[-1]).strip("<>")
@@ -159,7 +222,7 @@ async def claim_mailbox(
                 update(SendDispatch)
                 .where(SendDispatch.id == retry_dispatch_id, SendDispatch.status == "failed")
                 .values(message_id=message_id, mailbox_id=box.id, domain_id=dom.id, status="sending",
-                        response=None, updated_at=now)
+                        response=None, canary=canary, updated_at=now)
                 .returning(SendDispatch.id)
             )
             if reused.scalar_one_or_none() is None:
@@ -167,7 +230,8 @@ async def claim_mailbox(
             dispatch_id = retry_dispatch_id
         else:
             row = SendDispatch(message_id=message_id, domain_id=dom.id, mailbox_id=box.id,
-                               idempotency_key=idempotency_key, payload_hash=payload_hash, status="sending")
+                               idempotency_key=idempotency_key, payload_hash=payload_hash, status="sending",
+                               canary=canary)
             session.add(row)
             await session.flush()
             dispatch_id = row.id
@@ -192,7 +256,8 @@ async def find_dispatch(session: AsyncSession, key: str) -> Optional[SendDispatc
 
 
 async def finish_dispatch(session: AsyncSession, dispatch_id: UUID, status: str, *,
-                          response: Optional[dict] = None, release_mailbox: Optional[UUID] = None) -> None:
+                          response: Optional[dict] = None, release_mailbox: Optional[UUID] = None,
+                          release_canary_domain: Optional[UUID] = None) -> None:
     """Record the SMTP outcome. Only a definite refusal (`failed`) gives the cap slot back."""
     await session.execute(
         update(SendDispatch).where(SendDispatch.id == dispatch_id).values(status=status, response=response, updated_at=_now())
@@ -202,6 +267,12 @@ async def finish_dispatch(session: AsyncSession, dispatch_id: UUID, status: str,
             update(EmailAccount)
             .where(EmailAccount.id == release_mailbox, EmailAccount.sent_today_date == _now().date(), EmailAccount.sent_today > 0)
             .values(sent_today=EmailAccount.sent_today - 1)
+        )
+    if release_canary_domain:
+        await session.execute(
+            update(Domain)
+            .where(Domain.id == release_canary_domain, Domain.canary_sends_date == _now().date(), Domain.canary_sends_today > 0)
+            .values(canary_sends_today=Domain.canary_sends_today - 1)
         )
     await session.commit()
 
@@ -217,7 +288,7 @@ def is_definite_refusal(exc: BaseException) -> bool:
                             aiosmtplib.SMTPRecipientsRefused, aiosmtplib.SMTPNotSupported))
 
 
-async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today) -> SendRefused:
+async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today, canary=False) -> SendRefused:
     """Why nothing was claimed. Runs only on the failure path, so Python-side is fine."""
     conds = _selector(mailbox_id, email, brand_id, domain_id)
     rows = (
@@ -231,9 +302,9 @@ async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
     for box, dom in rows:
         if box.status in ("paused", "retired") or not box.is_active:
             r = (0, SendRefused(409, f"mailbox_{box.status}", f"mailbox is {box.status if box.is_active else 'inactive'}"))
-        elif dom.send_status != "active":
+        elif dom.send_status not in (CANARY_DOMAIN_OK if canary else ("active",)):
             r = (0, SendRefused(409, f"domain_{dom.send_status}", f"domain is {dom.send_status}"))
-        elif dom.paused or dom.blacklisted or dom.status in ("paused", "retired"):
+        elif dom.blacklisted or dom.status == "retired" or (not canary and (dom.paused or dom.status == "paused")):
             why = "blacklisted" if dom.blacklisted else (dom.status if dom.status in ("paused", "retired") else "paused")
             r = (0, SendRefused(409, f"domain_{why}", f"domain is {why}"))
         elif not box.smtp_host or not box.smtp_password_encrypted:
@@ -241,6 +312,10 @@ async def _diagnose(session, mailbox_id, email, brand_id, domain_id, now, today)
         elif not (dom.tracking_subdomain or "").strip():
             # Hard error by design: never fall back to a shared tracking host.
             r = (2, SendRefused(500, "tracking_subdomain_missing", f"domain {dom.domain_name} has no tracking subdomain"))
+        elif canary:
+            capped = dom.canary_sends_date == today and dom.canary_sends_today >= CANARY_DAILY_CAP
+            r = (3, SendRefused(429, "canary_cap", f"domain at its canary cap of {CANARY_DAILY_CAP} today") if capped
+                 else SendRefused(429, "throttled", "canary slot was taken by a concurrent request", retry_after=1))
         elif box.sent_today_date == today and box.sent_today >= box.daily_send_limit:
             r = (3, SendRefused(429, "daily_cap", f"mailbox at daily cap {box.daily_send_limit}"))
         else:
@@ -268,6 +343,7 @@ def build_message(
     unsubscribe_url: Optional[str],
     track_opens: bool,
     track_clicks: bool,
+    extra_headers: Optional[dict[str, str]] = None,
 ) -> tuple[EmailMessage, str]:
     box, dom = claimed.mailbox, claimed.domain
     host = (dom.tracking_subdomain or "").strip()
@@ -284,6 +360,8 @@ def build_message(
     msg["Message-ID"] = f"<{message_id}>"
     if reply_to or box.reply_to_email:
         msg["Reply-To"] = reply_to or box.reply_to_email
+    for name, value in (extra_headers or {}).items():
+        msg[name] = value
     if unsubscribe_url:  # RFC 8058 one-click
         msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
         msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"

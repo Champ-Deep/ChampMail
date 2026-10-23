@@ -1,8 +1,9 @@
 """Mailboxes. Response keys mirror Harbinger's MailboxStatus (email, status) plus health and accounting."""
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, StrictInt, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,17 +43,35 @@ async def list_mailboxes(domain: Optional[str] = None, session: AsyncSession = D
     return [serialize_mailbox(m, d) for m, d in (await session.execute(q)).all()]
 
 
+class MailboxPatch(BaseModel):
+    """{cap} alone is the warm-up ramp: status and reason stay as they are. {status, reason[, cap]} as before."""
+    cap: Optional[StrictInt] = Field(default=None, ge=1, le=200)
+    status: Optional[Literal["active", "paused", "retired"]] = None
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def _shape(self):
+        if self.cap is None and self.status is None:
+            raise ValueError("cap or status is required")
+        if self.status is not None:  # same reason rule as the domain/mailbox status patch
+            StatusPatch(status=self.status, reason=self.reason)
+        return self
+
+
 @router.patch("/{mailbox_id}")
-async def patch_mailbox(mailbox_id: str, body: StatusPatch, session: AsyncSession = Depends(get_session)) -> dict:
+async def patch_mailbox(mailbox_id: str, body: MailboxPatch, session: AsyncSession = Depends(get_session)) -> dict:
     try:
         m = await session.get(EmailAccount, UUID(mailbox_id))
     except ValueError:
         m = None
     if m is None:
         raise HTTPException(404, "mailbox not found")
-    if m.status == "retired" and body.status != "retired":
-        raise HTTPException(409, "retired is terminal")
-    m.status, m.status_reason = body.status, body.reason
+    if body.status is not None:
+        if m.status == "retired" and body.status != "retired":
+            raise HTTPException(409, "retired is terminal")
+        m.status, m.status_reason = body.status, body.reason
+    if body.cap is not None:
+        m.daily_send_limit = body.cap
     await session.commit()
     d = await session.get(Domain, m.domain_id) if m.domain_id else None
     return serialize_mailbox(m, d)

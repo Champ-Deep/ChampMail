@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, Float
+from sqlalchemy import Boolean, Column, Date, DateTime, Integer, String, Text, Float
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.postgres import Base
@@ -71,6 +71,11 @@ class Domain(Base):
     send_status = Column(String(16), nullable=False, default="active", server_default="active")
     send_status_reason = Column(Text, nullable=True)
     inboxkit_order_uid = Column(String(255), nullable=True)
+
+    # Seed canaries sent today (0008). Separate from the mailbox campaign cap; the date makes the
+    # reset self-healing, same as email_accounts.sent_today_date.
+    canary_sends_today = Column(Integer, nullable=False, default=0, server_default="0")
+    canary_sends_date = Column(Date, nullable=True)
 
     # Deliverability
     health_score = Column(Float, default=100.0)

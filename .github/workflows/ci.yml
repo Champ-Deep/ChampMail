@@ -66,13 +66,13 @@ jobs:
           done
       - name: Full suite (warnings are printed, not filtered)
         run: python -m pytest -rsw -p no:cacheprovider --junitxml=junit.xml
-      - name: Only the live-compose gate may be skipped here (it runs in the next job)
+      - name: Only the live-compose gates may be skipped here (it runs in the next job)
         run: |
           python - <<'PY'
           import xml.etree.ElementTree as T
           sk = sorted(c.get("classname") or c.get("name") for c in T.parse("junit.xml").iter("testcase") if c.find("skipped") is not None)
           print("skipped:", sk)
-          assert sk == ["tests.test_m1_gate"], sk
+          assert sk == ["tests.test_m11_gate", "tests.test_m1_gate"], sk
           PY
 
   compose-gate:
@@ -87,5 +87,7 @@ jobs:
       - run: docker compose up --build --wait
       - name: Gate module inside the api container
         run: docker compose exec -T -e M1_GATE=1 api python -m pytest tests/test_m1_gate.py -s -p no:cacheprovider
+      - name: M1.1 gate module (canary, seeds, cap-only PATCH) inside the api container
+        run: docker compose exec -T -e M1_GATE=1 api python -m pytest tests/test_m11_gate.py -s -p no:cacheprovider
       - if: always()
         run: docker compose ps -a && docker compose logs --no-color worker | tail -50

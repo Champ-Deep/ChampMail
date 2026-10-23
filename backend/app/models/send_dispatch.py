@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, Column, DateTime, ForeignKey, String
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, String, false
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.postgres import Base
@@ -27,5 +27,6 @@ class SendDispatch(Base):
     payload_hash = Column(String(64), nullable=False)  # conflict detection only, never a dedupe key
     status = Column(String(16), nullable=False, default="sending")
     response = Column(JSON, nullable=True)  # the 200 body, set when status == sent
+    canary = Column(Boolean, nullable=False, default=False, server_default=false())  # seed-only recovery canary
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
