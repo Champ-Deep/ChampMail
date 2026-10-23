@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     dmarc_imap_user: str = ""
     dmarc_imap_password: str = ""
     dmarc_imap_folder: str = "INBOX"
+    # Extra DKIM selectors to probe on every domain, comma separated, on top of each domain's own dkim_selector.
+    dkim_selectors: str = ""
     # Google Postmaster Tools: the service account key JSON itself. Blank: fields stay null.
     postmaster_service_account_json: str = ""
 

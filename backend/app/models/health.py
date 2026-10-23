@@ -39,8 +39,9 @@ class DomainHealthDaily(Base):
     dmarc_aligned = Column(Boolean, nullable=True)  # NULL when no aggregate report covered the previous day
     mta_sts_ok = Column(Boolean, nullable=False)
     dnsbl_listed = Column(JSON, nullable=False, default=list)
-    dmarc_reports_pass_count = Column(Integer, nullable=False, default=0)  # previous UTC day, from dmarc_reports
-    dmarc_reports_fail_count = Column(Integer, nullable=False, default=0)
+    # Previous UTC day, from dmarc_reports. NULL when no aggregate report covered it (unknown is not zero).
+    dmarc_reports_pass_count = Column(Integer, nullable=True)
+    dmarc_reports_fail_count = Column(Integer, nullable=True)
     postmaster_spam_rate = Column(Float, nullable=True)  # NULL unless Postmaster Tools is configured and has data
     postmaster_reputation = Column(String(16), nullable=True)
     source = Column(String(64), nullable=False)  # which inputs contributed, e.g. dns+dmarc+postmaster

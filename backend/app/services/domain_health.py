@@ -13,6 +13,7 @@ from typing import Awaitable, Callable, Optional
 
 from sqlalchemy import func, select
 
+from app.config import get_settings
 from app.models import Bounce, DmarcReport, DnsblZone, Domain, DomainHealthDaily, EmailAccount, OutboundEvent, SendDispatch
 from app.services import mx_checks as mx
 
@@ -29,8 +30,13 @@ def _window(day: date) -> tuple[datetime, datetime]:
 
 
 async def rates(session, domain_ids: list, day: date) -> dict:
-    """{domain_id: (hard_bounce_rate, complaint_rate)} for one UTC day. Denominator: campaign sends that reached
-    the SMTP server that day (canaries excluded). Numerators: hard DSNs, and `complained` events by event time."""
+    """{domain_id: (hard_bounce_rate, complaint_rate)} for one UTC day (00:00 to 24:00, the day the daily job runs).
+
+    hard_bounce_rate = hard DSNs (bounces.kind = 'hard', by bounce time) / sends.
+    complaint_rate   = `complained` outbound events (by event time) / sends.
+    sends            = send_dispatches with status 'sent' created that day, canaries excluded.
+    Zero sends gives 0.0 for both, never a division error. GET /domains serves the value the last job run
+    stored on the domain row, so it is as fresh as that run (once per day, plus on a missed-day catch-up)."""
     if not domain_ids:
         return {}
     lo, hi = _window(day)
@@ -75,7 +81,8 @@ async def check_domain(session, d: Domain, lookup: mx.Lookup, zones: list, postm
     ips = list(await lookup(d.domain_name, "A") or []) + ([d.sending_ip] if d.sending_ip else [])
 
     spf = await mx.spf_ok(d.domain_name, platforms, lookup)
-    dkim = await mx.dkim_ok(d.domain_name, platforms, [d.dkim_selector] if d.dkim_selector else [], lookup)
+    selectors = [x.strip() for x in [d.dkim_selector or "", *get_settings().dkim_selectors.split(",")] if x.strip()]
+    dkim = await mx.dkim_ok(d.domain_name, platforms, selectors, lookup)
     policy = await mx.dmarc_policy(d.domain_name, lookup)
     sts = await mx.mta_sts_ok(d.domain_name, lookup)
     hits, errors = await mx.dnsbl_check(d.domain_name, ips, zones, lookup)
@@ -94,7 +101,7 @@ async def check_domain(session, d: Domain, lookup: mx.Lookup, zones: list, postm
         DomainHealthDaily.domain_id == d.id, DomainHealthDaily.day == day))).scalar_one_or_none() or DomainHealthDaily(domain_id=d.id, day=day)
     row.spf_ok, row.dkim_ok, row.dmarc_policy, row.mta_sts_ok = spf, dkim, policy, sts
     row.dnsbl_listed = hits
-    row.dmarc_reports_pass_count, row.dmarc_reports_fail_count = passed, failed
+    row.dmarc_reports_pass_count, row.dmarc_reports_fail_count = (passed, failed) if passed + failed else (None, None)
     row.dmarc_aligned = None if passed + failed == 0 else failed == 0
     row.postmaster_spam_rate = pm.get("spam_rate") if pm else None
     row.postmaster_reputation = pm.get("reputation") if pm else None

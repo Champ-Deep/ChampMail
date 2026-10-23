@@ -46,6 +46,8 @@ def test_0009_seeds_three_zones_keeps_existing_domains_and_round_trips():
         ]
         assert c.execute(text("SELECT dns_status FROM domains")).scalar_one() is None
         assert {tuple(u["column_names"]) for u in inspect(c).get_unique_constraints("domain_health_daily")} == {("domain_id", "day")}
+        cols = {col["name"]: col["nullable"] for col in inspect(c).get_columns("domain_health_daily")}
+        assert cols["dmarc_reports_fail_count"] is True and cols["dmarc_reports_pass_count"] is True  # 0010
     with engine.begin() as c, pytest.raises(IntegrityError):
         c.execute(text("INSERT INTO dnsbl_zones (id, name, zone, kind, enabled) VALUES (gen_random_uuid(), 'x', 'x.test', 'url', true)"))
     alembic("downgrade", "0008")

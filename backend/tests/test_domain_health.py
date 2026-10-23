@@ -150,7 +150,36 @@ def test_no_dmarc_reports_means_aligned_is_unknown_not_false():
         async with Session() as s:
             r = (await s.execute(select(DomainHealthDaily))).scalar_one()
             return (r.dmarc_aligned, r.dmarc_reports_fail_count, r.source)
-    assert run(go) == (None, 0, "dns")
+    assert run(go) == (None, None, "dns")
+
+
+def test_a_second_check_the_same_day_updates_the_row_instead_of_adding_one():
+    async def go(Session):
+        dom, _, lookup = await world(Session, LISTED)
+        zones = []
+        async with Session() as s:
+            zones = list((await s.execute(select(DnsblZone))).scalars())
+        for answers in (LISTED, HEALTHY):
+            lookup = Script(answers)
+            async with Session() as s:
+                await dh.check_domain(s, await s.get(Domain, dom), lookup, zones, None, datetime.utcnow().date())
+                await s.commit()
+        async with Session() as s:
+            rows = (await s.execute(select(DomainHealthDaily))).scalars().all()
+            return len(rows), rows[0].dnsbl_listed
+    assert run(go) == (1, [])
+
+
+def test_dkim_selectors_come_from_the_domain_record_and_the_config(monkeypatch):
+    from app.config import get_settings
+    async def go(Session):
+        _, _, _ = await world(Session, HEALTHY, box_kw={"platform": "self-hosted"}, dom_kw={"dkim_selector": "own"})
+        answers = {(NAME, "TXT"): ["v=spf1 -all"], (f"extra._domainkey.{NAME}", "TXT"): ["v=DKIM1; p=KEY"]}
+        await job(Session, Script(answers))
+        async with Session() as s:
+            return (await s.execute(select(DomainHealthDaily.dkim_ok))).scalar_one()
+    monkeypatch.setattr(get_settings(), "dkim_selectors", "other, extra")
+    assert run(go) is True
 
 
 class FakePostmaster:
