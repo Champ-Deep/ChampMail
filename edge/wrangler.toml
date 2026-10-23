@@ -8,8 +8,8 @@ workers_dev = false
 # creates `track.<domain>/*` for this script in each zone it provisions (backend/app/services/cloudflare.py).
 
 [vars]
-# ChampMail core (Railway). Override per environment: `wrangler deploy --var CHAMPMAIL_URL:https://...`
-CHAMPMAIL_URL = "https://champmail.invalid"
+# ChampMail core (Railway). Override per environment: `wrangler deploy --var CHAMPMAIL_BASE_URL:https://...`
+CHAMPMAIL_BASE_URL = "https://champmail.invalid"
 
 # Secrets, never in this file: `wrangler secret put TRACKING_SECRET` (same value as ChampMail's)
-# and `wrangler secret put EDGE_SHARED_SECRET` (same value as ChampMail's EDGE_SHARED_SECRET).
+# and `wrangler secret put INTERNAL_EVENTS_SECRET` (same value as ChampMail's INTERNAL_EVENTS_SECRET).

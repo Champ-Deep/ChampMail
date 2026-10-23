@@ -1,6 +1,6 @@
 """POST /api/v1/events/internal: the edge Worker's callback for opened, clicked and unsubscribed.
 
-Auth is the shared EDGE_SHARED_SECRET (X-Edge-Secret), not the API key: the Worker is the only caller
+Auth is the shared INTERNAL_EVENTS_SECRET (X-Edge-Secret), not the API key: the Worker is the only caller
 and must not hold anything that can send mail. The Worker has already verified the token's HMAC; it is
 verified again here with the same dispatch and host checks the in-process /o and /c routes make, so a
 leaked edge secret still cannot record an event for a message the token does not name.
@@ -24,7 +24,7 @@ KIND = {"opened": "o", "clicked": "c", "unsubscribed": "u"}
 
 
 def require_edge_secret(x_edge_secret: Optional[str] = Header(default=None, alias="X-Edge-Secret")) -> None:
-    want = get_settings().edge_shared_secret.strip()
+    want = get_settings().internal_events_secret.strip()
     if not want or not x_edge_secret or not hmac.compare_digest(x_edge_secret, want):
         raise HTTPException(401, "invalid edge secret")
 

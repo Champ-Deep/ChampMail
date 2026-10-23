@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Base URL of the client (Harbinger) that receives POST <url>/api/email/track events.
     champmail_client_url: str = ""
     # Shared with the edge Worker (X-Edge-Secret). Blank refuses every Worker callback.
-    edge_shared_secret: str = ""
+    internal_events_secret: str = ""
 
     # Cloudflare DNS automation: off unless the token is set. The Worker hostname is the target of
     # each domain's proxied track.<domain> CNAME; the script name is what the per-zone route runs.

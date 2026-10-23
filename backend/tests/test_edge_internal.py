@@ -20,7 +20,7 @@ HOST = "t.example.com"  # the tracking_subdomain tests.test_send.seed gives ever
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
-    monkeypatch.setattr(get_settings(), "edge_shared_secret", "edge-s3cret")
+    monkeypatch.setattr(get_settings(), "internal_events_secret", "edge-s3cret")
     monkeypatch.setattr(get_settings(), "champmail_api_key", "api-k3y")  # the edge secret must work without it
     yield
     app.dependency_overrides.clear()
@@ -62,7 +62,7 @@ def test_requires_the_edge_secret_not_the_api_key(secret):
 
 
 def test_blank_configured_secret_refuses_everything(monkeypatch):
-    monkeypatch.setattr(get_settings(), "edge_shared_secret", "")
+    monkeypatch.setattr(get_settings(), "internal_events_secret", "")
 
     async def go(Session):
         dom, mid = await world(Session)

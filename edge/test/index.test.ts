@@ -5,7 +5,7 @@ import fixture from "./fixtures/tokens.json";
 // edge/test/fixtures/tokens.json is written by the Python signer (backend/tests/test_edge_contract.py),
 // so every token below is one ChampMail's send path would put in a message.
 const { tokens, message_id, click_url, secret } = fixture;
-const env = { TRACKING_SECRET: secret, EDGE_SHARED_SECRET: "edge-secret", CHAMPMAIL_URL: "https://champmail.test" };
+const env = { TRACKING_SECRET: secret, INTERNAL_EVENTS_SECRET: "edge-secret", CHAMPMAIL_BASE_URL: "https://champmail.test" };
 const HOST = "track.acme-mail.com";
 
 let upstream: MockInstance<typeof fetch>;

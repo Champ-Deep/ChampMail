@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { verify } from "./token";
 
-type Bindings = { TRACKING_SECRET: string; EDGE_SHARED_SECRET: string; CHAMPMAIL_URL: string };
+type Bindings = { TRACKING_SECRET: string; INTERNAL_EVENTS_SECRET: string; CHAMPMAIL_BASE_URL: string };
 type EventType = "opened" | "clicked" | "unsubscribed";
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -13,9 +13,9 @@ const NO_STORE = { "Cache-Control": "no-store" };
 /** Hands the verified event to ChampMail, which decides (dedupe, suppression). Returns ChampMail's HTTP status, 0 if unreachable. */
 async function forward(env: Bindings, event_type: EventType, token: string, host: string, message_id: string): Promise<number> {
   try {
-    const res = await fetch(`${env.CHAMPMAIL_URL.replace(/\/+$/, "")}/api/v1/events/internal`, {
+    const res = await fetch(`${env.CHAMPMAIL_BASE_URL.replace(/\/+$/, "")}/api/v1/events/internal`, {
       method: "POST",
-      headers: { "content-type": "application/json", "X-Edge-Secret": env.EDGE_SHARED_SECRET },
+      headers: { "content-type": "application/json", "X-Edge-Secret": env.INTERNAL_EVENTS_SECRET },
       body: JSON.stringify({ event_type, token, host, message_id }),
     });
     return res.status;

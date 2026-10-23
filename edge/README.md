@@ -11,8 +11,8 @@ It verifies the HMAC token ChampMail signed (`backend/app/services/tracking.py`)
 | GET /u/{token} | confirmation page with a POST button, nothing posted | 404 |
 | POST /u/{token} with `List-Unsubscribe=One-Click` | `unsubscribed` posted, 200 plain text; 404 if ChampMail refuses, 502 if it is down | 404 |
 
-Secrets: `wrangler secret put TRACKING_SECRET` and `wrangler secret put EDGE_SHARED_SECRET` (same values as ChampMail's).
-`CHAMPMAIL_URL` is a var in `wrangler.toml`. Routes are not in `wrangler.toml`: Cloudflare route patterns are per zone and
+Secrets: `wrangler secret put TRACKING_SECRET` and `wrangler secret put INTERNAL_EVENTS_SECRET` (same values as ChampMail's).
+`CHAMPMAIL_BASE_URL` is a var in `wrangler.toml`. Routes are not in `wrangler.toml`: Cloudflare route patterns are per zone and
 reject an infix wildcard, so ChampMail creates `track.<domain>/*` in each zone when it provisions the domain.
 
 ```
