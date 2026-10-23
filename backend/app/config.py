@@ -20,6 +20,25 @@ class Settings(BaseSettings):
     tracking_secret: str = ""
     # Base URL of the client (Harbinger) that receives POST <url>/api/email/track events.
     champmail_client_url: str = ""
+    # Shared with the edge Worker (X-Edge-Secret). Blank refuses every Worker callback.
+    edge_shared_secret: str = ""
+
+    # Cloudflare DNS automation: off unless the token is set. The Worker hostname is the target of
+    # each domain's proxied track.<domain> CNAME; the script name is what the per-zone route runs.
+    cloudflare_api_token: str = ""
+    edge_worker_hostname: str = ""
+    edge_worker_script: str = "champmail-edge"
+    # DMARC rua mailbox, `{brand}` is replaced by the brand id (dmarc+{brand}@x.com). Blank: no rua tag.
+    dmarc_rua_address: str = ""
+    # IMAP mailbox the rua address delivers to. Blank host: DMARC ingestion is skipped.
+    dmarc_imap_host: str = ""
+    dmarc_imap_port: int = 993
+    dmarc_imap_ssl: bool = True
+    dmarc_imap_user: str = ""
+    dmarc_imap_password: str = ""
+    dmarc_imap_folder: str = "INBOX"
+    # Google Postmaster Tools: the service account key JSON itself. Blank: fields stay null.
+    postmaster_service_account_json: str = ""
 
     smtp_host: str = "mailpit"
     smtp_port: int = 1025

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<feedback>
+  <report_metadata>
+    <org_name>google.com</org_name>
+    <email>noreply-dmarc-support@google.com</email>
+    <report_id>17459823650123456789</report_id>
+    <date_range><begin>1761091200</begin><end>1761177599</end></date_range>
+  </report_metadata>
+  <policy_published>
+    <domain>acme-mail.test</domain><adkim>r</adkim><aspf>r</aspf><p>none</p><sp>none</sp><pct>100</pct>
+  </policy_published>
+  <record>
+    <row><source_ip>198.51.100.7</source_ip><count>2</count>
+      <policy_evaluated><disposition>none</disposition><dkim>pass</dkim><spf>pass</spf></policy_evaluated></row>
+    <identifiers><header_from>acme-mail.test</header_from></identifiers>
+    <auth_results><dkim><domain>acme-mail.test</domain><result>pass</result><selector>google</selector></dkim>
+      <spf><domain>acme-mail.test</domain><result>pass</result></spf></auth_results>
+  </record>
+  <record>
+    <row><source_ip>203.0.113.9</source_ip><count>2</count>
+      <policy_evaluated><disposition>none</disposition><dkim>fail</dkim><spf>fail</spf></policy_evaluated></row>
+    <identifiers><header_from>acme-mail.test</header_from></identifiers>
+    <auth_results><spf><domain>evil.example</domain><result>fail</result></spf></auth_results>
+  </record>
+  <record>
+    <row><source_ip>198.51.100.8</source_ip><count>1</count>
+      <policy_evaluated><disposition>none</disposition><dkim>fail</dkim><spf>pass</spf></policy_evaluated></row>
+    <identifiers><header_from>acme-mail.test</header_from></identifiers>
+    <auth_results><spf><domain>acme-mail.test</domain><result>pass</result></spf></auth_results>
+  </record>
+</feedback>

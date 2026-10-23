@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.v1.deps import get_session, require_api_key
 from app.models.domain import Domain
 from app.models.email_account import EmailAccount
+from app.models.health import DomainHealthDaily
+from app.services import cloudflare_dns, domain_health
 from app.services.send import CANARY_DAILY_CAP
 from app.services.inboxkit.client import InboxKitAPIError, get_client
 
@@ -68,7 +70,7 @@ def _today():
     return datetime.utcnow().date()
 
 
-def serialize_domain(d: Domain, mailboxes: list[EmailAccount]) -> dict:
+def serialize_domain(d: Domain, mailboxes: list[EmailAccount], health: Optional[DomainHealthDaily] = None) -> dict:
     today = _today()
     dns_ok = bool(d.spf_verified and d.dkim_verified and d.dmarc_verified)
     problem = (
@@ -98,6 +100,15 @@ def serialize_domain(d: Domain, mailboxes: list[EmailAccount]) -> dict:
         "cap": sum(m.daily_send_limit for m in mailboxes),
         "canary_sends_today": d.canary_sends_today if d.canary_sends_date == today else 0,
         "canary_cap": CANARY_DAILY_CAP,
+        # From the daily health job (null until it has run for this domain).
+        "dnsbl_lists": list(health.dnsbl_listed) if health else [],
+        "dmarc_policy": health.dmarc_policy if health else None,
+        "mta_sts_ok": health.mta_sts_ok if health else None,
+        "dmarc_aligned": health.dmarc_aligned if health else None,
+        "postmaster_spam_rate": health.postmaster_spam_rate if health else None,
+        "postmaster_reputation": health.postmaster_reputation if health else None,
+        "health_checked_at": health.checked_at.isoformat() if health else None,
+        "dns_status": d.dns_status,
     }
     if problem:  # TS `reason?: string`: absent when healthy, never null
         out["reason"] = problem
@@ -117,7 +128,8 @@ async def _mailboxes_by_domain(session: AsyncSession, domains: list[Domain]) -> 
 async def list_domains(session: AsyncSession = Depends(get_session)) -> list[dict]:
     domains = list((await session.execute(select(Domain).order_by(Domain.domain_name))).scalars())
     by = await _mailboxes_by_domain(session, domains)
-    return [serialize_domain(d, by[d.id]) for d in domains]
+    health = await domain_health.latest(session, [d.id for d in domains])
+    return [serialize_domain(d, by[d.id], health.get(d.id)) for d in domains]
 
 
 def _contact() -> dict:
@@ -179,7 +191,24 @@ async def create_domain(body: DomainCreate, session: AsyncSession = Depends(get_
     domains = row.get("domains") or []
     if domains and isinstance(domains[0], dict):  # else the domain webhook adopts the row by name
         d.inboxkit_domain_uid = domains[0].get("uid")
-    await session.commit()
+    await session.commit()  # the paid order is recorded before any DNS work, so a DNS failure cannot orphan it
+
+    dkim = [(r["name"], r["value"]) for r in ((domains[0] if domains and isinstance(domains[0], dict) else {}).get("dkim_records") or [])
+            if isinstance(r, dict) and r.get("name") and r.get("value")]  # shortcut: InboxKit's DKIM field name is unverified, none means no DKIM records
+    try:
+        made = await cloudflare_dns.provision(body.domain, body.brand_id, os.environ.get("INBOXKIT_MAILBOX_PLATFORM") or "google", dkim)
+    except cloudflare_dns.CloudflareError as e:
+        d.dns_status = "failed"
+        await session.commit()
+        logger.error("cloudflare dns for %s failed and was rolled back: %s", body.domain, e)
+        raise HTTPException(502, {"error": f"Cloudflare DNS failed and was rolled back: {e}", "order_uid": d.inboxkit_order_uid,
+                                  "domain_id": str(d.id)})
+    if made is not None:
+        if await cloudflare_dns.propagated(body.domain):
+            cloudflare_dns.mark_propagated(d)
+        else:
+            d.dns_status = "pending"  # the worker promotes it to ready once both public resolvers see the records
+        await session.commit()
     return {**serialize_domain(d, []), "order_uid": d.inboxkit_order_uid, "mailbox_count": body.mailbox_count}
 
 

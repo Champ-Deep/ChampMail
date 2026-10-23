@@ -8,6 +8,8 @@ import httpx
 from app.config import get_settings
 from app.db.postgres import async_session_maker
 from app.services.bounce_poller import poll_all
+from app.services.cloudflare_dns import promote_pending
+from app.services.domain_health import run_daily
 from app.services.outbound_events import drain
 
 log = logging.getLogger("champmail.worker")
@@ -19,6 +21,11 @@ async def tick(client: httpx.AsyncClient) -> None:
             await poll_all(session)
     except Exception:  # a poll failure must not block event delivery
         log.exception("bounce poll failed")
+    for job in (promote_pending, run_daily):  # run_daily is a no-op once every domain has today's row
+        try:
+            await job(async_session_maker)
+        except Exception:
+            log.exception("%s failed", job.__name__)
     await drain(async_session_maker, client)
 
 

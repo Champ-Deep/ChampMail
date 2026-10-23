@@ -31,6 +31,11 @@ NO_STORE = {"Cache-Control": "no-store"}
 
 
 async def _authorize(session: AsyncSession, request: Request, token: Optional[str], kind: str) -> Optional[dict]:
+    return await authorize(session, request.headers.get("host", ""), token, kind)
+
+
+async def authorize(session: AsyncSession, host: str, token: Optional[str], kind: str) -> Optional[dict]:
+    """The claim if the token verifies, names a live dispatch of the signed domain, and `host` is that domain's own tracking host."""
     claim = tracking.verify(token, kind) if token else None
     if claim is None:
         return None
@@ -44,7 +49,7 @@ async def _authorize(session: AsyncSession, request: Request, token: Optional[st
         .where(SendDispatch.message_id == claim["message_id"], SendDispatch.domain_id == domain_id,
                SendDispatch.status != "failed")
     )).first()
-    host = request.headers.get("host", "").rsplit(":", 1)[0].strip().lower().rstrip(".")
+    host = host.rsplit(":", 1)[0].strip().lower().rstrip(".")
     if row is None or not host or host != (row[0] or "").strip().lower():
         return None
     return claim

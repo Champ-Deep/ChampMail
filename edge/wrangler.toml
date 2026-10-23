@@ -1,0 +1,15 @@
+name = "champmail-edge"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+workers_dev = false
+
+# Routes are NOT listed here. Cloudflare route patterns are per zone and reject an infix wildcard
+# (`track.*/*` is invalid), and every sending domain is its own zone. ChampMail's DNS automation
+# creates `track.<domain>/*` for this script in each zone it provisions (backend/app/services/cloudflare.py).
+
+[vars]
+# ChampMail core (Railway). Override per environment: `wrangler deploy --var CHAMPMAIL_URL:https://...`
+CHAMPMAIL_URL = "https://champmail.invalid"
+
+# Secrets, never in this file: `wrangler secret put TRACKING_SECRET` (same value as ChampMail's)
+# and `wrangler secret put EDGE_SHARED_SECRET` (same value as ChampMail's EDGE_SHARED_SECRET).

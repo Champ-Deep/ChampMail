@@ -1,0 +1,24 @@
+{
+  "name": "champmail-edge",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.6.5",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "workerd"]
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.13.13"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "1.4.7",
+    "@cloudflare/workers-types": "^5.20261023.1",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.0",
+    "wrangler": "4.152.0"
+  }
+}

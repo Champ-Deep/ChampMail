@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 
 from app.config import get_settings
 
-KINDS = ("o", "c")
+KINDS = ("o", "c", "u")  # open, click, one-click unsubscribe (/u/<token>, no destination)
 
 
 def _b64(b: bytes) -> str:

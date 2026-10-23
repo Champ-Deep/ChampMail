@@ -72,6 +72,9 @@ class Domain(Base):
     send_status_reason = Column(Text, nullable=True)
     inboxkit_order_uid = Column(String(255), nullable=True)
 
+    # Cloudflare DNS automation (0009): NULL = not automated, pending = records created but not yet
+    # visible on 1.1.1.1 and 8.8.8.8, propagated = visible, failed = creation failed and was rolled back.
+    dns_status = Column(String(16), nullable=True)
     # Seed canaries sent today (0008). Separate from the mailbox campaign cap; the date makes the
     # reset self-healing, same as email_accounts.sent_today_date.
     canary_sends_today = Column(Integer, nullable=False, default=0, server_default="0")
