@@ -75,6 +75,23 @@ jobs:
           assert sk == ["tests.test_m11_gate", "tests.test_m1_gate"], sk
           PY
 
+  edge:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: edge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: edge/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+
   compose-gate:
     runs-on: ubuntu-latest
     steps:
