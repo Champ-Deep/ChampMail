@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import date, datetime
 
 import parsedmarc
 from parsedmarc.mail import IMAPConnection
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.config import get_settings
@@ -39,7 +39,12 @@ def summarise(report: dict) -> dict:
 
 async def store(Session, reports: list[dict]) -> int:
     """Insert reports for domains we own; returns how many were new."""
-    rows = [summarise(r) for r in reports]
+    rows = []
+    for r in reports:
+        try:
+            rows.append(summarise(r))
+        except (KeyError, TypeError, ValueError):  # one odd report must not abort the batch
+            log.warning("skipping unreadable DMARC report %r", (r.get("report_metadata") or {}).get("report_id"), exc_info=True)
     if not rows:
         return 0
     async with Session() as s:
@@ -61,6 +66,12 @@ async def store(Session, reports: list[dict]) -> int:
 def read_mailbox(host: str, user: str, password: str, *, port: int = 993, ssl: bool = True, folder: str = "INBOX") -> list[dict]:
     """Blocking: every aggregate report waiting in `folder`, which parsedmarc then archives."""
     conn = IMAPConnection(host=host, user=user, password=password, port=port, ssl=ssl, verify=ssl, timeout=15, max_retries=1)
+    return read_reports(conn, folder)
+
+
+def read_reports(conn, folder: str) -> list[dict]:
+    """Aggregate reports in `folder` of any parsedmarc MailboxConnection. parsedmarc logs and skips a message
+    it cannot parse, so one malformed report never aborts the batch."""
     out = parsedmarc.get_dmarc_reports_from_mailbox(conn, reports_folder=folder, archive_folder=ARCHIVE_FOLDER, offline=True)
     return out["aggregate_reports"]
 
@@ -73,3 +84,23 @@ async def ingest_from_settings(Session) -> int:
     reports = await asyncio.to_thread(read_mailbox, s.dmarc_imap_host, s.dmarc_imap_user, s.dmarc_imap_password,
                                       port=s.dmarc_imap_port, ssl=s.dmarc_imap_ssl, folder=s.dmarc_imap_folder)
     return await store(Session, reports)
+
+
+async def get_fail_count(Session, domain: str, day: date) -> int | None:
+    """Failing message count for `domain` on `day` (UTC), summed over reports. None when no report covers it,
+    so the daily job can tell \"no data\" from \"zero failures\"."""
+    async with Session() as s:
+        return (await s.execute(select(func.sum(DmarcReport.fail_count)).join(Domain, Domain.id == DmarcReport.domain_id)
+                                .where(Domain.domain_name == domain.lower(), DmarcReport.day == day))).scalar()
+
+
+async def top_failing_ips(Session, domain: str, day: date, n: int = 5) -> list[tuple[str, int]]:
+    """The `n` source IPs with the most failing messages for `domain` on `day`, as (ip, count)."""
+    async with Session() as s:
+        rows = (await s.execute(select(DmarcReport.fail_ips).join(Domain, Domain.id == DmarcReport.domain_id)
+                                .where(Domain.domain_name == domain.lower(), DmarcReport.day == day))).scalars()
+        totals: dict[str, int] = {}
+        for ips in rows:
+            for ip, c in ips.items():
+                totals[ip] = totals.get(ip, 0) + c
+    return sorted(totals.items(), key=lambda t: (-t[1], t[0]))[:n]

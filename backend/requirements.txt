@@ -13,5 +13,3 @@ parsedmarc==11.0.5
 pytest>=8,<9
 respx>=0.21,<1
 aiosqlite>=0.20,<1
-dnspython>=2.6,<3
-parsedmarc==11.0.5
