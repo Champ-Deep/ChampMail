@@ -17,6 +17,8 @@ GOOD = {
     ("_dmarc.a.com", "TXT"): ["v=DMARC1; p=reject; rua=mailto:r@a.com"],
     ("a.com", "MX"): ["1 smtp.google.com."],
     ("_mta-sts.a.com", "TXT"): ["v=STSv1; id=1"],
+    ("test.surbl.org.multi.surbl.org", "A"): ["127.0.0.254"],  # each list's always-listed test point answers
+    ("dbltest.com.dbl.spamhaus.org", "A"): ["127.0.1.2"],
 }
 
 
@@ -117,6 +119,45 @@ def test_dnsbl_listing_blocked_resolver_and_clean():
     assert listed["answers"] == {"spamhaus_dbl": ["127.0.1.2"]}
     blocked = run(scripted({**GOOD, ("a.com.dbl.spamhaus.org", "A"): ["127.255.255.254"]}))["checks"]["dnsbl"]
     assert blocked["status"] == "unknown" and blocked["zones"]["spamhaus_dbl"] == "unknown"
+
+
+def dnsbl(answers):
+    return run(scripted({**GOOD, **answers}))["checks"]["dnsbl"]
+
+
+def test_dbl_control_not_listed_means_resolver_refused_so_unknown_not_pass():
+    # Google-style: NXDOMAIN for everything on Spamhaus, including dbltest.com. A clean answer for a.com proves nothing.
+    d = dnsbl({("dbltest.com.dbl.spamhaus.org", "A"): []})
+    assert d["status"] == "unknown" and d["zones"] == {"surbl": "not_listed", "spamhaus_dbl": "unknown"}
+
+
+def test_surbl_control_failure_is_unknown_even_if_the_domain_looks_clean():
+    d = dnsbl({("test.surbl.org.multi.surbl.org", "A"): None})
+    assert d["status"] == "unknown" and d["zones"]["surbl"] == "unknown"
+
+
+def test_surbl_127_0_0_1_is_blocked_not_a_listing():
+    d = dnsbl({("a.com.multi.surbl.org", "A"): ["127.0.0.1"]})
+    assert d["status"] == "unknown" and d["zones"]["surbl"] == "unknown"
+    # the same code on the control also means blocked: never a listing, never a control pass
+    d = dnsbl({("test.surbl.org.multi.surbl.org", "A"): ["127.0.0.1"]})
+    assert d["zones"]["surbl"] == "unknown"
+
+
+def test_both_controls_listed_and_domain_clean_is_the_only_pass_path():
+    d = dnsbl({})
+    assert d["status"] == "pass" and d["zones"] == {"surbl": "not_listed", "spamhaus_dbl": "not_listed"}
+    assert d["controls"] == {"surbl": ["127.0.0.254"], "spamhaus_dbl": ["127.0.1.2"]}
+    listed = dnsbl({("a.com.multi.surbl.org", "A"): ["127.0.0.64"]})  # SURBL ABUSE bit
+    assert listed["status"] == "fail" and listed["answers"] == {"surbl": ["127.0.0.64"]}
+
+
+def test_source_names_the_nameservers_actually_used():
+    look = scripted(GOOD)
+    look.nameservers = ["9.9.9.9"]
+    s = run(look)["source"]
+    assert "nameservers used: 9.9.9.9" in s and "host" in s
+    assert "unspecified" in run(scripted(GOOD))["source"]
 
 
 @pytest.fixture

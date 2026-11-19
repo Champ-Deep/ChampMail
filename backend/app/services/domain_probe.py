@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import platform
 import re
 import sys
 from datetime import datetime, timezone
@@ -25,8 +26,10 @@ SELECTOR_RE = re.compile(r"^[a-z0-9]([a-z0-9_-]{0,61}[a-z0-9])?$")
 # Provider-default selectors plus common ones. A miss on these proves nothing: DKIM selectors cannot be enumerated.
 COMMON_SELECTORS = ["google", "selector1", "selector2", "default", "k1", "s1", "s2", "mail", "dkim"]
 # Domain-keyed lists only: the sending IPs of a domain are not public DNS facts we can know.
-ZONES = [SimpleNamespace(name="surbl", zone="multi.surbl.org", kind="domain", enabled=True),
-         SimpleNamespace(name="spamhaus_dbl", zone="dbl.spamhaus.org", kind="domain", enabled=True)]
+# `control` is each list's documented always-listed test point (surbl.org/faqs2#testpoints, Spamhaus DBL docs);
+# `refused` is SURBL's documented "access blocked" answer (surbl.org/guidelines item 8).
+ZONES = [SimpleNamespace(name="surbl", zone="multi.surbl.org", kind="domain", enabled=True, control="test.surbl.org", refused=("127.0.0.1",)),
+         SimpleNamespace(name="spamhaus_dbl", zone="dbl.spamhaus.org", kind="domain", enabled=True, control="dbltest.com", refused=())]
 SPF_LOOKUP_TERM = re.compile(r"^(include:|exists:|redirect=|(a|mx|ptr)([:/]|$))")  # "all" must not match "a"
 NOTE = ("Public DNS observations only. Not inbox-placement proof and not a deliverability score. "
         "Absent or unreachable evidence is shown as unknown, never as a pass.")
@@ -126,12 +129,14 @@ async def _sts(d, lookup):
 async def _dnsbl(d, lookup):
     hits, errors = await mx.dnsbl_check(d, [], ZONES, lookup)
     per = {z.name: "listed" if z.name in hits else "unknown" if z.name in errors else "not_listed" for z in ZONES}
+    # Raw control answers shown so a reader can see each list answered this resolver.
+    controls = {z.name: await lookup(f"{z.control}.{z.zone}", "A") for z in ZONES}
     # Raw return codes for humans to read against each list's own documentation; we do not interpret them.
     codes = {z.name: await lookup(f"{d}.{z.zone}", "A") for z in ZONES if z.name in hits}
     status = "fail" if hits else "unknown" if errors else "pass"
     return _c(status, f"listed on {', '.join(hits)}" if hits else
-              f"no answer from {', '.join(errors)} (blocked or failed resolver, not a clean result)" if errors else "not listed",
-              zones=per, answers=codes)
+              f"no usable answer from {', '.join(errors)} (resolver blocked or failed, or the list's test point did not answer; not a clean result)" if errors else "not listed (test points answered)",
+              zones=per, answers=codes, controls=controls)
 
 
 async def probe(domain: str, lookup: Optional[mx.Lookup] = None, selectors: Iterable[str] = ()) -> dict:
@@ -146,7 +151,9 @@ async def probe(domain: str, lookup: Optional[mx.Lookup] = None, selectors: Iter
     rec = (f"IT review recommended for: {', '.join(bad)}. This is a recommendation only: nothing is paused, rotated or changed automatically."
            if bad else None)
     return {"domain": d, "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "source": "live public DNS via dnspython from the ChampMail host's resolver; DNSBL zones: " + ", ".join(z.zone for z in ZONES),
+            "source": ("live public DNS via dnspython, run on host " + platform.node() + ", nameservers used: "
+                       + (", ".join(ns) if (ns := getattr(lookup, "nameservers", None)) else "unspecified (injected lookup)")
+                       + "; DNSBL zones: " + ", ".join(z.zone for z in ZONES)),
             "note": NOTE, "checks": checks, "attention": attention, "it_recommendation": rec}
 
 

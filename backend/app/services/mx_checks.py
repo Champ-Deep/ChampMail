@@ -52,6 +52,7 @@ def resolver_lookup(nameservers: Optional[list[str]] = None, timeout: float = 3.
             return [rd.target.to_text() for rd in answer]
         return [rd.to_text() for rd in answer]
 
+    look.nameservers = [str(n) for n in r.nameservers]  # what actually answered, for source labels
     return look
 
 
@@ -102,13 +103,19 @@ async def mta_sts_ok(domain: str, lookup: Lookup) -> bool:
     return any(_tags(t).get("v", "").upper() == "STSV1" and _tags(t).get("id") for t in await _txt(lookup, f"_mta-sts.{domain}"))
 
 
-def _is_listing(answer: str) -> bool:
+def _is_listing(answer: str, refused: Iterable[str] = ()) -> bool:
     # Spamhaus answers 127.255.255.x to refused or rate-limited resolvers: an error, never a listing.
-    return answer.startswith("127.") and not answer.startswith("127.255.255.")
+    # `refused` holds a zone's own exact "you are blocked" answers (SURBL: 127.0.0.1).
+    return answer.startswith("127.") and not answer.startswith("127.255.255.") and answer not in refused
 
 
 async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: Lookup) -> tuple[list[str], list[str]]:
-    """(zone names that list us, zone names we could not get an answer from). Disabled zones are skipped."""
+    """(zone names that list us, zone names we could not get an answer from). Disabled zones are skipped.
+
+    A zone may carry `control` (a name the list always lists, e.g. dbltest.com) and `refused` (its blocked answers).
+    With a control, "not listed" only counts when the control answered a listing through this same lookup: a resolver
+    the list refuses can return NXDOMAIN for everything (Google vs Spamhaus), which is no evidence of a clean domain.
+    Zones without these attributes (the daily job's DB rows) behave as before."""
     v4 = []
     for ip in ips:
         try:
@@ -122,12 +129,17 @@ async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: 
         if not z.enabled:
             continue
         names = [f"{r}.{z.zone}" for r in v4] if z.kind == "ip" else [f"{domain}.{z.zone}"]
+        refused = getattr(z, "refused", ())
+        control = getattr(z, "control", None)
+        if control and not any(_is_listing(a, refused) for a in await lookup(f"{control}.{z.zone}", "A") or []):
+            errors.append(z.name)
+            continue
         failed = listed = False
         for n in names:
             ans = await lookup(n, "A")
-            if ans is None or any(a.startswith("127.255.255.") for a in ans):
-                failed = True  # resolver failure, or Spamhaus saying our resolver is refused: no answer either way
-            elif any(_is_listing(a) for a in ans):
+            if ans is None or any(a.startswith("127.255.255.") or a in refused for a in ans):
+                failed = True  # resolver failure, or the list saying our resolver is refused: no answer either way
+            elif any(_is_listing(a, refused) for a in ans):
                 listed = True
         if listed:
             hits.append(z.name)
