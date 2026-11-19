@@ -127,10 +127,16 @@ async def _sts(d, lookup):
 
 
 async def _dnsbl(d, lookup):
-    hits, errors = await mx.dnsbl_check(d, [], ZONES, lookup)
+    # The control answers dnsbl_check actually used (before and after the domain query), recorded, not re-asked.
+    seen: dict = {}
+
+    async def rec(name, rtype):
+        ans = await lookup(name, rtype)
+        seen.setdefault(name, []).append(ans)
+        return ans
+    hits, errors = await mx.dnsbl_check(d, [], ZONES, rec)
     per = {z.name: "listed" if z.name in hits else "unknown" if z.name in errors else "not_listed" for z in ZONES}
-    # Raw control answers shown so a reader can see each list answered this resolver.
-    controls = {z.name: await lookup(f"{z.control}.{z.zone}", "A") for z in ZONES}
+    controls = {z.name: seen.get(f"{z.control}.{z.zone}") for z in ZONES}
     # Raw return codes for humans to read against each list's own documentation; we do not interpret them.
     codes = {z.name: await lookup(f"{d}.{z.zone}", "A") for z in ZONES if z.name in hits}
     status = "fail" if hits else "unknown" if errors else "pass"

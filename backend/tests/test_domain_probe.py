@@ -147,9 +147,20 @@ def test_surbl_127_0_0_1_is_blocked_not_a_listing():
 def test_both_controls_listed_and_domain_clean_is_the_only_pass_path():
     d = dnsbl({})
     assert d["status"] == "pass" and d["zones"] == {"surbl": "not_listed", "spamhaus_dbl": "not_listed"}
-    assert d["controls"] == {"surbl": ["127.0.0.254"], "spamhaus_dbl": ["127.0.1.2"]}
+    assert d["controls"] == {"surbl": [["127.0.0.254"]] * 2, "spamhaus_dbl": [["127.0.1.2"]] * 2}  # before and after
     listed = dnsbl({("a.com.multi.surbl.org", "A"): ["127.0.0.64"]})  # SURBL ABUSE bit
     assert listed["status"] == "fail" and listed["answers"] == {"surbl": ["127.0.0.64"]}
+
+
+def test_flapping_resolver_control_listed_before_but_not_after_is_unknown():
+    # Anycast resolver seen live: the same test point answers 127.0.1.2 once, NXDOMAIN the next time.
+    seq = iter([["127.0.1.2"], []])
+    base = scripted(GOOD)
+
+    async def look(name, rtype):
+        return next(seq) if name == "dbltest.com.dbl.spamhaus.org" else await base(name, rtype)
+    d = run(look)["checks"]["dnsbl"]
+    assert d["status"] == "unknown" and d["zones"]["spamhaus_dbl"] == "unknown"
 
 
 def test_source_names_the_nameservers_actually_used():

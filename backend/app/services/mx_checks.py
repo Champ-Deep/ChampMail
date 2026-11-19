@@ -109,6 +109,12 @@ def _is_listing(answer: str, refused: Iterable[str] = ()) -> bool:
     return answer.startswith("127.") and not answer.startswith("127.255.255.") and answer not in refused
 
 
+async def _control_ok(lookup: Lookup, z) -> bool:
+    """True when the zone has no control, or its always-listed test point answers a listing through `lookup`."""
+    control = getattr(z, "control", None)
+    return not control or any(_is_listing(a, getattr(z, "refused", ())) for a in await lookup(f"{control}.{z.zone}", "A") or [])
+
+
 async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: Lookup) -> tuple[list[str], list[str]]:
     """(zone names that list us, zone names we could not get an answer from). Disabled zones are skipped.
 
@@ -130,8 +136,7 @@ async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: 
             continue
         names = [f"{r}.{z.zone}" for r in v4] if z.kind == "ip" else [f"{domain}.{z.zone}"]
         refused = getattr(z, "refused", ())
-        control = getattr(z, "control", None)
-        if control and not any(_is_listing(a, refused) for a in await lookup(f"{control}.{z.zone}", "A") or []):
+        if not await _control_ok(lookup, z):
             errors.append(z.name)
             continue
         failed = listed = False
@@ -141,6 +146,10 @@ async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: 
                 failed = True  # resolver failure, or the list saying our resolver is refused: no answer either way
             elif any(_is_listing(a, refused) for a in ans):
                 listed = True
+        # Anycast resolvers (8.8.8.8) answer the same test point differently between queries, so the control is asked
+        # again after the domain: a clean answer counts only if the control listed both before and after it.
+        if not listed and not failed and not await _control_ok(lookup, z):
+            failed = True
         if listed:
             hits.append(z.name)
         elif failed:
