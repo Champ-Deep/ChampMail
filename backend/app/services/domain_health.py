@@ -105,7 +105,7 @@ async def check_domain(session, d: Domain, lookup: mx.Lookup, zones: list, postm
     row.dmarc_aligned = None if passed + failed == 0 else failed == 0
     row.postmaster_spam_rate = pm.get("spam_rate") if pm else None
     row.postmaster_reputation = pm.get("reputation") if pm else None
-    row.source = "+".join(["dns"] + (["dmarc"] if passed + failed else []) + (["postmaster"] if pm else []))
+    row.source = "+".join(["dns"] + (["dmarc"] if passed + failed else []) + (["postmaster"] if pm else []) + (["dnsbl_unknown"] if errors else []))  # a zone with no usable answer is not clean
     row.checked_at = datetime.utcnow()
     session.add(row)
 

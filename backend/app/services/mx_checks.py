@@ -109,10 +109,26 @@ def _is_listing(answer: str, refused: Iterable[str] = ()) -> bool:
     return answer.startswith("127.") and not answer.startswith("127.255.255.") and answer not in refused
 
 
+# Documented always-listed test points and blocked answers, keyed by zone host so the daily job's DB rows (config, no such
+# columns) get them too. A zone attribute wins over this map. A zone in neither has no control: old behaviour.
+# shortcut: code-side map, not columns; upgrade to dnsbl_zones columns when ops must add a list without a deploy.
+TEST_POINTS = {
+    "dbl.spamhaus.org": ("dbltest.com", ()),
+    "multi.surbl.org": ("test.surbl.org", ("127.0.0.1",)),  # surbl.org/guidelines: 127.0.0.1 = access blocked
+    "zen.spamhaus.org": ("2.0.0.127", ()),  # 127.0.0.2 is always listed in ZEN (Spamhaus docs)
+    "b.barracudacentral.org": ("2.0.0.127", ()),  # 127.0.0.2 is the Barracuda test address
+}
+
+
+def _ctl(z) -> tuple[Optional[str], Iterable[str]]:
+    control, refused = TEST_POINTS.get(z.zone, (None, ()))
+    return getattr(z, "control", None) or control, getattr(z, "refused", None) or refused
+
+
 async def _control_ok(lookup: Lookup, z) -> bool:
     """True when the zone has no control, or its always-listed test point answers a listing through `lookup`."""
-    control = getattr(z, "control", None)
-    return not control or any(_is_listing(a, getattr(z, "refused", ())) for a in await lookup(f"{control}.{z.zone}", "A") or [])
+    control, refused = _ctl(z)
+    return not control or any(_is_listing(a, refused) for a in await lookup(f"{control}.{z.zone}", "A") or [])
 
 
 async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: Lookup) -> tuple[list[str], list[str]]:
@@ -121,7 +137,7 @@ async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: 
     A zone may carry `control` (a name the list always lists, e.g. dbltest.com) and `refused` (its blocked answers).
     With a control, "not listed" only counts when the control answered a listing through this same lookup: a resolver
     the list refuses can return NXDOMAIN for everything (Google vs Spamhaus), which is no evidence of a clean domain.
-    Zones without these attributes (the daily job's DB rows) behave as before."""
+    Zones without these attributes (the daily job's DB rows) take them from TEST_POINTS by zone host; a zone in neither behaves as before."""
     v4 = []
     for ip in ips:
         try:
@@ -135,7 +151,7 @@ async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: 
         if not z.enabled:
             continue
         names = [f"{r}.{z.zone}" for r in v4] if z.kind == "ip" else [f"{domain}.{z.zone}"]
-        refused = getattr(z, "refused", ())
+        refused = _ctl(z)[1]
         if not await _control_ok(lookup, z):
             errors.append(z.name)
             continue

@@ -70,24 +70,54 @@ SURBL = DnsblZone(name="surbl", zone="multi.surbl.org", kind="domain", enabled=T
 BARRACUDA = DnsblZone(name="barracuda", zone="b.barracudacentral.org", kind="ip", enabled=True)
 
 
+# What a resolver every list accepts says about the three seeded zones' documented test points.
+CONTROLS = {("2.0.0.127.zen.spamhaus.org", "A"): ["127.0.0.2"], ("test.surbl.org.multi.surbl.org", "A"): ["127.0.0.254"],
+            ("2.0.0.127.b.barracudacentral.org", "A"): ["127.0.0.2"]}
+
+
 def test_dnsbl_lists_hit_by_fixture_answer_are_named():
-    s = Script({("4.3.2.1.zen.spamhaus.org", "A"): ["127.0.0.2"], ("a.com.multi.surbl.org", "A"): ["127.0.0.64"]})
+    s = Script({**CONTROLS, ("4.3.2.1.zen.spamhaus.org", "A"): ["127.0.0.2"], ("a.com.multi.surbl.org", "A"): ["127.0.0.64"]})
     hits, errors = run(mx.dnsbl_check("a.com", ["1.2.3.4"], [ZEN, SURBL, BARRACUDA], s))
     assert (hits, errors) == (["spamhaus_zen", "surbl"], [])
 
 
 def test_spamhaus_error_codes_are_not_listings_and_resolver_failures_are_errors_not_hits():
-    s = Script({("4.3.2.1.zen.spamhaus.org", "A"): ["127.255.255.254"], ("4.3.2.1.b.barracudacentral.org", "A"): None})
+    s = Script({**CONTROLS, ("4.3.2.1.zen.spamhaus.org", "A"): ["127.255.255.254"], ("4.3.2.1.b.barracudacentral.org", "A"): None})
     hits, errors = run(mx.dnsbl_check("a.com", ["1.2.3.4"], [ZEN, BARRACUDA], s))
     assert hits == [] and errors == ["spamhaus_zen", "barracuda"]
 
 
 def test_disabled_zones_and_ip_zones_without_ips_are_not_queried():
     off = DnsblZone(name="off", zone="off.example", kind="domain", enabled=False)
-    s = Script({})
+    s = Script(CONTROLS)
     assert run(mx.dnsbl_check("a.com", [], [ZEN, off], s)) == ([], [])
-    assert s.asked == []
+    assert ("off.example", "A") not in s.asked and not any(n.endswith("off.example") for n, _ in s.asked)
     assert run(mx.dnsbl_check("a.com", ["2001:db8::1"], [ZEN], s)) == ([], [])  # IPv4 zones only
+
+
+@pytest.mark.parametrize("zone,refusal", [
+    (ZEN, {("2.0.0.127.zen.spamhaus.org", "A"): ["127.255.255.254"]}),   # Spamhaus: public resolver refused
+    (ZEN, {("2.0.0.127.zen.spamhaus.org", "A"): []}),                    # Google: NXDOMAIN for everything
+    (SURBL, {("test.surbl.org.multi.surbl.org", "A"): ["127.0.0.1"]}),   # SURBL: access blocked
+    (BARRACUDA, {("2.0.0.127.b.barracudacentral.org", "A"): None}),     # resolver failure
+])
+def test_db_zone_rows_get_their_control_by_zone_host_so_a_refused_resolver_is_unknown_not_clean(zone, refusal):
+    """The daily job passes DnsblZone rows with no control attribute: without TEST_POINTS this returned ([], [])."""
+    s = Script({**CONTROLS, **refusal})
+    assert run(mx.dnsbl_check("a.com", ["1.2.3.4"], [zone], s)) == ([], [zone.name])
+
+
+def test_a_dbl_row_in_the_db_gets_the_dbl_control_too():
+    dbl = DnsblZone(name="spamhaus_dbl", zone="dbl.spamhaus.org", kind="domain", enabled=True)
+    assert run(mx.dnsbl_check("a.com", [], [dbl], Script({}))) == ([], ["spamhaus_dbl"])  # Google NXDOMAIN
+    ok = Script({("dbltest.com.dbl.spamhaus.org", "A"): ["127.0.1.2"], ("a.com.dbl.spamhaus.org", "A"): ["127.0.1.2"]})
+    assert run(mx.dnsbl_check("a.com", [], [dbl], ok)) == (["spamhaus_dbl"], [])
+
+
+def test_the_probe_and_the_daily_job_share_one_set_of_test_points():
+    from app.services.domain_probe import ZONES
+    for z in ZONES:
+        assert mx.TEST_POINTS[z.zone] == (z.control, tuple(z.refused))
 
 
 @pytest.mark.parametrize("raw,norm", [("google", "google"), ("GOOGLE_WORKSPACE", "google"), ("microsoft", "microsoft"),

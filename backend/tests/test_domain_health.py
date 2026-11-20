@@ -11,12 +11,13 @@ from app.models import Bounce, DmarcReport, DnsblZone, Domain, DomainHealthDaily
 from app.services import domain_health as dh
 from app.services.outbound_events import emit
 from tests.helpers import add_dispatch
-from tests.test_mx_checks import Script
+from tests.test_mx_checks import CONTROLS, Script
 from tests.test_send import run, seed
 
 pytestmark = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 NAME = "acme-mail.test"
 HEALTHY = {
+    **CONTROLS,
     (NAME, "TXT"): ["v=spf1 include:_spf.google.com ~all"],
     (f"google._domainkey.{NAME}", "TXT"): ["v=DKIM1; k=rsa; p=MIIBIjAN"],
     (f"_dmarc.{NAME}", "TXT"): ["v=DMARC1; p=quarantine; rua=mailto:r@x.test"],
@@ -151,6 +152,23 @@ def test_no_dmarc_reports_means_aligned_is_unknown_not_false():
             r = (await s.execute(select(DomainHealthDaily))).scalar_one()
             return (r.dmarc_aligned, r.dmarc_reports_fail_count, r.source)
     assert run(go) == (None, None, "dns")
+
+
+def test_a_resolver_the_lists_refuse_keeps_the_previous_listing_and_marks_the_row_unknown(client):
+    async def go(Session):
+        async def scenario(c):
+            dom, _, lookup = await world(Session, LISTED)
+            await job(Session, lookup)
+            refused = {k: v for k, v in HEALTHY.items() if k not in CONTROLS}  # every list NXDOMAINs: looks clean, is blind
+            tomorrow = datetime.utcnow().date() + timedelta(days=1)
+            await dh.run_daily(Session, lookup=Script(refused), ingest=noingest, today=tomorrow)
+            async with Session() as s:
+                d = await s.get(Domain, dom)
+                row = (await s.execute(select(DomainHealthDaily).where(DomainHealthDaily.day == tomorrow))).scalar_one()
+                assert d.blacklisted is True and d.blacklist_hits == 1   # not cleared by a blind resolver
+                assert row.source == "dns+dnsbl_unknown"
+        await client(Session, scenario)
+    run(go)
 
 
 def test_a_second_check_the_same_day_updates_the_row_instead_of_adding_one():
