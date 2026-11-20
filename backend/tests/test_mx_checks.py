@@ -91,7 +91,7 @@ def test_disabled_zones_and_ip_zones_without_ips_are_not_queried():
     off = DnsblZone(name="off", zone="off.example", kind="domain", enabled=False)
     s = Script(CONTROLS)
     assert run(mx.dnsbl_check("a.com", [], [ZEN, off], s)) == ([], [])
-    assert ("off.example", "A") not in s.asked and not any(n.endswith("off.example") for n, _ in s.asked)
+    assert s.asked == []
     assert run(mx.dnsbl_check("a.com", ["2001:db8::1"], [ZEN], s)) == ([], [])  # IPv4 zones only
 
 

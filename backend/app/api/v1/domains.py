@@ -102,6 +102,8 @@ def serialize_domain(d: Domain, mailboxes: list[EmailAccount], health: Optional[
         "canary_cap": CANARY_DAILY_CAP,
         # From the daily health job (null until it has run for this domain).
         "dnsbl_lists": list(health.dnsbl_listed) if health else [],
+        # True when a list refused or failed to answer on the latest run, so dnsbl_listed false is not evidence of clean.
+        "dnsbl_unknown": "dnsbl_unknown" in health.source.split("+") if health else None,
         "dmarc_policy": health.dmarc_policy if health else None,
         "mta_sts_ok": health.mta_sts_ok if health else None,
         "dmarc_aligned": health.dmarc_aligned if health else None,

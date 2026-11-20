@@ -158,7 +158,9 @@ def test_a_resolver_the_lists_refuse_keeps_the_previous_listing_and_marks_the_ro
     async def go(Session):
         async def scenario(c):
             dom, _, lookup = await world(Session, LISTED)
+            assert (await c.get("/api/v1/domains")).json()[0]["dnsbl_unknown"] is None   # before any run
             await job(Session, lookup)
+            assert (await c.get("/api/v1/domains")).json()[0]["dnsbl_unknown"] is False  # lists answered
             refused = {k: v for k, v in HEALTHY.items() if k not in CONTROLS}  # every list NXDOMAINs: looks clean, is blind
             tomorrow = datetime.utcnow().date() + timedelta(days=1)
             await dh.run_daily(Session, lookup=Script(refused), ingest=noingest, today=tomorrow)
@@ -167,6 +169,8 @@ def test_a_resolver_the_lists_refuse_keeps_the_previous_listing_and_marks_the_ro
                 row = (await s.execute(select(DomainHealthDaily).where(DomainHealthDaily.day == tomorrow))).scalar_one()
                 assert d.blacklisted is True and d.blacklist_hits == 1   # not cleared by a blind resolver
                 assert row.source == "dns+dnsbl_unknown"
+            api = (await c.get("/api/v1/domains")).json()[0]
+            assert api["dnsbl_unknown"] is True and api["dnsbl_listed"] is True   # the API says blind, not clean
         await client(Session, scenario)
     run(go)
 

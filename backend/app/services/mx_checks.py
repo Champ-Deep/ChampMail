@@ -122,7 +122,8 @@ TEST_POINTS = {
 
 def _ctl(z) -> tuple[Optional[str], Iterable[str]]:
     control, refused = TEST_POINTS.get(z.zone, (None, ()))
-    return getattr(z, "control", None) or control, getattr(z, "refused", None) or refused
+    zr = getattr(z, "refused", None)
+    return getattr(z, "control", None) or control, refused if zr is None else zr  # an explicit () on the zone wins
 
 
 async def _control_ok(lookup: Lookup, z) -> bool:
@@ -151,6 +152,8 @@ async def dnsbl_check(domain: str, ips: Iterable[str], zones: Iterable, lookup: 
         if not z.enabled:
             continue
         names = [f"{r}.{z.zone}" for r in v4] if z.kind == "ip" else [f"{domain}.{z.zone}"]
+        if not names:
+            continue  # an IP list on a domain with no IPv4: nothing to look up, so no control either
         refused = _ctl(z)[1]
         if not await _control_ok(lookup, z):
             errors.append(z.name)
